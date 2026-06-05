@@ -25,6 +25,9 @@ dist/
 build/
 *.egg-info/
 
+# Local generated data
+scripts/.local/
+
 # OS and editors
 .DS_Store
 .idea/

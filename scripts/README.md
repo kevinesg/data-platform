@@ -83,5 +83,9 @@ one-line wrappers around library calls are usually unnecessary.
 ## Pipeline Docs
 
 Pipeline-specific contracts and commands should live near the relevant pipeline
-implementation, for example under `pipelines/<source>/`. The importable runtime
-source tree should not become the home for operational notes.
+implementation. A single pipeline note can live at `pipelines/<source>.md`; use
+`pipelines/<source>/` only when that pipeline needs multiple docs or supporting
+non-runtime files. The importable runtime source tree should not become the home
+for operational notes.
+
+- `pipelines/personal_finance.md`
