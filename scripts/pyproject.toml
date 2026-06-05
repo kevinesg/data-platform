@@ -3,7 +3,9 @@ name = "data-platform-scripts"
 version = "0.1.0"
 description = "Extract/load commands for the data platform"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "python-dotenv>=1.0.1",
+]
 
 [dependency-groups]
 dev = [

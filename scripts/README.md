@@ -36,16 +36,22 @@ Run scripts component commands from the `scripts/` directory:
 ```bash
 cd scripts
 uv sync
+cp .env.example .env
 ```
 
 Use Python 3.12 for this component. Keep dependencies component-local so scripts,
 dbt, and Airflow can evolve independently.
+
+The local `.env` file is only for developer convenience. Runtime environments
+receive configuration through environment variables or the deployment platform's
+secret manager.
 
 ## Validation
 
 Run formatting, linting, and tests from `scripts/` as those checks are added:
 
 ```bash
+uv run python validate_config.py
 uv run ruff check .
 uv run pytest
 ```
