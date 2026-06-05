@@ -66,6 +66,28 @@ component `.env.example` files and local image tags. Deployed QA/prod should use
 external environment files, immutable registry image tags, and no runtime
 source-code bind mounts.
 
+## Onboarding Path
+
+Use this as the ordered entrypoint for a new data engineer. Keep detailed
+commands in component docs and link to them from here instead of turning the
+root README into a long runbook.
+
+1. Read this README to understand repository boundaries, environment promotion,
+   and production-scale assumptions.
+2. Set up local developer tools as each component needs them; component READMEs
+   own exact commands, prerequisites, and validation steps.
+3. Follow component READMEs for local setup, cloud credential requirements, and
+   source access as each component is introduced.
+4. Do not run live source extraction or other cloud-connected commands until the
+   matching dev environment, service account credentials, and source access are
+   explicitly documented and created.
+5. As dbt, Airflow, Metabase, CI/CD, and deploy docs are added, follow them in
+   this order: local component validation first, then QA deployment validation,
+   then prod deployment.
+
+When onboarding grows beyond this outline, add a committed public docs entrypoint
+and keep this section as the short index.
+
 ## Images
 
 Runtime components are packaged as Docker images. Local development uses short
