@@ -60,6 +60,16 @@ This component starts with project scaffolding only. Source-specific runtime
 dependencies, commands, schemas, and tests should be added with the pipeline
 features that need them.
 
+## Schemas
+
+Source schema files live under `schemas/`. Each schema defines the source fields
+accepted by extraction, the raw warehouse table contract, metadata fields, and
+the source primary key.
+
+Schema files should stay close to the scripts code because extract/load commands
+use them to filter, coerce, and load source records. Business-specific
+transformation rules belong in dbt, not in raw schemas.
+
 ## Design Notes
 
 Keep extract/load logic outside Airflow. Airflow owns orchestration, scheduling,
