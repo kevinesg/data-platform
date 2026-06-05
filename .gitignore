@@ -10,6 +10,21 @@ credentials/
 *.key
 *.pem
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
 # OS and editors
 .DS_Store
 .idea/
