@@ -1,0 +1,86 @@
+{
+  "name": "personal_finance__accounts",
+  "primary_key": [
+    "id"
+  ],
+  "fields": [
+    {
+      "name": "id",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "account_key",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "name",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "parent_name",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "type",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "subtype",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "source_field": true
+    },
+    {
+      "name": "currency",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "status",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "created_at",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "updated_at",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "_extracted_at",
+      "type": "TIMESTAMP",
+      "mode": "REQUIRED",
+      "source_field": false
+    },
+    {
+      "name": "_inserted_at",
+      "type": "TIMESTAMP",
+      "mode": "REQUIRED",
+      "source_field": false
+    },
+    {
+      "name": "_is_deleted",
+      "type": "BOOLEAN",
+      "mode": "REQUIRED",
+      "source_field": false
+    }
+  ]
+}

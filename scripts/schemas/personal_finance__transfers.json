@@ -1,0 +1,92 @@
+{
+  "name": "personal_finance__transfers",
+  "primary_key": [
+    "id"
+  ],
+  "fields": [
+    {
+      "name": "id",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "year",
+      "type": "INTEGER",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "month",
+      "type": "INTEGER",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "day",
+      "type": "INTEGER",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "movement_type",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "source",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "source_field": true
+    },
+    {
+      "name": "destination",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "source_field": true
+    },
+    {
+      "name": "source_amount",
+      "type": "FLOAT",
+      "mode": "NULLABLE",
+      "source_field": true
+    },
+    {
+      "name": "destination_amount",
+      "type": "FLOAT",
+      "mode": "NULLABLE",
+      "source_field": true
+    },
+    {
+      "name": "created_at",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "updated_at",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "source_field": true
+    },
+    {
+      "name": "_extracted_at",
+      "type": "TIMESTAMP",
+      "mode": "REQUIRED",
+      "source_field": false
+    },
+    {
+      "name": "_inserted_at",
+      "type": "TIMESTAMP",
+      "mode": "REQUIRED",
+      "source_field": false
+    },
+    {
+      "name": "_is_deleted",
+      "type": "BOOLEAN",
+      "mode": "REQUIRED",
+      "source_field": false
+    }
+  ]
+}
