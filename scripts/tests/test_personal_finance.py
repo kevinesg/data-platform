@@ -11,6 +11,7 @@ import personal_finance  # noqa: E402
 
 def set_required_env(monkeypatch, chunk_size="250"):
     monkeypatch.setenv("PROJECT_ID", "kevinesg-dev")
+    monkeypatch.setenv("RAW_DATASET", "raw")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/service-account.json")
     monkeypatch.setenv(
         "PERSONAL_FINANCE_GSHEET_URL",
@@ -97,6 +98,7 @@ def test_load_config_reads_required_environment(monkeypatch):
     config = personal_finance.load_config()
 
     assert config["project_id"] == "kevinesg-dev"
+    assert config["dataset"] == "raw"
     assert config["credentials"] == "/tmp/service-account.json"
     assert config["gsheet_url"].startswith("https://docs.google.com/")
     assert config["bucket_name"] == "landing-bucket"

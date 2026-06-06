@@ -13,14 +13,16 @@ system. The current source contract includes four sheet tabs:
 The repository contains no real finance data. Local exports, credentials, and
 warehouse service account files stay outside version control.
 
-## Local Extract
+## Local Extract And Load
 
-Live extraction requires dev source access first:
+Live extraction and loading require dev source access first:
 
 - a dev GCP project with a scripts service account.
 - a service-account JSON key stored outside the repository.
 - the source Google Sheet shared with that service account.
 - a GCS landing bucket with write access for the scripts service account.
+- a BigQuery raw dataset with job and table write access for the scripts service
+  account.
 - `scripts/.env` populated from `scripts/.env.example`.
 
 Until those prerequisites exist, validate this code path with unit tests and
@@ -30,7 +32,8 @@ Run from the `scripts/` directory after the prerequisites are ready:
 
 ```bash
 RUN_ID=dev-test-001
-uv run python src/personal_finance.py --run-id "$RUN_ID"
+uv run python src/personal_finance.py --step extract --run-id "$RUN_ID"
+uv run python src/personal_finance.py --step load --run-id "$RUN_ID"
 ```
 
 The command reads the configured Google Sheet in chunks, filters and coerces
@@ -41,8 +44,17 @@ chunks to GCS under
 To extract one entity while debugging:
 
 ```bash
-uv run python src/personal_finance.py --entity transactions --run-id "$RUN_ID"
+uv run python src/personal_finance.py \
+  --step extract \
+  --entity transactions \
+  --run-id "$RUN_ID"
+
+uv run python src/personal_finance.py \
+  --step load \
+  --entity transactions \
+  --run-id "$RUN_ID"
 ```
 
-The raw load step will read these durable staged files instead of re-reading the
-source.
+The load step reads the durable staged files instead of re-reading the source,
+loads them through a run-scoped BigQuery staging table, and upserts raw rows by
+source `id`. Reusing a run ID retries the same staged input.

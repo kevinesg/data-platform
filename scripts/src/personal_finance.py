@@ -11,7 +11,8 @@ from typing import Any
 
 import gspread
 from dotenv import load_dotenv
-from google.cloud import storage
+from google.api_core.exceptions import NotFound
+from google.cloud import bigquery, storage
 from gspread.utils import ValueRenderOption, rowcol_to_a1
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -61,9 +62,8 @@ SOURCE_ENTITIES = (
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Extract personal_finance Google Sheets rows to GCS JSONL staging."
-    )
+    parser = argparse.ArgumentParser(description="Run personal_finance extract/load steps.")
+    parser.add_argument("--step", required=True, choices=["extract", "load"])
     parser.add_argument("--entity", choices=[entity.name for entity in SOURCE_ENTITIES])
     parser.add_argument("--run-id")
     args = parser.parse_args()
@@ -71,9 +71,14 @@ def main() -> int:
     if DEFAULT_ENV_FILE.exists():
         load_dotenv(DEFAULT_ENV_FILE, override=False)
 
-    run_id = args.run_id or dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
     try:
-        extract(run_id=run_id, entity_name=args.entity)
+        if args.step == "extract":
+            run_id = args.run_id or dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+            extract(run_id=run_id, entity_name=args.entity)
+        else:
+            if not args.run_id:
+                raise ValueError("--run-id is required for load")
+            load(run_id=args.run_id, entity_name=args.entity)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -118,6 +123,60 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
         print(f"gcs_prefix=gs://{config['bucket_name']}/{prefix}/{run_id}/extract/")
 
 
+def load(run_id: str, entity_name: str | None = None) -> None:
+    config = load_config()
+    bq_client = bigquery.Client.from_service_account_json(
+        config["credentials"], project=config["project_id"]
+    )
+    storage_client = storage.Client.from_service_account_json(
+        config["credentials"], project=config["project_id"]
+    )
+    bucket = storage_client.bucket(config["bucket_name"])
+
+    print(f"run_id={run_id}")
+    for entity in select_entities(entity_name):
+        schema = load_entity_schema(entity)
+        source_fields = source_schema_fields(schema)
+        extracted_at_field = next(
+            field for field in schema["fields"] if field["name"] == "_extracted_at"
+        )
+        prefix = entity_gcs_prefix(config, entity)
+        extract_uri = find_jsonl_uri(
+            bucket,
+            config["bucket_name"],
+            f"{prefix}/{run_id}/extract/",
+        )
+        table_id = f"{config['project_id']}.{config['dataset']}.{entity.raw_table}"
+        ensure_raw_table(bq_client, table_id, schema["fields"])
+
+        if extract_uri is None:
+            print(f"entity={entity.name}")
+            print("loaded_rows=0")
+            print(f"skipped_no_extract_files=true table={table_id}")
+            continue
+
+        staging_table_id = f"{table_id}__load_{safe_identifier(run_id)}"
+        try:
+            loaded_rows = load_extract_files_to_staging(
+                bq_client,
+                extract_uri,
+                staging_table_id,
+                [*source_fields, extracted_at_field],
+            )
+            apply_raw_table_upsert(
+                bq_client,
+                table_id,
+                staging_table_id,
+                source_fields,
+            )
+
+            print(f"entity={entity.name}")
+            print(f"loaded_rows={loaded_rows}")
+            print(f"applied_table={table_id}")
+        finally:
+            bq_client.delete_table(staging_table_id, not_found_ok=True)
+
+
 def load_config() -> dict[str, Any]:
     prefix = env("PERSONAL_FINANCE_GCS_PREFIX").strip("/")
     if not prefix:
@@ -125,6 +184,7 @@ def load_config() -> dict[str, Any]:
 
     return {
         "project_id": env("PROJECT_ID"),
+        "dataset": env("RAW_DATASET"),
         "credentials": env("GOOGLE_APPLICATION_CREDENTIALS"),
         "gsheet_url": env("PERSONAL_FINANCE_GSHEET_URL"),
         "bucket_name": env("PERSONAL_FINANCE_GCS_BUCKET"),
@@ -216,6 +276,128 @@ def extract_sheet_chunks_to_gcs(
             print(f"wrote {len(extract_chunk)} rows to gs://{bucket_name}/{blob_name}")
 
     return source_rows, extracted_rows, chunk_count
+
+
+def find_jsonl_uri(bucket: storage.Bucket, bucket_name: str, prefix: str) -> str | None:
+    for blob in bucket.list_blobs(prefix=prefix):
+        if blob.name.endswith(".jsonl"):
+            return f"gs://{bucket_name}/{prefix}*.jsonl"
+    return None
+
+
+def ensure_raw_table(client: bigquery.Client, table_id: str, fields: list[dict[str, Any]]) -> None:
+    desired_schema = bigquery_schema(fields)
+    try:
+        table = client.get_table(table_id)
+    except NotFound:
+        client.create_table(bigquery.Table(table_id, schema=desired_schema))
+        return
+
+    desired_by_name = {field.name: field for field in desired_schema}
+    existing_names = {field.name for field in table.schema}
+    updated_schema = []
+    schema_changed = False
+
+    for existing_field in table.schema:
+        desired_field = desired_by_name.get(existing_field.name)
+        if desired_field is None:
+            updated_schema.append(existing_field)
+            continue
+        if existing_field.field_type != desired_field.field_type:
+            raise ValueError(
+                f"{table_id}.{existing_field.name} has type {existing_field.field_type}; "
+                f"expected {desired_field.field_type}"
+            )
+        if existing_field.mode == desired_field.mode:
+            updated_schema.append(existing_field)
+            continue
+        if existing_field.mode == "REQUIRED" and desired_field.mode == "NULLABLE":
+            field_resource = existing_field.to_api_repr()
+            field_resource["mode"] = "NULLABLE"
+            updated_schema.append(bigquery.SchemaField.from_api_repr(field_resource))
+            schema_changed = True
+            continue
+        raise ValueError(
+            f"{table_id}.{existing_field.name} has mode {existing_field.mode}; "
+            f"expected {desired_field.mode}"
+        )
+
+    missing_fields = [field for field in desired_schema if field.name not in existing_names]
+    missing_required_fields = [field.name for field in missing_fields if field.mode == "REQUIRED"]
+    if missing_required_fields:
+        raise ValueError(
+            f"{table_id} is missing required columns: " + ", ".join(missing_required_fields)
+        )
+
+    if missing_fields or schema_changed:
+        table.schema = [*updated_schema, *missing_fields]
+        client.update_table(table, ["schema"])
+
+
+def load_extract_files_to_staging(
+    client: bigquery.Client,
+    extract_uri: str,
+    staging_table_id: str,
+    fields: list[dict[str, Any]],
+) -> int:
+    load_job = client.load_table_from_uri(
+        extract_uri,
+        staging_table_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=bigquery_schema(fields),
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        ),
+    )
+    load_job.result()
+    return load_job.output_rows or 0
+
+
+def apply_raw_table_upsert(
+    client: bigquery.Client,
+    table_id: str,
+    staging_table_id: str,
+    source_schema_fields: list[dict[str, Any]],
+) -> None:
+    source_columns = [str(field["name"]) for field in source_schema_fields]
+    update_expressions = [f"target.`{column}` = source.`{column}`" for column in source_columns]
+    update_expressions.extend(
+        [
+            "target.`_extracted_at` = source.`_extracted_at`",
+            "target.`_is_deleted` = FALSE",
+        ]
+    )
+    insert_columns = [f"`{column}`" for column in source_columns]
+    insert_columns.extend(["`_extracted_at`", "`_inserted_at`", "`_is_deleted`"])
+    insert_values = [f"source.`{column}`" for column in source_columns]
+    insert_values.extend(["source.`_extracted_at`", "applied_at", "FALSE"])
+
+    query = f"""
+        DECLARE applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+
+        MERGE `{table_id}` AS target
+        USING `{staging_table_id}` AS source
+        ON target.`id` = source.`id`
+        WHEN MATCHED THEN
+          UPDATE SET
+            {", ".join(update_expressions)}
+        WHEN NOT MATCHED THEN
+          INSERT ({", ".join(insert_columns)})
+          VALUES ({", ".join(insert_values)});
+    """
+    client.query(query).result()
+
+
+def bigquery_schema(fields: list[dict[str, Any]]) -> list[bigquery.SchemaField]:
+    return [
+        bigquery.SchemaField(str(field["name"]), str(field["type"]), mode=str(field["mode"]))
+        for field in fields
+    ]
+
+
+def safe_identifier(value: str) -> str:
+    safe_value = "".join(character if character.isalnum() else "_" for character in value)
+    return safe_value.strip("_") or "run"
 
 
 def coerce_record(
