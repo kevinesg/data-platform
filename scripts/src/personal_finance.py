@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import google.auth
 import gspread
 from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
@@ -16,8 +17,13 @@ from google.cloud import bigquery, storage
 from gspread.utils import ValueRenderOption, rowcol_to_a1
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_ENV_FILE = SCRIPTS_DIR / ".env"
 SCHEMA_DIR = SCRIPTS_DIR / "schemas"
+PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
+GOOGLE_API_SCOPES = (
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+)
 
 
 @dataclass(frozen=True)
@@ -66,12 +72,21 @@ def main() -> int:
     parser.add_argument("--step", required=True, choices=["extract", "load"])
     parser.add_argument("--entity", choices=[entity.name for entity in SOURCE_ENTITIES])
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=default_env_file(),
+        help=(
+            "external dotenv file; discovers DATA_PLATFORM_ENV_FILE, "
+            "DATA_PLATFORM_SECRETS_DIR, or the preferred dev path when present"
+        ),
+    )
     args = parser.parse_args()
 
-    if DEFAULT_ENV_FILE.exists():
-        load_dotenv(DEFAULT_ENV_FILE, override=False)
-
     try:
+        if args.env_file is not None:
+            load_environment(args.env_file)
+
         if args.step == "extract":
             run_id = args.run_id or dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
             extract(run_id=run_id, entity_name=args.entity)
@@ -89,13 +104,10 @@ def main() -> int:
 def extract(run_id: str, entity_name: str | None = None) -> None:
     config = load_config()
     extracted_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-    storage_client = storage.Client.from_service_account_json(
-        config["credentials"], project=config["project_id"]
-    )
+    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    storage_client = storage.Client(project=config["project_id"], credentials=credentials)
     bucket = storage_client.bucket(config["bucket_name"])
-    spreadsheet = gspread.service_account(filename=config["credentials"]).open_by_url(
-        config["gsheet_url"]
-    )
+    spreadsheet = gspread.authorize(credentials).open_by_url(config["gsheet_url"])
 
     print(f"run_id={run_id}")
     for entity in select_entities(entity_name):
@@ -125,12 +137,9 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
 
 def load(run_id: str, entity_name: str | None = None) -> None:
     config = load_config()
-    bq_client = bigquery.Client.from_service_account_json(
-        config["credentials"], project=config["project_id"]
-    )
-    storage_client = storage.Client.from_service_account_json(
-        config["credentials"], project=config["project_id"]
-    )
+    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    bq_client = bigquery.Client(project=config["project_id"], credentials=credentials)
+    storage_client = storage.Client(project=config["project_id"], credentials=credentials)
     bucket = storage_client.bucket(config["bucket_name"])
 
     print(f"run_id={run_id}")
@@ -185,12 +194,30 @@ def load_config() -> dict[str, Any]:
     return {
         "project_id": env("PROJECT_ID"),
         "dataset": env("RAW_DATASET"),
-        "credentials": env("GOOGLE_APPLICATION_CREDENTIALS"),
         "gsheet_url": env("PERSONAL_FINANCE_GSHEET_URL"),
         "bucket_name": env("PERSONAL_FINANCE_GCS_BUCKET"),
         "prefix": prefix,
         "chunk_size": positive_int_env("PERSONAL_FINANCE_CHUNK_SIZE"),
     }
+
+
+def default_env_file() -> Path | None:
+    value = os.getenv("DATA_PLATFORM_ENV_FILE", "").strip()
+    if value:
+        return Path(value).expanduser()
+    secrets_dir = os.getenv("DATA_PLATFORM_SECRETS_DIR", "").strip()
+    if secrets_dir:
+        return Path(secrets_dir).expanduser() / ".env"
+    if PREFERRED_DEV_ENV_FILE.is_file():
+        return PREFERRED_DEV_ENV_FILE
+    return None
+
+
+def load_environment(env_file: Path) -> None:
+    env_file = env_file.expanduser()
+    if not env_file.is_file():
+        raise ValueError(f"env file does not exist: {env_file}")
+    load_dotenv(env_file, override=False)
 
 
 def load_entity_schema(entity: SourceEntity) -> dict[str, Any]:

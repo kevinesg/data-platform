@@ -11,13 +11,15 @@ import personal_finance  # noqa: E402
 
 def set_required_env(monkeypatch, chunk_size="250"):
     monkeypatch.setenv("PROJECT_ID", "kevinesg-dev")
-    monkeypatch.setenv("RAW_DATASET", "raw")
-    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/service-account.json")
+    monkeypatch.setenv("RAW_DATASET", "raw_kevinesg")
     monkeypatch.setenv(
         "PERSONAL_FINANCE_GSHEET_URL",
         "https://docs.google.com/spreadsheets/d/example/edit",
     )
-    monkeypatch.setenv("PERSONAL_FINANCE_GCS_BUCKET", "landing-bucket")
+    monkeypatch.setenv(
+        "PERSONAL_FINANCE_GCS_BUCKET",
+        "kevinesg-dev-data-platform-landing-kevinesg",
+    )
     monkeypatch.setenv("PERSONAL_FINANCE_GCS_PREFIX", "personal_finance/")
     monkeypatch.setenv("PERSONAL_FINANCE_CHUNK_SIZE", chunk_size)
 
@@ -98,10 +100,9 @@ def test_load_config_reads_required_environment(monkeypatch):
     config = personal_finance.load_config()
 
     assert config["project_id"] == "kevinesg-dev"
-    assert config["dataset"] == "raw"
-    assert config["credentials"] == "/tmp/service-account.json"
+    assert config["dataset"] == "raw_kevinesg"
     assert config["gsheet_url"].startswith("https://docs.google.com/")
-    assert config["bucket_name"] == "landing-bucket"
+    assert config["bucket_name"] == "kevinesg-dev-data-platform-landing-kevinesg"
     assert config["prefix"] == "personal_finance"
     assert config["chunk_size"] == 250
 
@@ -210,12 +211,12 @@ def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
         ]
         == "application/x-ndjson"
     )
-    first_chunk = bucket.uploads[
-        "personal_finance/transactions/run-1/extract/chunk-000001.jsonl"
-    ]["body"].splitlines()
-    second_chunk = bucket.uploads[
-        "personal_finance/transactions/run-1/extract/chunk-000002.jsonl"
-    ]["body"].splitlines()
+    first_chunk = bucket.uploads["personal_finance/transactions/run-1/extract/chunk-000001.jsonl"][
+        "body"
+    ].splitlines()
+    second_chunk = bucket.uploads["personal_finance/transactions/run-1/extract/chunk-000002.jsonl"][
+        "body"
+    ].splitlines()
     assert json.loads(first_chunk[0]) == {
         "id": "row-1",
         "amount": 10.5,
