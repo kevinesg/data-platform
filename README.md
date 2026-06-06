@@ -11,6 +11,7 @@ data-platform/
   dbt/       # warehouse transformations, tests, and dbt project configuration
   airflow/   # orchestration runtime and DAGs
   metabase/  # analytics service runtime/configuration
+  deploy/    # shared environment bootstrap and deployment documentation
 ```
 
 Each component is developed as an independent project with its own README,
@@ -20,7 +21,7 @@ imports or production runtime bind mounts.
 
 ## Production-Scale Assumption
 
-Design decisions in this repository assume a real production data engineering
+Design decisions in this repository assume a production data engineering
 environment: hundreds of Airflow DAGs, thousands of dbt models, large warehouse
 tables, multiple data sources, bounded CI/CD, and operational ownership by a
 functional data engineering team.
@@ -29,29 +30,18 @@ The first pipeline can be small, but the platform architecture should not be
 small-minded. MVP shortcuts are acceptable only when they keep the core workflow
 moving and are documented as temporary.
 
-## MVP Direction
+## Initial Delivery Direction
 
-The first end-to-end pipeline is the `personal_finance` ELT pipeline:
+The platform is developed vertically so each boundary is validated before the
+next component depends on it:
 
-```text
-personal finance source
-  -> scripts extract/load
-  -> dbt transformations
-  -> Airflow orchestration
-  -> Metabase visibility
-```
-
-The initial development order is:
-
-1. scripts local personal finance EL
-2. dbt local personal finance models
-3. scripts image
-4. dbt image
-5. Airflow local empty stack
-6. Airflow runs scripts/dbt images
-7. CI for the current components
-8. QA/prod deployment path
-9. Metabase
+1. scripts source extraction and raw loading
+2. dbt transformations and tests
+3. scripts and dbt runtime images
+4. Airflow orchestration
+5. CI for implemented components
+6. QA and prod deployment paths
+7. analytics service integration
 
 ## Environments
 
@@ -61,32 +51,39 @@ The platform promotes changes through:
 dev -> QA -> prod
 ```
 
-Environment-specific secrets and `.env` files are not committed. Local dev uses
-component `.env.example` files and local image tags. Deployed QA/prod should use
-external environment files, immutable registry image tags, and no runtime
-source-code bind mounts.
+Environment-specific secrets and `.env` files are not committed. A development
+workstation defaults to `$HOME/dev/secrets/data-platform/.env`; the path remains
+configurable through `DATA_PLATFORM_SECRETS_DIR` or
+`DATA_PLATFORM_ENV_FILE`. QA and prod configuration belongs on the matching
+deployment platform or authorized administration host, not on a development
+workstation. Local dev uses keyless Application Default Credentials and local
+image tags. Deployed QA/prod should use immutable registry image tags, workload
+credentials supplied by the runtime, and no runtime source-code bind mounts.
 
-## Onboarding Path
+## Setup Path
 
-Use this as the ordered entrypoint for a new data engineer. Keep detailed
-commands in component docs and link to them from here instead of turning the
-root README into a long runbook.
+Use this as the ordered entrypoint. Detailed commands remain in component and
+deployment docs so the root README stays focused on repository-wide contracts.
 
 1. Read this README to understand repository boundaries, environment promotion,
    and production-scale assumptions.
-2. Set up local developer tools as each component needs them; component READMEs
-   own exact commands, prerequisites, and validation steps.
-3. Follow component READMEs for local setup, cloud credential requirements, and
-   source access as each component is introduced.
-4. Do not run live source extraction or other cloud-connected commands until the
-   matching dev environment, service account credentials, and source access are
-   explicitly documented and created.
-5. As dbt, Airflow, Metabase, CI/CD, and deploy docs are added, follow them in
-   this order: local component validation first, then QA deployment validation,
-   then prod deployment.
+2. Install the required workstation tools from their official documentation:
+   [Git](https://git-scm.com/downloads),
+   [GitHub CLI](https://cli.github.com/),
+   [Google Cloud CLI](https://cloud.google.com/sdk/docs/install),
+   [uv](https://docs.astral.sh/uv/getting-started/installation/), and
+   [Docker](https://docs.docker.com/engine/install/).
+3. Follow `deploy/README.md` to authenticate the CLIs. Platform administrators
+   create shared projects; each developer configures an isolated workspace
+   inside dev.
+4. Follow component READMEs for local setup and validation. Source-specific
+   access and commands remain in the matching pipeline documentation.
+5. Validate changes against dev first, then QA, then prod. Do not run
+   cloud-connected commands until the matching documented prerequisites are
+   complete.
 
-When onboarding grows beyond this outline, add a committed public docs entrypoint
-and keep this section as the short index.
+As setup coverage grows beyond this outline, add a committed public docs
+entrypoint and keep this section as the short index.
 
 ## Images
 

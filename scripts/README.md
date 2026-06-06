@@ -26,7 +26,7 @@ warehouse tables fit in local memory. Prefer chunked reads, durable staged files
 warehouse-side comparisons, and idempotent run identifiers.
 
 Runtime configuration should come from environment variables or an environment
-file used only for local development. Do not commit real `.env` files,
+file stored outside the repository. Do not commit `.env` files,
 credentials, source exports, or warehouse data.
 
 ## Local Setup
@@ -36,22 +36,28 @@ Run scripts component commands from the `scripts/` directory:
 ```bash
 cd scripts
 uv sync
-cp .env.example .env
+
+export DATA_PLATFORM_SECRETS_DIR="${DATA_PLATFORM_SECRETS_DIR:-$HOME/dev/secrets/data-platform}"
+export DATA_PLATFORM_ENV_FILE="${DATA_PLATFORM_ENV_FILE:-$DATA_PLATFORM_SECRETS_DIR/.env}"
 ```
 
 Use Python 3.12 for this component. Keep dependencies component-local so scripts,
 dbt, and Airflow can evolve independently.
 
-The local `.env` file is only for developer convenience. Runtime environments
-receive configuration through environment variables or the deployment platform's
-secret manager.
+`deploy/README.md` documents how the external dev environment file and keyless
+Application Default Credentials are created. The shown path is the repository
+default, not a code requirement; another external path can be selected before
+running commands by setting `DATA_PLATFORM_SECRETS_DIR` or
+`DATA_PLATFORM_ENV_FILE`. Pipeline documentation defines the source-specific
+values placed in that file. Deployed runtimes receive configuration and workload
+credentials from the deployment platform.
 
 ## Validation
 
 Run formatting, linting, and tests from `scripts/` as those checks are added:
 
 ```bash
-uv run python validate_config.py
+uv run python validate_config.py --env-file "$DATA_PLATFORM_ENV_FILE"
 uv run ruff check .
 uv run pytest
 ```
@@ -77,8 +83,8 @@ retries, and task dependencies; this component owns source interaction, staging,
 warehouse load behavior, and source-specific validation.
 
 Add dependencies only when a pipeline needs them. Helper functions are useful
-when they represent a meaningful workflow step or remove real repetition. Small
-one-line wrappers around library calls are usually unnecessary.
+when they represent a meaningful workflow step or remove repeated complexity.
+Small one-line wrappers around library calls are usually unnecessary.
 
 ## Pipeline Docs
 
@@ -87,5 +93,3 @@ implementation. A single pipeline note can live at `pipelines/<source>.md`; use
 `pipelines/<source>/` only when that pipeline needs multiple docs or supporting
 non-runtime files. The importable runtime source tree should not become the home
 for operational notes.
-
-- `pipelines/personal_finance.md`
