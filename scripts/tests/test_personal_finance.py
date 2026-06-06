@@ -10,11 +10,14 @@ import personal_finance  # noqa: E402
 
 
 def set_required_env(monkeypatch, chunk_size="250"):
+    monkeypatch.setenv("PROJECT_ID", "kevinesg-dev")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/service-account.json")
     monkeypatch.setenv(
         "PERSONAL_FINANCE_GSHEET_URL",
         "https://docs.google.com/spreadsheets/d/example/edit",
     )
+    monkeypatch.setenv("PERSONAL_FINANCE_GCS_BUCKET", "landing-bucket")
+    monkeypatch.setenv("PERSONAL_FINANCE_GCS_PREFIX", "personal_finance/")
     monkeypatch.setenv("PERSONAL_FINANCE_CHUNK_SIZE", chunk_size)
 
 
@@ -24,7 +27,7 @@ def test_source_entities_define_expected_google_sheet_contract():
     assert list(entities) == ["transactions", "paid_for_others", "transfers", "accounts"]
     assert entities["transactions"].sheet_name == "transactions"
     assert entities["paid_for_others"].raw_table == "personal_finance__paid_for_others"
-    assert entities["transfers"].schema_path.name == "personal_finance__transfers.json"
+    assert entities["transfers"].gcs_prefix == "transfers"
     assert entities["accounts"].schema_path.name == "personal_finance__accounts.json"
 
 
@@ -88,22 +91,43 @@ def test_coerce_record_adds_row_context_to_errors():
         personal_finance.coerce_record(record, schema_fields, source_row_number=7)
 
 
-def test_load_extract_config_reads_required_environment(monkeypatch):
+def test_load_config_reads_required_environment(monkeypatch):
     set_required_env(monkeypatch)
 
-    config = personal_finance.load_extract_config()
+    config = personal_finance.load_config()
 
+    assert config["project_id"] == "kevinesg-dev"
     assert config["credentials"] == "/tmp/service-account.json"
     assert config["gsheet_url"].startswith("https://docs.google.com/")
+    assert config["bucket_name"] == "landing-bucket"
+    assert config["prefix"] == "personal_finance"
     assert config["chunk_size"] == 250
 
 
+def test_entity_gcs_prefix_appends_entity_path(monkeypatch):
+    set_required_env(monkeypatch)
+    config = personal_finance.load_config()
+
+    assert (
+        personal_finance.entity_gcs_prefix(config, personal_finance.SOURCE_ENTITIES[1])
+        == "personal_finance/paid_for_others"
+    )
+
+
 @pytest.mark.parametrize("chunk_size", ["0", "-1", "not-an-int"])
-def test_load_extract_config_rejects_invalid_chunk_size(monkeypatch, chunk_size):
+def test_load_config_rejects_invalid_chunk_size(monkeypatch, chunk_size):
     set_required_env(monkeypatch, chunk_size=chunk_size)
 
     with pytest.raises(ValueError, match="PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer"):
-        personal_finance.load_extract_config()
+        personal_finance.load_config()
+
+
+def test_load_config_rejects_empty_prefix(monkeypatch):
+    set_required_env(monkeypatch)
+    monkeypatch.setenv("PERSONAL_FINANCE_GCS_PREFIX", "/")
+
+    with pytest.raises(ValueError, match="PERSONAL_FINANCE_GCS_PREFIX must not be empty"):
+        personal_finance.load_config()
 
 
 class FakeWorksheet:
@@ -124,7 +148,27 @@ class FakeWorksheet:
         return self.rows[start_row - 2 : end_row - 1]
 
 
-def test_extract_sheet_chunks_to_local_writes_jsonl_chunks(tmp_path):
+class FakeUploadedBlob:
+    def __init__(self, bucket, name):
+        self.bucket = bucket
+        self.name = name
+
+    def upload_from_string(self, body, content_type=None):
+        self.bucket.uploads[self.name] = {
+            "body": body,
+            "content_type": content_type,
+        }
+
+
+class FakeBucket:
+    def __init__(self):
+        self.uploads = {}
+
+    def blob(self, name):
+        return FakeUploadedBlob(self, name)
+
+
+def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
     worksheet = FakeWorksheet(
         headers=["id", "amount", "is_active"],
         rows=[
@@ -138,10 +182,14 @@ def test_extract_sheet_chunks_to_local_writes_jsonl_chunks(tmp_path):
         {"name": "amount", "type": "FLOAT", "mode": "NULLABLE"},
         {"name": "is_active", "type": "BOOLEAN", "mode": "REQUIRED"},
     ]
+    bucket = FakeBucket()
 
-    source_rows, extracted_rows, chunk_count = personal_finance.extract_sheet_chunks_to_local(
+    source_rows, extracted_rows, chunk_count = personal_finance.extract_sheet_chunks_to_gcs(
         worksheet=worksheet,
-        output_dir=tmp_path,
+        bucket=bucket,
+        bucket_name="landing-bucket",
+        prefix="personal_finance/transactions",
+        run_id="run-1",
         chunk_size=1,
         source_schema_fields=fields,
         extracted_at="2026-06-06T00:00:00Z",
@@ -150,8 +198,22 @@ def test_extract_sheet_chunks_to_local_writes_jsonl_chunks(tmp_path):
     assert source_rows == 2
     assert extracted_rows == 2
     assert chunk_count == 2
-    first_chunk = (tmp_path / "chunk-000001.jsonl").read_text(encoding="utf-8").splitlines()
-    second_chunk = (tmp_path / "chunk-000002.jsonl").read_text(encoding="utf-8").splitlines()
+    assert list(bucket.uploads) == [
+        "personal_finance/transactions/run-1/extract/chunk-000001.jsonl",
+        "personal_finance/transactions/run-1/extract/chunk-000002.jsonl",
+    ]
+    assert (
+        bucket.uploads["personal_finance/transactions/run-1/extract/chunk-000001.jsonl"][
+            "content_type"
+        ]
+        == "application/x-ndjson"
+    )
+    first_chunk = bucket.uploads[
+        "personal_finance/transactions/run-1/extract/chunk-000001.jsonl"
+    ]["body"].splitlines()
+    second_chunk = bucket.uploads[
+        "personal_finance/transactions/run-1/extract/chunk-000002.jsonl"
+    ]["body"].splitlines()
     assert json.loads(first_chunk[0]) == {
         "id": "row-1",
         "amount": 10.5,
@@ -166,7 +228,7 @@ def test_extract_sheet_chunks_to_local_writes_jsonl_chunks(tmp_path):
     }
 
 
-def test_extract_sheet_chunks_to_local_requires_schema_headers(tmp_path):
+def test_extract_sheet_chunks_to_gcs_requires_schema_headers():
     worksheet = FakeWorksheet(headers=["id"], rows=[["row-1"]])
     fields = [
         {"name": "id", "type": "STRING", "mode": "REQUIRED"},
@@ -174,9 +236,12 @@ def test_extract_sheet_chunks_to_local_requires_schema_headers(tmp_path):
     ]
 
     with pytest.raises(ValueError, match="missing source columns: amount"):
-        personal_finance.extract_sheet_chunks_to_local(
+        personal_finance.extract_sheet_chunks_to_gcs(
             worksheet=worksheet,
-            output_dir=tmp_path,
+            bucket=FakeBucket(),
+            bucket_name="landing-bucket",
+            prefix="personal_finance/transactions",
+            run_id="run-1",
             chunk_size=100,
             source_schema_fields=fields,
             extracted_at="2026-06-06T00:00:00Z",

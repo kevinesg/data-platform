@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Extract/load commands for the data platform"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "google-cloud-storage>=2.19.0",
     "gspread>=6.1.0",
     "python-dotenv>=1.0.1",
 ]

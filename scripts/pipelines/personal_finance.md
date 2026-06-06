@@ -20,6 +20,7 @@ Live extraction requires dev source access first:
 - a dev GCP project with a scripts service account.
 - a service-account JSON key stored outside the repository.
 - the source Google Sheet shared with that service account.
+- a GCS landing bucket with write access for the scripts service account.
 - `scripts/.env` populated from `scripts/.env.example`.
 
 Until those prerequisites exist, validate this code path with unit tests and
@@ -33,8 +34,9 @@ uv run python src/personal_finance.py --run-id "$RUN_ID"
 ```
 
 The command reads the configured Google Sheet in chunks, filters and coerces
-fields through `schemas/personal_finance__*.json`, and writes local JSONL chunks
-under `scripts/.local/personal_finance/`.
+fields through `schemas/personal_finance__*.json`, and writes run-scoped JSONL
+chunks to GCS under
+`gs://$PERSONAL_FINANCE_GCS_BUCKET/$PERSONAL_FINANCE_GCS_PREFIX/<entity>/$RUN_ID/extract/`.
 
 To extract one entity while debugging:
 
@@ -42,5 +44,5 @@ To extract one entity while debugging:
 uv run python src/personal_finance.py --entity transactions --run-id "$RUN_ID"
 ```
 
-Local JSONL output is a development checkpoint. Later load steps should stage
-extracts in durable object storage before applying warehouse changes.
+The raw load step will read these durable staged files instead of re-reading the
+source.
