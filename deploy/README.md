@@ -234,6 +234,20 @@ such as `bigquerystorage.googleapis.com`, can appear in the enabled-service list
 This section is run once per developer by a platform maintainer. A team member
 does not grant their own project IAM or create shared cloud resources.
 
+Run this section from the bootstrap gcloud configuration, not from a developer
+configuration that impersonates a component service account. If a command prints
+`This command is using service account impersonation`, stop and fix the active
+configuration before continuing.
+
+```bash
+export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
+
+gcloud config configurations activate "$PLATFORM_BOOTSTRAP_CONFIGURATION"
+gcloud config unset auth/impersonate_service_account
+gcloud config set project "$PROJECT_ID"
+gcloud config list
+```
+
 `DEVELOPER_ID` is a stable lowercase identifier containing 3-8 letters or
 digits. The eight-character limit keeps the descriptive service-account ID
 within Google Cloud's 30-character limit.
