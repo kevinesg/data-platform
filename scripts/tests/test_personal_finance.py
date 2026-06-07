@@ -24,26 +24,34 @@ def set_required_env(monkeypatch, chunk_size="250"):
     monkeypatch.setenv("PERSONAL_FINANCE_CHUNK_SIZE", chunk_size)
 
 
-def test_source_entities_define_expected_google_sheet_contract():
-    entities = {entity.name: entity for entity in personal_finance.SOURCE_ENTITIES}
+def test_tables_define_expected_google_sheet_contract():
+    assert personal_finance.TABLES == (
+        "transactions",
+        "paid_for_others",
+        "transfers",
+        "accounts",
+    )
+    assert [
+        path.relative_to(personal_finance.SCHEMA_DIR).as_posix()
+        for path in sorted(personal_finance.SCHEMA_DIR.glob("*.json"))
+    ] == [
+        "accounts.json",
+        "paid_for_others.json",
+        "transactions.json",
+        "transfers.json",
+    ]
 
-    assert list(entities) == ["transactions", "paid_for_others", "transfers", "accounts"]
-    assert entities["transactions"].sheet_name == "transactions"
-    assert entities["paid_for_others"].raw_table == "personal_finance__paid_for_others"
-    assert entities["transfers"].gcs_prefix == "transfers"
-    assert entities["accounts"].schema_path.name == "personal_finance__accounts.json"
 
+def test_select_tables_can_limit_work_to_one_source_entity():
+    selected = personal_finance.select_tables("transfers")
 
-def test_select_entities_can_limit_work_to_one_source_entity():
-    selected = personal_finance.select_entities("transfers")
-
-    assert [entity.name for entity in selected] == ["transfers"]
+    assert selected == ("transfers",)
 
 
 def test_source_schemas_reflect_current_sheet_columns():
     schemas = {
-        entity.name: json.loads(entity.schema_path.read_text(encoding="utf-8"))
-        for entity in personal_finance.SOURCE_ENTITIES
+        table: json.loads((personal_finance.SCHEMA_DIR / f"{table}.json").read_text())
+        for table in personal_finance.TABLES
     }
     source_columns = {
         name: [field["name"] for field in schema["fields"] if field.get("source_field")]
@@ -61,39 +69,6 @@ def test_source_schemas_reflect_current_sheet_columns():
     assert transfer_fields["destination_amount"]["mode"] == "NULLABLE"
 
 
-def test_coerce_value_converts_supported_types():
-    assert personal_finance.coerce_value("123", "INTEGER", "REQUIRED") == 123
-    assert personal_finance.coerce_value("10.5", "FLOAT", "REQUIRED") == 10.5
-    assert personal_finance.coerce_value("true", "BOOLEAN", "REQUIRED") is True
-    assert personal_finance.coerce_value("0", "BOOLEAN", "REQUIRED") is False
-    assert personal_finance.coerce_value("abc", "STRING", "REQUIRED") == "abc"
-    assert personal_finance.coerce_value("", "FLOAT", "NULLABLE") is None
-
-
-@pytest.mark.parametrize(
-    ("value", "field_type", "mode", "message"),
-    [
-        ("", "STRING", "REQUIRED", "required value is empty"),
-        ("not-a-number", "INTEGER", "REQUIRED", "invalid literal"),
-        ("maybe", "BOOLEAN", "REQUIRED", "expected boolean"),
-    ],
-)
-def test_coerce_value_reports_invalid_values(value, field_type, mode, message):
-    with pytest.raises(ValueError, match=message):
-        personal_finance.coerce_value(value, field_type, mode)
-
-
-def test_coerce_record_adds_row_context_to_errors():
-    schema_fields = [
-        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
-        {"name": "cost", "type": "FLOAT", "mode": "REQUIRED"},
-    ]
-    record = {"id": "txn-1", "cost": "not-a-float"}
-
-    with pytest.raises(ValueError, match="row 7 invalid cost"):
-        personal_finance.coerce_record(record, schema_fields, source_row_number=7)
-
-
 def test_load_config_reads_required_environment(monkeypatch):
     set_required_env(monkeypatch)
 
@@ -105,16 +80,6 @@ def test_load_config_reads_required_environment(monkeypatch):
     assert config["bucket_name"] == "kevinesg-dev-data-platform-landing-kevinesg"
     assert config["prefix"] == "personal_finance"
     assert config["chunk_size"] == 250
-
-
-def test_entity_gcs_prefix_appends_entity_path(monkeypatch):
-    set_required_env(monkeypatch)
-    config = personal_finance.load_config()
-
-    assert (
-        personal_finance.entity_gcs_prefix(config, personal_finance.SOURCE_ENTITIES[1])
-        == "personal_finance/paid_for_others"
-    )
 
 
 @pytest.mark.parametrize("chunk_size", ["0", "-1", "not-an-int"])
@@ -156,19 +121,27 @@ class FakeUploadedBlob:
         self.bucket = bucket
         self.name = name
 
-    def upload_from_string(self, body, content_type=None):
+    def upload_from_string(self, body, content_type=None, **kwargs):
         self.bucket.uploads[self.name] = {
             "body": body,
             "content_type": content_type,
+            **kwargs,
         }
+
+    def exists(self):
+        return self.name in self.bucket.uploads
 
 
 class FakeBucket:
     def __init__(self):
+        self.name = "landing-bucket"
         self.uploads = {}
 
     def blob(self, name):
         return FakeUploadedBlob(self, name)
+
+    def list_blobs(self, prefix):
+        return [FakeUploadedBlob(self, name) for name in self.uploads if name.startswith(prefix)]
 
 
 def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
@@ -187,7 +160,7 @@ def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
     ]
     bucket = FakeBucket()
 
-    source_rows, extracted_rows, chunk_count = personal_finance.extract_sheet_chunks_to_gcs(
+    result = personal_finance.extract_sheet_chunks_to_gcs(
         worksheet=worksheet,
         bucket=bucket,
         bucket_name="landing-bucket",
@@ -198,12 +171,18 @@ def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
         extracted_at="2026-06-06T00:00:00Z",
     )
 
-    assert source_rows == 2
-    assert extracted_rows == 2
-    assert chunk_count == 2
+    assert result == {
+        "source_rows": 2,
+        "extracted_rows": 2,
+        "source_id_rows": 2,
+        "extract_chunk_count": 2,
+        "source_id_chunk_count": 2,
+    }
     assert list(bucket.uploads) == [
         "personal_finance/transactions/run-1/extract/chunk-000001.jsonl",
+        "personal_finance/transactions/run-1/source_ids/chunk-000001.jsonl",
         "personal_finance/transactions/run-1/extract/chunk-000002.jsonl",
+        "personal_finance/transactions/run-1/source_ids/chunk-000002.jsonl",
     ]
     assert (
         bucket.uploads["personal_finance/transactions/run-1/extract/chunk-000001.jsonl"][
@@ -229,6 +208,10 @@ def test_extract_sheet_chunks_to_gcs_uploads_jsonl_chunks():
         "is_active": False,
         "_extracted_at": "2026-06-06T00:00:00Z",
     }
+    first_source_id_chunk = bucket.uploads[
+        "personal_finance/transactions/run-1/source_ids/chunk-000001.jsonl"
+    ]["body"].splitlines()
+    assert json.loads(first_source_id_chunk[0]) == {"id": "row-1"}
 
 
 def test_extract_sheet_chunks_to_gcs_requires_schema_headers():
@@ -249,3 +232,105 @@ def test_extract_sheet_chunks_to_gcs_requires_schema_headers():
             source_schema_fields=fields,
             extracted_at="2026-06-06T00:00:00Z",
         )
+
+
+def test_extract_sheet_chunks_to_gcs_reports_invalid_values_with_row_context():
+    worksheet = FakeWorksheet(headers=["id", "cost"], rows=[["row-1", "not-a-float"]])
+    fields = [
+        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "cost", "type": "FLOAT", "mode": "REQUIRED"},
+    ]
+
+    with pytest.raises(ValueError, match="row 2 invalid cost"):
+        personal_finance.extract_sheet_chunks_to_gcs(
+            worksheet=worksheet,
+            bucket=FakeBucket(),
+            bucket_name="landing-bucket",
+            prefix="personal_finance/transactions",
+            run_id="run-1",
+            chunk_size=100,
+            source_schema_fields=fields,
+            extracted_at="2026-06-06T00:00:00Z",
+        )
+
+
+def test_list_jsonl_uris_uses_only_objects_under_the_requested_prefix():
+    bucket = FakeBucket()
+    bucket.blob("personal_finance/accounts/run-1/source_ids/chunk-000002.jsonl").upload_from_string(
+        ""
+    )
+    bucket.blob("personal_finance/accounts/run-1/source_ids/chunk-000001.jsonl").upload_from_string(
+        ""
+    )
+    bucket.blob("personal_finance/accounts/run-1/_SUCCESS").upload_from_string("")
+
+    uris = personal_finance.list_jsonl_uris(
+        bucket,
+        "landing-bucket",
+        "personal_finance/accounts/run-1/source_ids/",
+    )
+
+    assert uris == [
+        "gs://landing-bucket/personal_finance/accounts/run-1/source_ids/chunk-000001.jsonl",
+        "gs://landing-bucket/personal_finance/accounts/run-1/source_ids/chunk-000002.jsonl",
+    ]
+
+
+class FakeQueryJob:
+    def result(self):
+        return None
+
+
+class FakeQueryClient:
+    def __init__(self):
+        self.query_text = None
+
+    def query(self, query_text):
+        self.query_text = query_text
+        return FakeQueryJob()
+
+
+def test_raw_table_transaction_upserts_and_marks_missing_source_ids_deleted():
+    client = FakeQueryClient()
+
+    personal_finance.apply_raw_table_transaction(
+        client,
+        "project.raw.personal_finance__accounts",
+        "project.raw.personal_finance__accounts__extract_run_1",
+        "project.raw.personal_finance__accounts__source_ids_run_1",
+        [
+            {"name": "id"},
+            {"name": "name"},
+        ],
+        full_refresh=False,
+    )
+
+    query = client.query_text
+    assert "BEGIN TRANSACTION;" in query
+    assert "MERGE `project.raw.personal_finance__accounts`" in query
+    assert "source snapshot contains duplicate ids" in query
+    assert "SET target.`_is_deleted` = TRUE" in query
+    assert "NOT EXISTS" in query
+    assert "COMMIT TRANSACTION;" in query
+
+
+def test_raw_table_transaction_can_full_refresh_from_extract_stage():
+    client = FakeQueryClient()
+
+    personal_finance.apply_raw_table_transaction(
+        client,
+        "project.raw.personal_finance__accounts",
+        "project.raw.personal_finance__accounts__extract_run_1",
+        "project.raw.personal_finance__accounts__source_ids_run_1",
+        [
+            {"name": "id"},
+            {"name": "name"},
+        ],
+        full_refresh=True,
+    )
+
+    query = client.query_text
+    assert "DELETE FROM `project.raw.personal_finance__accounts` WHERE TRUE" in query
+    assert "INSERT INTO `project.raw.personal_finance__accounts`" in query
+    assert "MERGE `project.raw.personal_finance__accounts`" not in query
+    assert "SET target.`_is_deleted` = TRUE" not in query

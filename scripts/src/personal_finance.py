@@ -5,7 +5,6 @@ import datetime as dt
 import json
 import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,61 +16,27 @@ from google.cloud import bigquery, storage
 from gspread.utils import ValueRenderOption, rowcol_to_a1
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent
-SCHEMA_DIR = SCRIPTS_DIR / "schemas"
+SCHEMA_DIR = SCRIPTS_DIR / "schemas" / "personal_finance"
 PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
 GOOGLE_API_SCOPES = (
     "https://www.googleapis.com/auth/cloud-platform",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
 )
-
-
-@dataclass(frozen=True)
-class SourceEntity:
-    name: str
-    sheet_name: str
-    raw_table: str
-    schema_path: Path
-    gcs_prefix: str
-
-
-SOURCE_ENTITIES = (
-    SourceEntity(
-        name="transactions",
-        sheet_name="transactions",
-        raw_table="personal_finance__transactions",
-        schema_path=SCHEMA_DIR / "personal_finance__transactions.json",
-        gcs_prefix="transactions",
-    ),
-    SourceEntity(
-        name="paid_for_others",
-        sheet_name="paid_for_others",
-        raw_table="personal_finance__paid_for_others",
-        schema_path=SCHEMA_DIR / "personal_finance__paid_for_others.json",
-        gcs_prefix="paid_for_others",
-    ),
-    SourceEntity(
-        name="transfers",
-        sheet_name="transfers",
-        raw_table="personal_finance__transfers",
-        schema_path=SCHEMA_DIR / "personal_finance__transfers.json",
-        gcs_prefix="transfers",
-    ),
-    SourceEntity(
-        name="accounts",
-        sheet_name="accounts",
-        raw_table="personal_finance__accounts",
-        schema_path=SCHEMA_DIR / "personal_finance__accounts.json",
-        gcs_prefix="accounts",
-    ),
-)
+EXTRACTION_SUCCESS_MARKER = "_SUCCESS"
+TABLES = ("transactions", "paid_for_others", "transfers", "accounts")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run personal_finance extract/load steps.")
     parser.add_argument("--step", required=True, choices=["extract", "load"])
-    parser.add_argument("--entity", choices=[entity.name for entity in SOURCE_ENTITIES])
+    parser.add_argument("--entity", choices=TABLES)
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--full-refresh",
+        action="store_true",
+        help="replace the raw table from the staged run instead of applying an incremental merge",
+    )
     parser.add_argument(
         "--env-file",
         type=Path,
@@ -93,7 +58,7 @@ def main() -> int:
         else:
             if not args.run_id:
                 raise ValueError("--run-id is required for load")
-            load(run_id=args.run_id, entity_name=args.entity)
+            load(run_id=args.run_id, entity_name=args.entity, full_refresh=args.full_refresh)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -110,13 +75,29 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
     spreadsheet = gspread.authorize(credentials).open_by_url(config["gsheet_url"])
 
     print(f"run_id={run_id}")
-    for entity in select_entities(entity_name):
-        schema = load_entity_schema(entity)
+    for table in select_tables(entity_name):
+        schema = json.loads((SCHEMA_DIR / f"{table}.json").read_text(encoding="utf-8"))
         source_fields = source_schema_fields(schema)
-        worksheet = spreadsheet.worksheet(entity.sheet_name)
-        prefix = entity_gcs_prefix(config, entity)
+        worksheet = spreadsheet.worksheet(table)
+        raw_table = f"personal_finance__{table}"
+        prefix = f"{config['prefix']}/{table}"
+        run_prefix = f"{prefix}/{run_id}/"
+        success_marker_blob_name = f"{run_prefix}{EXTRACTION_SUCCESS_MARKER}"
 
-        source_rows, extracted_rows, chunk_count = extract_sheet_chunks_to_gcs(
+        if bucket.blob(success_marker_blob_name).exists():
+            print(f"entity={table}")
+            print(
+                f"skipped_completed_extract=true marker=gs://{config['bucket_name']}/"
+                f"{success_marker_blob_name}"
+            )
+            continue
+        if next(iter(bucket.list_blobs(prefix=run_prefix)), None) is not None:
+            raise ValueError(
+                f"incomplete extraction objects already exist under "
+                f"gs://{config['bucket_name']}/{run_prefix}; use a new run ID"
+            )
+
+        counts = extract_sheet_chunks_to_gcs(
             worksheet=worksheet,
             bucket=bucket,
             bucket_name=config["bucket_name"],
@@ -126,16 +107,24 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
             source_schema_fields=source_fields,
             extracted_at=extracted_at,
         )
+        bucket.blob(success_marker_blob_name).upload_from_string(
+            "",
+            content_type="text/plain",
+            if_generation_match=0,
+        )
 
-        print(f"entity={entity.name}")
-        print(f"raw_table={entity.raw_table}")
-        print(f"source_rows={source_rows}")
-        print(f"extracted_rows={extracted_rows}")
-        print(f"chunk_count={chunk_count}")
+        print(f"entity={table}")
+        print(f"raw_table={raw_table}")
+        print(f"source_rows={counts['source_rows']}")
+        print(f"extracted_rows={counts['extracted_rows']}")
+        print(f"source_id_rows={counts['source_id_rows']}")
+        print(f"extract_chunk_count={counts['extract_chunk_count']}")
+        print(f"source_id_chunk_count={counts['source_id_chunk_count']}")
         print(f"gcs_prefix=gs://{config['bucket_name']}/{prefix}/{run_id}/extract/")
+        print(f"success_marker=gs://{config['bucket_name']}/{success_marker_blob_name}")
 
 
-def load(run_id: str, entity_name: str | None = None) -> None:
+def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False) -> None:
     config = load_config()
     credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
     bq_client = bigquery.Client(project=config["project_id"], credentials=credentials)
@@ -143,53 +132,90 @@ def load(run_id: str, entity_name: str | None = None) -> None:
     bucket = storage_client.bucket(config["bucket_name"])
 
     print(f"run_id={run_id}")
-    for entity in select_entities(entity_name):
-        schema = load_entity_schema(entity)
+    for table in select_tables(entity_name):
+        schema = json.loads((SCHEMA_DIR / f"{table}.json").read_text(encoding="utf-8"))
         source_fields = source_schema_fields(schema)
         extracted_at_field = next(
             field for field in schema["fields"] if field["name"] == "_extracted_at"
         )
-        prefix = entity_gcs_prefix(config, entity)
-        extract_uri = find_jsonl_uri(
+        prefix = f"{config['prefix']}/{table}"
+        success_marker_blob_name = f"{prefix}/{run_id}/{EXTRACTION_SUCCESS_MARKER}"
+        if not bucket.blob(success_marker_blob_name).exists():
+            raise ValueError(
+                f"completed extraction marker not found: "
+                f"gs://{config['bucket_name']}/{success_marker_blob_name}"
+            )
+        extract_uris = list_jsonl_uris(
             bucket,
             config["bucket_name"],
             f"{prefix}/{run_id}/extract/",
         )
-        table_id = f"{config['project_id']}.{config['dataset']}.{entity.raw_table}"
+        source_id_uris = list_jsonl_uris(
+            bucket,
+            config["bucket_name"],
+            f"{prefix}/{run_id}/source_ids/",
+        )
+        if not source_id_uris:
+            raise ValueError(
+                f"no source id files found under "
+                f"gs://{config['bucket_name']}/{prefix}/{run_id}/source_ids/"
+            )
+        if not extract_uris:
+            raise ValueError(
+                f"no extract files found under "
+                f"gs://{config['bucket_name']}/{prefix}/{run_id}/extract/"
+            )
+        table_id = f"{config['project_id']}.{config['dataset']}.personal_finance__{table}"
         ensure_raw_table(bq_client, table_id, schema["fields"])
 
-        if extract_uri is None:
-            print(f"entity={entity.name}")
-            print("loaded_rows=0")
-            print(f"skipped_no_extract_files=true table={table_id}")
-            continue
-
-        staging_table_id = f"{table_id}__load_{safe_identifier(run_id)}"
+        safe_run_id = "".join(character if character.isalnum() else "_" for character in run_id)
+        safe_run_id = safe_run_id.strip("_") or "run"
+        extract_staging_table_id = f"{table_id}__extract_{safe_run_id}"
+        source_ids_staging_table_id = f"{table_id}__source_ids_{safe_run_id}"
+        bq_client.delete_table(extract_staging_table_id, not_found_ok=True)
+        bq_client.delete_table(source_ids_staging_table_id, not_found_ok=True)
         try:
             loaded_rows = load_extract_files_to_staging(
                 bq_client,
-                extract_uri,
-                staging_table_id,
+                extract_uris,
+                extract_staging_table_id,
                 [*source_fields, extracted_at_field],
             )
-            apply_raw_table_upsert(
+            source_id_rows = load_source_ids_to_staging(
+                bq_client,
+                source_id_uris,
+                source_ids_staging_table_id,
+            )
+            apply_raw_table_transaction(
                 bq_client,
                 table_id,
-                staging_table_id,
+                extract_staging_table_id,
+                source_ids_staging_table_id,
                 source_fields,
+                full_refresh,
             )
 
-            print(f"entity={entity.name}")
+            print(f"entity={table}")
             print(f"loaded_rows={loaded_rows}")
+            print(f"source_id_rows={source_id_rows}")
+            print(f"full_refresh={str(full_refresh).lower()}")
             print(f"applied_table={table_id}")
         finally:
-            bq_client.delete_table(staging_table_id, not_found_ok=True)
+            bq_client.delete_table(extract_staging_table_id, not_found_ok=True)
+            bq_client.delete_table(source_ids_staging_table_id, not_found_ok=True)
 
 
 def load_config() -> dict[str, Any]:
     prefix = env("PERSONAL_FINANCE_GCS_PREFIX").strip("/")
     if not prefix:
         raise ValueError("PERSONAL_FINANCE_GCS_PREFIX must not be empty")
+    chunk_size_value = env("PERSONAL_FINANCE_CHUNK_SIZE")
+    try:
+        chunk_size = int(chunk_size_value)
+    except ValueError as exc:
+        raise ValueError("PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer") from exc
+    if chunk_size <= 0:
+        raise ValueError("PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer")
 
     return {
         "project_id": env("PROJECT_ID"),
@@ -197,7 +223,7 @@ def load_config() -> dict[str, Any]:
         "gsheet_url": env("PERSONAL_FINANCE_GSHEET_URL"),
         "bucket_name": env("PERSONAL_FINANCE_GCS_BUCKET"),
         "prefix": prefix,
-        "chunk_size": positive_int_env("PERSONAL_FINANCE_CHUNK_SIZE"),
+        "chunk_size": chunk_size,
     }
 
 
@@ -220,22 +246,14 @@ def load_environment(env_file: Path) -> None:
     load_dotenv(env_file, override=False)
 
 
-def load_entity_schema(entity: SourceEntity) -> dict[str, Any]:
-    return json.loads(entity.schema_path.read_text(encoding="utf-8"))
-
-
 def source_schema_fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
     return [field for field in schema["fields"] if field.get("source_field")]
 
 
-def entity_gcs_prefix(config: dict[str, Any], entity: SourceEntity) -> str:
-    return f"{config['prefix']}/{entity.gcs_prefix}"
-
-
-def select_entities(entity_name: str | None = None) -> tuple[SourceEntity, ...]:
+def select_tables(entity_name: str | None = None) -> tuple[str, ...]:
     if entity_name is None:
-        return SOURCE_ENTITIES
-    return tuple(entity for entity in SOURCE_ENTITIES if entity.name == entity_name)
+        return TABLES
+    return (entity_name,)
 
 
 def extract_sheet_chunks_to_gcs(
@@ -247,7 +265,7 @@ def extract_sheet_chunks_to_gcs(
     chunk_size: int,
     source_schema_fields: list[dict[str, Any]],
     extracted_at: str,
-) -> tuple[int, int, int]:
+) -> dict[str, int]:
     source_fields = [str(field["name"]) for field in source_schema_fields]
     required_fields = [
         str(field["name"]) for field in source_schema_fields if field["mode"] == "REQUIRED"
@@ -261,7 +279,9 @@ def extract_sheet_chunks_to_gcs(
 
     source_rows = 0
     extracted_rows = 0
-    chunk_count = 0
+    source_id_rows = 0
+    extract_chunk_count = 0
+    source_id_chunk_count = 0
 
     for start_row in range(2, worksheet.row_count + 1, chunk_size):
         end_row = min(start_row + chunk_size - 1, worksheet.row_count)
@@ -273,6 +293,7 @@ def extract_sheet_chunks_to_gcs(
             break
 
         extract_chunk = []
+        source_id_chunk = []
         for offset, row in enumerate(rows):
             source_row_number = start_row + offset
             if not any(str(value).strip() for value in row):
@@ -291,25 +312,69 @@ def extract_sheet_chunks_to_gcs(
                     + ", ".join(missing_required_values)
                 )
 
-            output_row = coerce_record(record, source_schema_fields, source_row_number)
+            source_id_chunk.append({"id": record["id"]})
+            output_row = {}
+            for field in source_schema_fields:
+                name = str(field["name"])
+                value = record[name]
+                field_type = str(field["type"])
+                mode = str(field["mode"])
+                try:
+                    if value == "" and mode == "NULLABLE":
+                        output_row[name] = None
+                    elif value == "" and mode == "REQUIRED":
+                        raise ValueError("required value is empty")
+                    elif field_type == "INTEGER":
+                        output_row[name] = int(value)
+                    elif field_type == "FLOAT":
+                        output_row[name] = float(value)
+                    elif field_type == "BOOLEAN":
+                        normalized = value.lower()
+                        if normalized in {"true", "1"}:
+                            output_row[name] = True
+                        elif normalized in {"false", "0"}:
+                            output_row[name] = False
+                        else:
+                            raise ValueError("expected boolean")
+                    else:
+                        output_row[name] = value
+                except ValueError as exc:
+                    raise ValueError(f"row {source_row_number} invalid {name}: {exc}") from exc
             output_row["_extracted_at"] = extracted_at
             extract_chunk.append(output_row)
 
         if extract_chunk:
-            chunk_count += 1
-            blob_name = f"{prefix}/{run_id}/extract/chunk-{chunk_count:06d}.jsonl"
+            extract_chunk_count += 1
+            blob_name = f"{prefix}/{run_id}/extract/chunk-{extract_chunk_count:06d}.jsonl"
             upload_jsonl(bucket, blob_name, extract_chunk)
             extracted_rows += len(extract_chunk)
             print(f"wrote {len(extract_chunk)} rows to gs://{bucket_name}/{blob_name}")
 
-    return source_rows, extracted_rows, chunk_count
+        if source_id_chunk:
+            source_id_chunk_count += 1
+            blob_name = f"{prefix}/{run_id}/source_ids/chunk-{source_id_chunk_count:06d}.jsonl"
+            upload_jsonl(bucket, blob_name, source_id_chunk)
+            source_id_rows += len(source_id_chunk)
+
+    return {
+        "source_rows": source_rows,
+        "extracted_rows": extracted_rows,
+        "source_id_rows": source_id_rows,
+        "extract_chunk_count": extract_chunk_count,
+        "source_id_chunk_count": source_id_chunk_count,
+    }
 
 
-def find_jsonl_uri(bucket: storage.Bucket, bucket_name: str, prefix: str) -> str | None:
-    for blob in bucket.list_blobs(prefix=prefix):
-        if blob.name.endswith(".jsonl"):
-            return f"gs://{bucket_name}/{prefix}*.jsonl"
-    return None
+def list_jsonl_uris(
+    bucket: storage.Bucket,
+    bucket_name: str,
+    prefix: str,
+) -> list[str]:
+    return [
+        f"gs://{bucket_name}/{blob.name}"
+        for blob in sorted(bucket.list_blobs(prefix=prefix), key=lambda blob: blob.name)
+        if blob.name.endswith(".jsonl")
+    ]
 
 
 def ensure_raw_table(client: bigquery.Client, table_id: str, fields: list[dict[str, Any]]) -> None:
@@ -363,12 +428,12 @@ def ensure_raw_table(client: bigquery.Client, table_id: str, fields: list[dict[s
 
 def load_extract_files_to_staging(
     client: bigquery.Client,
-    extract_uri: str,
+    extract_uris: list[str],
     staging_table_id: str,
     fields: list[dict[str, Any]],
 ) -> int:
     load_job = client.load_table_from_uri(
-        extract_uri,
+        extract_uris,
         staging_table_id,
         job_config=bigquery.LoadJobConfig(
             schema=bigquery_schema(fields),
@@ -380,11 +445,31 @@ def load_extract_files_to_staging(
     return load_job.output_rows or 0
 
 
-def apply_raw_table_upsert(
+def load_source_ids_to_staging(
+    client: bigquery.Client,
+    source_id_uris: list[str],
+    staging_table_id: str,
+) -> int:
+    load_job = client.load_table_from_uri(
+        source_id_uris,
+        staging_table_id,
+        job_config=bigquery.LoadJobConfig(
+            schema=[bigquery.SchemaField("id", "STRING", mode="REQUIRED")],
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        ),
+    )
+    load_job.result()
+    return load_job.output_rows or 0
+
+
+def apply_raw_table_transaction(
     client: bigquery.Client,
     table_id: str,
-    staging_table_id: str,
+    extract_staging_table_id: str,
+    source_ids_staging_table_id: str,
     source_schema_fields: list[dict[str, Any]],
+    full_refresh: bool,
 ) -> None:
     source_columns = [str(field["name"]) for field in source_schema_fields]
     update_expressions = [f"target.`{column}` = source.`{column}`" for column in source_columns]
@@ -399,11 +484,18 @@ def apply_raw_table_upsert(
     insert_values = [f"source.`{column}`" for column in source_columns]
     insert_values.extend(["source.`_extracted_at`", "applied_at", "FALSE"])
 
-    query = f"""
-        DECLARE applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+    if full_refresh:
+        write_statement = f"""
+        DELETE FROM `{table_id}` WHERE TRUE;
 
+        INSERT INTO `{table_id}` ({", ".join(insert_columns)})
+        SELECT {", ".join(insert_values)}
+        FROM `{extract_staging_table_id}` AS source;
+        """
+    else:
+        write_statement = f"""
         MERGE `{table_id}` AS target
-        USING `{staging_table_id}` AS source
+        USING `{extract_staging_table_id}` AS source
         ON target.`id` = source.`id`
         WHEN MATCHED THEN
           UPDATE SET
@@ -411,6 +503,30 @@ def apply_raw_table_upsert(
         WHEN NOT MATCHED THEN
           INSERT ({", ".join(insert_columns)})
           VALUES ({", ".join(insert_values)});
+
+        UPDATE `{table_id}` AS target
+        SET target.`_is_deleted` = TRUE
+        WHERE NOT target.`_is_deleted`
+          AND NOT EXISTS (
+            SELECT 1
+            FROM `{source_ids_staging_table_id}` AS source_ids
+            WHERE source_ids.`id` = target.`id`
+          );
+        """
+
+    query = f"""
+        DECLARE applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+
+        ASSERT (
+          SELECT COUNT(*) = COUNT(DISTINCT `id`)
+          FROM `{source_ids_staging_table_id}`
+        ) AS 'source snapshot contains duplicate ids';
+
+        BEGIN TRANSACTION;
+
+        {write_statement}
+
+        COMMIT TRANSACTION;
     """
     client.query(query).result()
 
@@ -420,46 +536,6 @@ def bigquery_schema(fields: list[dict[str, Any]]) -> list[bigquery.SchemaField]:
         bigquery.SchemaField(str(field["name"]), str(field["type"]), mode=str(field["mode"]))
         for field in fields
     ]
-
-
-def safe_identifier(value: str) -> str:
-    safe_value = "".join(character if character.isalnum() else "_" for character in value)
-    return safe_value.strip("_") or "run"
-
-
-def coerce_record(
-    record: dict[str, str],
-    schema_fields: list[dict[str, Any]],
-    source_row_number: int,
-) -> dict[str, Any]:
-    coerced = {}
-    for field in schema_fields:
-        name = str(field["name"])
-        value = record[name]
-        try:
-            coerced[name] = coerce_value(value, str(field["type"]), str(field["mode"]))
-        except ValueError as exc:
-            raise ValueError(f"row {source_row_number} invalid {name}: {exc}") from exc
-    return coerced
-
-
-def coerce_value(value: str, field_type: str, mode: str) -> Any:
-    if value == "" and mode == "NULLABLE":
-        return None
-    if value == "" and mode == "REQUIRED":
-        raise ValueError("required value is empty")
-    if field_type == "INTEGER":
-        return int(value)
-    if field_type == "FLOAT":
-        return float(value)
-    if field_type == "BOOLEAN":
-        normalized = value.lower()
-        if normalized in {"true", "1"}:
-            return True
-        if normalized in {"false", "0"}:
-            return False
-        raise ValueError("expected boolean")
-    return value
 
 
 def upload_jsonl(bucket: storage.Bucket, blob_name: str, rows: list[dict[str, Any]]) -> None:
@@ -472,17 +548,6 @@ def env(name: str) -> str:
     if not value:
         raise ValueError(f"missing required environment variable: {name}")
     return value
-
-
-def positive_int_env(name: str) -> int:
-    value = env(name)
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a positive integer") from exc
-    if parsed <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return parsed
 
 
 if __name__ == "__main__":
