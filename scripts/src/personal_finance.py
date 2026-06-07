@@ -28,8 +28,8 @@ TABLES = ("transactions", "paid_for_others", "transfers", "accounts")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run personal_finance extract/load steps.")
-    parser.add_argument("--step", required=True, choices=["extract", "load"])
+    parser = argparse.ArgumentParser(description="Run personal_finance extract/load/cleanup steps.")
+    parser.add_argument("--step", required=True, choices=["extract", "load", "cleanup"])
     parser.add_argument("--entity", choices=TABLES)
     parser.add_argument("--run-id")
     parser.add_argument(
@@ -55,10 +55,12 @@ def main() -> int:
         if args.step == "extract":
             run_id = args.run_id or dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
             extract(run_id=run_id, entity_name=args.entity)
-        else:
+        elif args.step == "load":
             if not args.run_id:
                 raise ValueError("--run-id is required for load")
             load(run_id=args.run_id, entity_name=args.entity, full_refresh=args.full_refresh)
+        else:
+            cleanup(run_id=args.run_id, entity_name=args.entity)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -205,6 +207,32 @@ def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False
             bq_client.delete_table(source_ids_staging_table_id, not_found_ok=True)
 
 
+def cleanup(run_id: str | None = None, entity_name: str | None = None) -> None:
+    config = load_config()
+    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    storage_client = storage.Client(project=config["project_id"], credentials=credentials)
+    bucket = storage_client.bucket(config["bucket_name"])
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=config["retention_days"])
+    total_deleted_files = 0
+
+    print(f"run_id={run_id or '*'}")
+    print(f"retention_days={config['retention_days']}")
+    for table in select_tables(entity_name):
+        prefix = f"{config['prefix']}/{table}"
+        deleted_files, deleted_runs, skipped_recent_runs, skipped_incomplete_runs = (
+            cleanup_completed_run_files(bucket, prefix, cutoff, run_id)
+        )
+        total_deleted_files += deleted_files
+
+        print(f"entity={table}")
+        print(f"deleted_files={deleted_files}")
+        print(f"deleted_runs={deleted_runs}")
+        print(f"skipped_recent_runs={skipped_recent_runs}")
+        print(f"skipped_incomplete_runs={skipped_incomplete_runs}")
+
+    print(f"total_deleted_files={total_deleted_files}")
+
+
 def load_config() -> dict[str, Any]:
     prefix = env("PERSONAL_FINANCE_GCS_PREFIX").strip("/")
     if not prefix:
@@ -216,6 +244,15 @@ def load_config() -> dict[str, Any]:
         raise ValueError("PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer") from exc
     if chunk_size <= 0:
         raise ValueError("PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer")
+    retention_days_value = env("PERSONAL_FINANCE_JSONL_RETENTION_DAYS")
+    try:
+        retention_days = int(retention_days_value)
+    except ValueError as exc:
+        raise ValueError(
+            "PERSONAL_FINANCE_JSONL_RETENTION_DAYS must be a positive integer"
+        ) from exc
+    if retention_days <= 0:
+        raise ValueError("PERSONAL_FINANCE_JSONL_RETENTION_DAYS must be a positive integer")
 
     return {
         "project_id": env("PROJECT_ID"),
@@ -224,6 +261,7 @@ def load_config() -> dict[str, Any]:
         "bucket_name": env("PERSONAL_FINANCE_GCS_BUCKET"),
         "prefix": prefix,
         "chunk_size": chunk_size,
+        "retention_days": retention_days,
     }
 
 
@@ -375,6 +413,44 @@ def list_jsonl_uris(
         for blob in sorted(bucket.list_blobs(prefix=prefix), key=lambda blob: blob.name)
         if blob.name.endswith(".jsonl")
     ]
+
+
+def cleanup_completed_run_files(
+    bucket: storage.Bucket,
+    prefix: str,
+    cutoff: dt.datetime,
+    run_id: str | None = None,
+) -> tuple[int, int, int, int]:
+    list_prefix = f"{prefix}/{run_id}/" if run_id else f"{prefix}/"
+    blobs_by_run: dict[str, list[storage.Blob]] = {}
+
+    for blob in bucket.list_blobs(prefix=list_prefix):
+        relative_name = blob.name.removeprefix(f"{prefix}/")
+        blob_run_id = relative_name.split("/", 1)[0]
+        if blob_run_id:
+            blobs_by_run.setdefault(blob_run_id, []).append(blob)
+
+    deleted_files = 0
+    deleted_runs = 0
+    skipped_recent_runs = 0
+    skipped_incomplete_runs = 0
+
+    for blob_run_id, blobs in blobs_by_run.items():
+        marker_name = f"{prefix}/{blob_run_id}/{EXTRACTION_SUCCESS_MARKER}"
+        marker = next((blob for blob in blobs if blob.name == marker_name), None)
+        if marker is None or marker.time_created is None:
+            skipped_incomplete_runs += 1
+            continue
+        if marker.time_created >= cutoff:
+            skipped_recent_runs += 1
+            continue
+
+        for blob in blobs:
+            blob.delete()
+            deleted_files += 1
+        deleted_runs += 1
+
+    return deleted_files, deleted_runs, skipped_recent_runs, skipped_incomplete_runs
 
 
 def ensure_raw_table(client: bigquery.Client, table_id: str, fields: list[dict[str, Any]]) -> None:

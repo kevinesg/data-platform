@@ -296,6 +296,36 @@ changes. A future Airflow task can call the same CLI command and pass
 refresh as the default scheduled path unless the source volume and downstream
 runtime have been sized for it.
 
+## Cleanup Retention
+
+Cleanup removes completed staged runs after
+`PERSONAL_FINANCE_JSONL_RETENTION_DAYS`. It only deletes run prefixes that have
+an `_SUCCESS` marker older than the retention cutoff. Incomplete run prefixes
+are left in place for investigation.
+
+Clean up one known run:
+
+```bash
+uv run python src/personal_finance.py \
+  --env-file "$DATA_PLATFORM_ENV_FILE" \
+  --step cleanup \
+  --entity accounts \
+  --run-id "$RUN_ID"
+```
+
+Clean up all completed runs for all personal finance tables:
+
+```bash
+uv run python src/personal_finance.py \
+  --env-file "$DATA_PLATFORM_ENV_FILE" \
+  --step cleanup
+```
+
+For a fresh validation run, cleanup should report `deleted_files=0` and
+`skipped_recent_runs=1` for the selected entity. For an older completed run, it
+deletes the run's staged JSONL files and `_SUCCESS` marker. A cleaned run is no
+longer load-retryable; create a new extract run before loading again.
+
 ## Full Dev Validation
 
 After the single-entity checkpoint succeeds, run all four entities with one new

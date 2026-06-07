@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -9,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 import personal_finance  # noqa: E402
 
 
-def set_required_env(monkeypatch, chunk_size="250"):
+def set_required_env(monkeypatch, chunk_size="250", retention_days="7"):
     monkeypatch.setenv("PROJECT_ID", "kevinesg-dev")
     monkeypatch.setenv("RAW_DATASET", "raw_kevinesg")
     monkeypatch.setenv(
@@ -22,6 +23,7 @@ def set_required_env(monkeypatch, chunk_size="250"):
     )
     monkeypatch.setenv("PERSONAL_FINANCE_GCS_PREFIX", "personal_finance/")
     monkeypatch.setenv("PERSONAL_FINANCE_CHUNK_SIZE", chunk_size)
+    monkeypatch.setenv("PERSONAL_FINANCE_JSONL_RETENTION_DAYS", retention_days)
 
 
 def test_tables_define_expected_google_sheet_contract():
@@ -80,6 +82,7 @@ def test_load_config_reads_required_environment(monkeypatch):
     assert config["bucket_name"] == "kevinesg-dev-data-platform-landing-kevinesg"
     assert config["prefix"] == "personal_finance"
     assert config["chunk_size"] == 250
+    assert config["retention_days"] == 7
 
 
 @pytest.mark.parametrize("chunk_size", ["0", "-1", "not-an-int"])
@@ -87,6 +90,17 @@ def test_load_config_rejects_invalid_chunk_size(monkeypatch, chunk_size):
     set_required_env(monkeypatch, chunk_size=chunk_size)
 
     with pytest.raises(ValueError, match="PERSONAL_FINANCE_CHUNK_SIZE must be a positive integer"):
+        personal_finance.load_config()
+
+
+@pytest.mark.parametrize("retention_days", ["0", "-1", "not-an-int"])
+def test_load_config_rejects_invalid_retention_days(monkeypatch, retention_days):
+    set_required_env(monkeypatch, retention_days=retention_days)
+
+    with pytest.raises(
+        ValueError,
+        match="PERSONAL_FINANCE_JSONL_RETENTION_DAYS must be a positive integer",
+    ):
         personal_finance.load_config()
 
 
@@ -130,6 +144,13 @@ class FakeUploadedBlob:
 
     def exists(self):
         return self.name in self.bucket.uploads
+
+    @property
+    def time_created(self):
+        return self.bucket.uploads[self.name].get("time_created")
+
+    def delete(self):
+        self.bucket.uploads.pop(self.name)
 
 
 class FakeBucket:
@@ -273,6 +294,62 @@ def test_list_jsonl_uris_uses_only_objects_under_the_requested_prefix():
     assert uris == [
         "gs://landing-bucket/personal_finance/accounts/run-1/source_ids/chunk-000001.jsonl",
         "gs://landing-bucket/personal_finance/accounts/run-1/source_ids/chunk-000002.jsonl",
+    ]
+
+
+def test_cleanup_completed_run_files_deletes_old_completed_runs_only():
+    bucket = FakeBucket()
+    cutoff = dt.datetime(2026, 6, 8, tzinfo=dt.UTC) - dt.timedelta(days=7)
+    old_time = cutoff - dt.timedelta(seconds=1)
+    recent_time = cutoff + dt.timedelta(seconds=1)
+
+    bucket.blob("personal_finance/accounts/old-run/extract/chunk-000001.jsonl").upload_from_string(
+        "",
+        time_created=old_time,
+    )
+    bucket.blob(
+        "personal_finance/accounts/old-run/source_ids/chunk-000001.jsonl"
+    ).upload_from_string(
+        "",
+        time_created=old_time,
+    )
+    bucket.blob("personal_finance/accounts/old-run/_SUCCESS").upload_from_string(
+        "",
+        time_created=old_time,
+    )
+    bucket.blob(
+        "personal_finance/accounts/recent-run/extract/chunk-000001.jsonl"
+    ).upload_from_string(
+        "",
+        time_created=recent_time,
+    )
+    bucket.blob("personal_finance/accounts/recent-run/_SUCCESS").upload_from_string(
+        "",
+        time_created=recent_time,
+    )
+    bucket.blob(
+        "personal_finance/accounts/incomplete-run/extract/chunk-000001.jsonl"
+    ).upload_from_string(
+        "",
+        time_created=old_time,
+    )
+
+    deleted_files, deleted_runs, skipped_recent_runs, skipped_incomplete_runs = (
+        personal_finance.cleanup_completed_run_files(
+            bucket,
+            "personal_finance/accounts",
+            cutoff,
+        )
+    )
+
+    assert deleted_files == 3
+    assert deleted_runs == 1
+    assert skipped_recent_runs == 1
+    assert skipped_incomplete_runs == 1
+    assert sorted(bucket.uploads) == [
+        "personal_finance/accounts/incomplete-run/extract/chunk-000001.jsonl",
+        "personal_finance/accounts/recent-run/_SUCCESS",
+        "personal_finance/accounts/recent-run/extract/chunk-000001.jsonl",
     ]
 
 
