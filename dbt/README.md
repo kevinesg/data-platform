@@ -24,7 +24,7 @@ Follow this file in order for dbt component setup:
    project skeleton in an empty repo. Existing checkouts use
    **Existing-Checkout Setup** instead.
 3. **dbt Cloud Workspace** provisions or repairs the dbt service account, raw
-   read grant, dbt target dataset, and impersonation grant.
+   read grant, dbt target datasets, and impersonation grant.
 4. **dbt Local Workstation** configures local credentials, the external dev
    environment file, the external dbt profile, and `dbt debug`.
 
@@ -165,6 +165,12 @@ Run commands from the repository root unless a block changes directories.
 
 Run this subsection as a platform maintainer.
 
+Every time this subsection is resumed from the middle, rerun the first block
+below before running a resource block. The resource blocks create datasets and
+grant IAM, so they run from the bootstrap configuration without service account
+impersonation. The dbt service account intentionally cannot create datasets or
+grant access to itself.
+
 ```bash
 export PROJECT_ID=kevinesg-dev
 export BIGQUERY_LOCATION=US
@@ -172,6 +178,7 @@ export DEVELOPER_ID=kevinesg
 export DEVELOPER_EMAIL=kevinesg.dev@gmail.com
 export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
+export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
@@ -182,9 +189,10 @@ gcloud config set project "$PROJECT_ID"
 gcloud config list
 ```
 
-If a command prints `This command is using service account impersonation`, stop
-and rerun the block above before continuing. `DEVELOPER_ID` is a stable
-lowercase identifier containing 3-8 letters or digits.
+If `gcloud config list` shows `auth.impersonate_service_account`, or if a
+command prints `This command is using service account impersonation`, stop and
+rerun the block above before continuing. `DEVELOPER_ID` is a stable lowercase
+identifier containing 3-8 letters or digits.
 
 Verify or enable the shared services needed by dbt:
 
@@ -240,8 +248,14 @@ fi
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/bigquery.jobUser"
+  --role="roles/bigquery.user"
 ```
+
+The dbt BigQuery adapter creates or ensures target schemas during `dbt run`.
+`roles/bigquery.jobUser` can run query jobs but does not include
+`bigquery.datasets.create`; `roles/bigquery.user` is the predefined project role
+needed for local dbt runs. Dataset-level grants below still define which raw and
+dbt datasets the service account can read or write.
 
 Create or verify the raw dataset boundary used by dbt sources:
 
@@ -303,6 +317,43 @@ bq show \
   "$PROJECT_ID:$DBT_DATASET"
 ```
 
+Create or verify the dbt staging dataset:
+
+This block is a platform-maintainer resource block. It must run from the
+bootstrap configuration without service account impersonation.
+
+```bash
+if bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_STAGING_DATASET"; then
+  echo "dbt staging dataset already exists: $PROJECT_ID:$DBT_STAGING_DATASET"
+else
+  echo "Create the dbt staging dataset only when the bq show output says Not found."
+  read -r -p "Create dbt staging dataset $PROJECT_ID:$DBT_STAGING_DATASET? [y/N] " CREATE_DBT_STAGING_DATASET
+  if test "$CREATE_DBT_STAGING_DATASET" = y; then
+    bq --location="$BIGQUERY_LOCATION" mk \
+      --dataset \
+      "$PROJECT_ID:$DBT_STAGING_DATASET"
+  fi
+fi
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --location="$BIGQUERY_LOCATION" \
+  --use_legacy_sql=false \
+  "GRANT \`roles/bigquery.dataEditor\`
+   ON SCHEMA \`$PROJECT_ID\`.$DBT_STAGING_DATASET
+   TO \"serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL\""
+
+bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_STAGING_DATASET"
+```
+
+dbt creates BigQuery datasets from the target dataset plus a model layer suffix.
+The staging models use `+schema: staging`, so the default BigQuery dataset name
+is `dbt_<developer>_staging`.
+
 Grant local impersonation permission:
 
 ```bash
@@ -319,6 +370,10 @@ Do not create JSON service-account keys for local development.
 
 Run this subsection on the development workstation.
 
+Every time local dbt validation is resumed after a platform-maintainer resource
+block, rerun the first block below so CLI verification commands use the dbt
+service account and dbt commands use the dbt ADC target.
+
 ```bash
 export PROJECT_ID=kevinesg-dev
 export BIGQUERY_LOCATION=US
@@ -326,6 +381,7 @@ export DEVELOPER_ID=kevinesg
 export DEVELOPER_EMAIL=kevinesg.dev@gmail.com
 export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
+export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
@@ -422,6 +478,9 @@ set +a
 
 Verify the profile and connection:
 
+`gcloud config list` should show `auth.impersonate_service_account` set to the
+dbt service account before the `bq show` checks run.
+
 ```bash
 gcloud config list
 bq show \
@@ -430,6 +489,9 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$DBT_DATASET"
+bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_STAGING_DATASET"
 gcloud auth application-default print-access-token >/dev/null &&
   echo "Application Default Credentials are available."
 
@@ -443,4 +505,20 @@ uv run dbt ls \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --resource-type source
+```
+
+After staging models are added, verify dbt can list and run only the staging
+path:
+
+```bash
+uv run dbt ls \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --resource-type model \
+  --select path:models/staging/personal_finance
+
+uv run dbt run \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select path:models/staging/personal_finance
 ```
