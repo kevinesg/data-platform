@@ -221,3 +221,102 @@ models:
         description: Sum of personal non-deduction expense amounts for the month and grouping.
         data_tests:
           - not_null
+
+  - name: personal_finance__daily_account_balances
+    description: End-of-day daily account balances with exact native balances and estimated PHP values from temporary static FX rates. Do not treat PHP estimates as final reporting values until a real FX-rate source replaces the placeholders.
+    columns:
+      - name: balance_date
+        data_tests:
+          - not_null
+      - name: account_id
+        data_tests:
+          - not_null
+      - name: account_key
+        data_tests:
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        description: Parent institution or account grouping from the accounts source.
+      - name: account_type
+        description: Account type used for balance sign semantics. Credit balances remain positive as natural balances and negative as net-worth balances.
+        data_tests:
+          - not_null
+      - name: account_subtype
+        description: Optional account subtype from the accounts source.
+      - name: currency
+        data_tests:
+          - not_null
+      - name: account_status
+        data_tests:
+          - not_null
+      - name: movement_amount_native
+        description: Signed net account movement for the balance date in the account's native currency.
+        data_tests:
+          - not_null
+      - name: movement_amount_php_estimated
+        description: Estimated signed net account movement converted using temporary static PHP rates.
+        data_tests:
+          - not_null
+      - name: balance_native
+        description: End-of-day natural account balance in the account's native currency.
+        data_tests:
+          - not_null
+      - name: balance_php_estimated
+        description: "Estimated natural account balance converted using temporary static PHP rates: PHP 1, USD 61.47, JPY 0.39. Credit balances remain positive here. This value is approximate until a real FX-rate source exists."
+        data_tests:
+          - not_null
+      - name: net_worth_balance_php_estimated
+        description: Estimated savings/prepaid/investment balances less credit balances, converted to PHP using temporary static rates. This value is approximate until a real FX-rate source exists.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__current_account_balances
+    description: Latest available account balances for Metabase current-balance dashboards. Native balances are exact tracked values; PHP estimates use temporary static FX rates until a real FX-rate source exists.
+    columns:
+      - name: balance_date
+        data_tests:
+          - not_null
+      - name: account_id
+        data_tests:
+          - unique
+          - not_null
+      - name: account_key
+        data_tests:
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        description: Parent institution or account grouping from the accounts source.
+      - name: account_type
+        data_tests:
+          - not_null
+      - name: account_subtype
+      - name: currency
+        data_tests:
+          - not_null
+      - name: account_status
+        data_tests:
+          - not_null
+      - name: movement_amount_native
+        description: Signed net account movement on the latest balance date in the account's native currency.
+        data_tests:
+          - not_null
+      - name: movement_amount_php_estimated
+        description: Estimated signed net account movement on the latest balance date converted using temporary static PHP rates.
+        data_tests:
+          - not_null
+      - name: balance_native
+        description: Latest natural account balance in the account's native currency. Closed accounts are reported as zero.
+        data_tests:
+          - not_null
+      - name: balance_php_estimated
+        description: Estimated natural account balance converted using temporary static PHP rates. Credit balances remain positive here. Closed accounts are reported as zero.
+        data_tests:
+          - not_null
+      - name: net_worth_balance_php_estimated
+        description: Estimated savings/prepaid/investment balances less credit balances, converted to PHP using temporary static rates. Closed accounts are reported as zero.
+        data_tests:
+          - not_null
