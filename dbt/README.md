@@ -378,6 +378,7 @@ values from `dbt/.env.example`.
 
 ```dotenv
 PROJECT_ID=kevinesg-dev
+RAW_DATASET=raw_kevinesg
 DBT_TARGET=dev
 DBT_DATASET=dbt_kevinesg
 DBT_SERVICE_ACCOUNT_EMAIL=data-platform-dbt-kevinesg@kevinesg-dev.iam.gserviceaccount.com
@@ -433,4 +434,13 @@ gcloud auth application-default print-access-token >/dev/null &&
   echo "Application Default Credentials are available."
 
 uv run dbt debug --project-dir data_warehouse --profiles-dir "$DBT_PROFILES_DIR"
+```
+
+After source definitions are added, verify dbt can parse and list them:
+
+```bash
+uv run dbt ls \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --resource-type source
 ```
