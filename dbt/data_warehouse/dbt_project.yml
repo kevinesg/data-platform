@@ -22,6 +22,16 @@ clean-targets:         # directories to be removed by `dbt clean`
   - "target"
   - "dbt_packages"
 
+seeds:
+  data_warehouse:
+    personal_finance:
+      +schema: seed_personal_finance
+      personal_finance__transaction_type_classification:
+        +column_types:
+          transaction_type: STRING
+          cashflow_type: STRING
+          is_income_deduction: BOOLEAN
+
 models:
   data_warehouse:
     staging:
