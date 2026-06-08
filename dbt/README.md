@@ -179,6 +179,8 @@ export DEVELOPER_EMAIL=kevinesg.dev@gmail.com
 export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
+export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
+export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
@@ -354,6 +356,48 @@ dbt creates BigQuery datasets from the target dataset plus a model layer suffix.
 The staging models use `+schema: staging`, so the default BigQuery dataset name
 is `dbt_<developer>_staging`.
 
+Create or verify the additional dbt write datasets used by the current project:
+
+This block is a platform-maintainer resource block. It must run from the
+bootstrap configuration without service account impersonation.
+
+```bash
+for DBT_WRITE_DATASET in \
+  "$DBT_INTERMEDIATE_DATASET" \
+  "$DBT_PERSONAL_FINANCE_SEED_DATASET"; do
+  if bq show \
+    --project_id="$PROJECT_ID" \
+    "$PROJECT_ID:$DBT_WRITE_DATASET"; then
+    echo "dbt write dataset already exists: $PROJECT_ID:$DBT_WRITE_DATASET"
+  else
+    echo "Create the dbt write dataset only when the bq show output says Not found."
+    read -r -p "Create dbt write dataset $PROJECT_ID:$DBT_WRITE_DATASET? [y/N] " CREATE_DBT_WRITE_DATASET
+    if test "$CREATE_DBT_WRITE_DATASET" = y; then
+      bq --location="$BIGQUERY_LOCATION" mk \
+        --dataset \
+        "$PROJECT_ID:$DBT_WRITE_DATASET"
+    fi
+  fi
+
+  bq query \
+    --project_id="$PROJECT_ID" \
+    --location="$BIGQUERY_LOCATION" \
+    --use_legacy_sql=false \
+    "GRANT \`roles/bigquery.dataEditor\`
+     ON SCHEMA \`$PROJECT_ID\`.$DBT_WRITE_DATASET
+     TO \"serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL\""
+
+  bq show \
+    --project_id="$PROJECT_ID" \
+    "$PROJECT_ID:$DBT_WRITE_DATASET"
+done
+```
+
+Intermediate models use `+schema: intermediate`, so the default BigQuery dataset
+name is `dbt_<developer>_intermediate`. Personal finance classification seeds
+use `+schema: seed_personal_finance`, so the default BigQuery dataset name is
+`dbt_<developer>_seed_personal_finance`.
+
 Grant local impersonation permission:
 
 ```bash
@@ -382,6 +426,8 @@ export DEVELOPER_EMAIL=kevinesg.dev@gmail.com
 export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
+export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
+export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
@@ -492,6 +538,12 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$DBT_STAGING_DATASET"
+bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_INTERMEDIATE_DATASET"
+bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_PERSONAL_FINANCE_SEED_DATASET"
 gcloud auth application-default print-access-token >/dev/null &&
   echo "Application Default Credentials are available."
 
