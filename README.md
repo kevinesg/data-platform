@@ -26,9 +26,9 @@ environment: hundreds of Airflow DAGs, thousands of dbt models, large warehouse
 tables, multiple data sources, bounded CI/CD, and operational ownership by a
 functional data engineering team.
 
-The first pipeline can be small, but the platform architecture should not be
-small-minded. MVP shortcuts are acceptable only when they keep the core workflow
-moving and are documented as temporary.
+The first pipeline can be small, but the platform architecture is not reduced
+to one-pipeline assumptions. MVP shortcuts are acceptable only when they keep
+the core workflow moving and are documented as temporary.
 
 ## Initial Delivery Direction
 
@@ -57,33 +57,36 @@ configurable through `DATA_PLATFORM_SECRETS_DIR` or
 `DATA_PLATFORM_ENV_FILE`. QA and prod configuration belongs on the matching
 deployment platform or authorized administration host, not on a development
 workstation. Local dev uses keyless Application Default Credentials and local
-image tags. Deployed QA/prod should use immutable registry image tags, workload
+image tags. Deployed QA/prod use immutable registry image tags, workload
 credentials supplied by the runtime, and no runtime source-code bind mounts.
 
-## Setup Path
+## Setup Flow
 
-Use this as the ordered entrypoint. Detailed commands remain in component and
-deployment docs so the root README stays focused on repository-wide contracts.
+Start here before running component commands. The root README explains the
+repository boundaries and the order of setup documents; detailed commands live
+in the owning README so each command sequence has one canonical home.
 
-1. Read this README to understand repository boundaries, environment promotion,
-   and production-scale assumptions.
-2. Install the required workstation tools from their official documentation:
-   [Git](https://git-scm.com/downloads),
-   [GitHub CLI](https://cli.github.com/),
-   [Google Cloud CLI](https://cloud.google.com/sdk/docs/install),
-   [uv](https://docs.astral.sh/uv/getting-started/installation/), and
-   [Docker](https://docs.docker.com/engine/install/).
-3. Follow `deploy/README.md` to authenticate the CLIs. Platform administrators
-   create shared projects; each developer configures an isolated workspace
-   inside dev.
-4. Follow component READMEs for local setup and validation. Source-specific
-   access and commands remain in the matching pipeline documentation.
-5. Validate changes against dev first, then QA, then prod. Do not run
+1. Read this README for repository boundaries, environment promotion, and
+   production-scale assumptions.
+2. Read `deploy/README.md` for workstation tools, CLI authentication, shared
+   dev project topology, and platform bootstrap rules.
+3. Run `deploy/README.md` **Platform Bootstrap** only when creating or repairing
+   shared project resources. Team members joining an existing dev environment
+   skip platform bootstrap after receiving their assigned component workspace
+   values.
+4. Run the relevant component README end to end:
+   - `scripts/README.md` for extract/load service account, landing bucket, raw
+     dataset, local credentials, runtime setup, and scripts verification.
+   - `dbt/README.md` for dbt project setup, dbt service account, datasets,
+     external profile, local credentials, and `dbt debug`.
+   - `airflow/README.md` and `metabase/README.md` document boundaries for now;
+     setup commands will be added when those components are implemented.
+5. Run source-specific or domain-specific docs only after the owning component
+   setup passes. For example, scripts pipeline commands live under
+   `scripts/pipelines/`.
+6. Validate changes against dev first, then QA, then prod. Do not run
    cloud-connected commands until the matching documented prerequisites are
    complete.
-
-As setup coverage grows beyond this outline, add a committed public docs
-entrypoint and keep this section as the short index.
 
 ## Images
 
