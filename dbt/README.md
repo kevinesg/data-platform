@@ -522,3 +522,12 @@ uv run dbt run \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select path:models/staging/personal_finance
 ```
+
+After staging model tests are added, run only the staging tests:
+
+```bash
+uv run dbt test \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select path:models/staging/personal_finance
+```
