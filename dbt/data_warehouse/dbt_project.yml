@@ -40,3 +40,7 @@ models:
     intermediate:
       +materialized: table
       +schema: intermediate
+    marts:
+      personal_finance:
+        +materialized: table
+        +schema: mart_personal_finance

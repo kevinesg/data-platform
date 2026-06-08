@@ -1,0 +1,171 @@
+version: 2
+
+models:
+  - name: personal_finance__transactions
+    description: Transaction-level personal finance mart for analytics and Metabase exploration.
+    columns:
+      - name: transaction_id
+        description: Stable transaction identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_date
+        description: Reporting/accrual date when the transaction happened.
+        data_tests:
+          - not_null
+      - name: posted_date
+        description: Account-balance movement date used by balance models.
+        data_tests:
+          - not_null
+      - name: transaction_month
+        description: First day of the transaction month.
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: cashflow_type
+        description: Transaction classification used for cashflow reporting.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: is_income_deduction
+        description: Whether the transaction should reduce net income instead of normal expense reporting.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: amount
+        description: Absolute transaction amount from the source.
+      - name: solo_part
+        description: Optional source fraction for the part of the transaction that belongs to the owner.
+      - name: personal_share_fraction
+        description: Parsed owner share between 0 and 1. Null `solo_part` defaults to 1.
+        data_tests:
+          - not_null
+      - name: personal_amount
+        description: Transaction amount multiplied by `personal_share_fraction`.
+      - name: shared_amount
+        description: Transaction amount attributed to other people.
+      - name: counterparty
+        description: Source `to` value used for income destinations and best-available merchant fallback.
+      - name: merchant
+        description: Best available expense merchant, using store when present and counterparty otherwise.
+      - name: payment_source
+        description: Nullable source account key. Null values represent cashflow-only expenses and do not create account-balance movements.
+      - name: receipt_url
+        description: Optional source receipt link.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_cashflow
+    description: Monthly personal finance gross and net cashflow.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - unique
+          - not_null
+      - name: gross_expenses
+        data_tests:
+          - not_null
+      - name: net_expenses
+        data_tests:
+          - not_null
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: net_income
+        description: Gross income less income deductions.
+        data_tests:
+          - not_null
+      - name: savings
+        description: Net income less net expenses.
+        data_tests:
+          - not_null
+      - name: running_savings
+        description: Cumulative savings ordered by transaction month.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__yearly_cashflow
+    description: Yearly personal finance gross and net cashflow.
+    columns:
+      - name: transaction_year
+        data_tests:
+          - unique
+          - not_null
+      - name: gross_expenses
+        data_tests:
+          - not_null
+      - name: net_expenses
+        data_tests:
+          - not_null
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: net_income
+        data_tests:
+          - not_null
+      - name: savings
+        data_tests:
+          - not_null
+      - name: running_savings
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_cashflow_by_type
+    description: Monthly cashflow grouped by cashflow type and source transaction type.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: cashflow_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: transaction_count
+        data_tests:
+          - not_null
+      - name: amount
+        description: Sum of personal transaction amounts for the month and type.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_expenses_by_item
+    description: Monthly non-deduction expenses grouped by transaction type, item, merchant, and payment source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: item
+      - name: merchant
+      - name: payment_source
+      - name: transaction_count
+        data_tests:
+          - not_null
+      - name: amount
+        description: Sum of personal non-deduction expense amounts for the month and grouping.
+        data_tests:
+          - not_null

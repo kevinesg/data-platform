@@ -181,6 +181,7 @@ export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
 export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
+export DBT_PERSONAL_FINANCE_MART_DATASET="${DBT_DATASET}_mart_personal_finance"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
@@ -364,7 +365,8 @@ bootstrap configuration without service account impersonation.
 ```bash
 for DBT_WRITE_DATASET in \
   "$DBT_INTERMEDIATE_DATASET" \
-  "$DBT_PERSONAL_FINANCE_SEED_DATASET"; do
+  "$DBT_PERSONAL_FINANCE_SEED_DATASET" \
+  "$DBT_PERSONAL_FINANCE_MART_DATASET"; do
   if bq show \
     --project_id="$PROJECT_ID" \
     "$PROJECT_ID:$DBT_WRITE_DATASET"; then
@@ -396,7 +398,9 @@ done
 Intermediate models use `+schema: intermediate`, so the default BigQuery dataset
 name is `dbt_<developer>_intermediate`. Personal finance classification seeds
 use `+schema: seed_personal_finance`, so the default BigQuery dataset name is
-`dbt_<developer>_seed_personal_finance`.
+`dbt_<developer>_seed_personal_finance`. Personal finance marts use
+`+schema: mart_personal_finance`, so the default BigQuery dataset name is
+`dbt_<developer>_mart_personal_finance`.
 
 Grant local impersonation permission:
 
@@ -428,6 +432,7 @@ export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
 export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
+export DBT_PERSONAL_FINANCE_MART_DATASET="${DBT_DATASET}_mart_personal_finance"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
@@ -544,6 +549,9 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$DBT_PERSONAL_FINANCE_SEED_DATASET"
+bq show \
+  --project_id="$PROJECT_ID" \
+  "$PROJECT_ID:$DBT_PERSONAL_FINANCE_MART_DATASET"
 gcloud auth application-default print-access-token >/dev/null &&
   echo "Application Default Credentials are available."
 
@@ -582,4 +590,49 @@ uv run dbt test \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select path:models/staging/personal_finance
+```
+
+After personal finance seeds and downstream models are added, materialize seeds
+before running models that depend on them. `dbt run` does not run seed files.
+
+```bash
+uv run dbt ls \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --resource-type seed
+
+uv run dbt seed \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select personal_finance__transaction_type_classification
+```
+
+After personal finance intermediate models are added, run and test only that
+layer:
+
+```bash
+uv run dbt run \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select path:models/intermediate/personal_finance
+
+uv run dbt test \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select personal_finance__transaction_type_classification path:models/intermediate/personal_finance path:tests/personal_finance
+```
+
+After personal finance marts are added, seed first, then run the selected mart
+path with its upstream models:
+
+```bash
+uv run dbt seed \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select personal_finance__transaction_type_classification
+
+uv run dbt run \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --select +path:models/marts/personal_finance
 ```
