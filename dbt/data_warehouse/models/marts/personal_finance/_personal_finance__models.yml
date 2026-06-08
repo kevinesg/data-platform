@@ -150,6 +150,58 @@ models:
         data_tests:
           - not_null
 
+  - name: personal_finance__monthly_income_by_source
+    description: Monthly net income grouped by income source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: income_source
+        description: Source/account/company for income after deduction mapping.
+      - name: amount
+        description: Net personal income after source-matched salary deductions and taxes.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_income_by_type_source
+    description: Monthly gross and net income grouped by income type and income source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: income_type
+        description: Income category from source transaction type. Salary deductions reduce salary; TAX transaction types reduce interest income.
+        data_tests:
+          - not_null
+      - name: income_source
+        description: Source/account/company for income. Salary deductions use counterparty; TAX rows use payment_source so interest tax subtracts from the matching interest source.
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: income_deductions
+        description: Deductions that reduce income, including salary deductions and tax.
+        data_tests:
+          - not_null
+      - name: salary_deductions
+        description: Non-tax salary deduction rows where transaction type is SALARY DEDUCTION.
+        data_tests:
+          - not_null
+      - name: salary_tax
+        description: Salary tax rows where transaction type is SALARY DEDUCTION and item is TAX.
+        data_tests:
+          - not_null
+      - name: interest_tax
+        description: Interest tax rows where transaction type is TAX.
+        data_tests:
+          - not_null
+      - name: tax
+        description: Total salary and interest tax.
+        data_tests:
+          - not_null
+      - name: net_income
+        data_tests:
+          - not_null
+
   - name: personal_finance__monthly_expenses_by_item
     description: Monthly non-deduction expenses grouped by transaction type, item, merchant, and payment source.
     columns:
