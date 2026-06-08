@@ -1,0 +1,13 @@
+data_warehouse:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('PROJECT_ID') }}"
+      dataset: "{{ env_var('DBT_DATASET') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'US') }}"
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1

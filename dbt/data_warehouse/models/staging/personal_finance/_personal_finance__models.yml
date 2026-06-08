@@ -1,0 +1,185 @@
+version: 2
+
+models:
+  - name: stg_personal_finance__transactions
+    description: Cleaned personal finance transactions at the same grain as the raw source table.
+    columns:
+      - name: transaction_id
+        description: Stable transaction identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_date
+        description: Reporting date built from the source year, month, and day fields.
+        data_tests:
+          - not_null
+      - name: posted_date
+        description: Account-balance movement date. Defaults to transaction_date when source posted_date is blank.
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: payment_source
+        description: Nullable source account key. Null values remain in cashflow reporting.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+      - name: is_deleted
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: stg_personal_finance__paid_for_others
+    description: Cleaned payments made for other people.
+    columns:
+      - name: paid_for_others_id
+        description: Stable payment identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: posted_date
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: amount
+        data_tests:
+          - not_null
+      - name: payment_source
+        data_tests:
+          - not_null
+      - name: paid_for
+        data_tests:
+          - not_null
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+      - name: is_deleted
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: stg_personal_finance__transfers
+    description: Cleaned account transfers, opening balances, direct inflows, and direct outflows.
+    columns:
+      - name: transfer_id
+        description: Stable transfer identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: transfer_date
+        data_tests:
+          - not_null
+      - name: movement_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['OPENING BALANCE', 'TRANSFER', 'INFLOW', 'OUTFLOW']
+      - name: source_account_key
+        description: Source account key for transfer and outflow rows.
+      - name: source_amount
+        description: Source amount for transfer and outflow rows.
+      - name: destination_account_key
+        description: Destination account key for opening balance, transfer, and inflow rows.
+      - name: destination_amount
+        description: Destination amount for opening balance, transfer, and inflow rows.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+      - name: is_deleted
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: stg_personal_finance__accounts
+    description: Cleaned account dimension rows.
+    columns:
+      - name: account_id
+        description: Stable account row identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: account_key
+        description: Stable business key used by transaction and transfer rows.
+        data_tests:
+          - unique
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        data_tests:
+          - not_null
+      - name: account_type
+        data_tests:
+          - not_null
+      - name: currency
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['PHP', 'USD', 'JPY']
+      - name: account_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ACTIVE', 'CLOSED']
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+      - name: is_deleted
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false

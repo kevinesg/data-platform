@@ -1,0 +1,107 @@
+version: 2
+
+sources:
+  - name: personal_finance
+    database: "{{ env_var('PROJECT_ID') }}"
+    schema: "{{ env_var('RAW_DATASET') }}"
+    loader: scripts.personal_finance
+    description: Raw personal finance tables loaded by the scripts component.
+    tables:
+      - name: transactions
+        identifier: personal_finance__transactions
+        description: Income and expense rows that affect cashflow.
+        columns:
+          - name: id
+            description: Source transaction identifier.
+          - name: year
+          - name: month
+          - name: day
+          - name: posted_date
+          - name: item
+          - name: type
+          - name: cost
+          - name: to
+          - name: store
+          - name: source
+          - name: receipt
+          - name: solo_part
+          - name: created_at
+          - name: updated_at
+          - name: _extracted_at
+            description: Timestamp assigned when the row was extracted from the source.
+          - name: _inserted_at
+            description: Timestamp assigned when the row was inserted into the raw table.
+          - name: _is_deleted
+            description: Whether the latest loaded source snapshot marked the row deleted.
+
+      - name: paid_for_others
+        identifier: personal_finance__paid_for_others
+        description: Payments made for other people.
+        columns:
+          - name: id
+            description: Source payment identifier.
+          - name: posted_date
+          - name: item
+          - name: type
+          - name: cost
+          - name: to
+          - name: store
+          - name: source
+          - name: receipt
+          - name: paid_for
+          - name: created_at
+          - name: updated_at
+          - name: _extracted_at
+            description: Timestamp assigned when the row was extracted from the source.
+          - name: _inserted_at
+            description: Timestamp assigned when the row was inserted into the raw table.
+          - name: _is_deleted
+            description: Whether the latest loaded source snapshot marked the row deleted.
+
+      - name: transfers
+        identifier: personal_finance__transfers
+        description: Internal account movements plus direct inflows and outflows.
+        columns:
+          - name: id
+            description: Source transfer identifier.
+          - name: year
+          - name: month
+          - name: day
+          - name: movement_type
+          - name: source
+            description: Source account key for transfer and outflow rows.
+          - name: destination
+            description: Destination account key for opening balance, transfer, and inflow rows.
+          - name: source_amount
+          - name: destination_amount
+          - name: created_at
+          - name: updated_at
+          - name: _extracted_at
+            description: Timestamp assigned when the row was extracted from the source.
+          - name: _inserted_at
+            description: Timestamp assigned when the row was inserted into the raw table.
+          - name: _is_deleted
+            description: Whether the latest loaded source snapshot marked the row deleted.
+
+      - name: accounts
+        identifier: personal_finance__accounts
+        description: Account attributes used for balance reporting.
+        columns:
+          - name: id
+            description: Source account row identifier.
+          - name: account_key
+            description: Stable business key used by transaction and transfer rows.
+          - name: name
+          - name: parent_name
+          - name: type
+          - name: subtype
+          - name: currency
+          - name: status
+          - name: created_at
+          - name: updated_at
+          - name: _extracted_at
+            description: Timestamp assigned when the row was extracted from the source.
+          - name: _inserted_at
+            description: Timestamp assigned when the row was inserted into the raw table.
+          - name: _is_deleted
+            description: Whether the latest loaded source snapshot marked the row deleted.

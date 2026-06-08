@@ -152,7 +152,7 @@ authentication is provided by ADC.
 Run from the `scripts/` directory:
 
 ```bash
-uv sync
+uv sync --locked
 
 uv run python validate_config.py \
   --env-file "$DATA_PLATFORM_ENV_FILE"
@@ -321,7 +321,7 @@ uv run python src/personal_finance.py \
   --step cleanup
 ```
 
-For a fresh validation run, cleanup should report `deleted_files=0` and
+For a fresh validation run, cleanup reports `deleted_files=0` and
 `skipped_recent_runs=1` for the selected entity. For an older completed run, it
 deletes the run's staged JSONL files and `_SUCCESS` marker. A cleaned run is no
 longer load-retryable; create a new extract run before loading again.
