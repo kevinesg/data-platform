@@ -1,0 +1,26 @@
+version: 2
+
+seeds:
+  - name: personal_finance__transaction_type_classification
+    description: Static mapping from source transaction types to cashflow and account-balance deduction behavior.
+    columns:
+      - name: transaction_type
+        description: Uppercase source transaction type.
+        data_tests:
+          - unique
+          - not_null
+      - name: cashflow_type
+        description: Whether the transaction type contributes as personal income or expense.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: is_income_deduction
+        description: Whether the expense reduces a modeled income account rather than a normal payment source.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
