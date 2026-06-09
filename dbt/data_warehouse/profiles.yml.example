@@ -3,7 +3,8 @@ data_warehouse:
   outputs:
     dev:
       type: bigquery
-      method: oauth
+      method: service-account
+      keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       project: "{{ env_var('PROJECT_ID') }}"
       dataset: "{{ env_var('DBT_DATASET') }}"
       location: "{{ env_var('BIGQUERY_LOCATION', 'US') }}"

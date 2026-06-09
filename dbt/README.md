@@ -24,9 +24,9 @@ Follow this file in order for dbt component setup:
    project skeleton in an empty repo. Existing checkouts use
    **Existing-Checkout Setup** instead.
 3. **dbt Cloud Workspace** provisions or repairs the dbt service account, raw
-   read grant, dbt target datasets, and impersonation grant.
-4. **dbt Local Workstation** configures local credentials, the external dev
-   environment file, the external dbt profile, and `dbt debug`.
+   read grant, and dbt target datasets.
+4. **dbt Local Workstation** creates the external service-account key and
+   environment file, configures the external dbt profile, and runs `dbt debug`.
 
 ## Project Layout
 
@@ -135,8 +135,8 @@ uv run dbt --version
 ```
 
 After this local runtime check passes, continue with **End-To-End Dev Setup**
-below for the dbt service account, datasets, external environment file, ADC
-target, profile file, and `dbt debug`.
+below for the dbt service account, datasets, external environment file,
+service-account key, profile file, and `dbt debug`.
 
 ## Profile Contract
 
@@ -144,8 +144,8 @@ The committed `data_warehouse/profiles.yml.example` is a non-secret template.
 The working `profiles.yml` lives outside the repository with the rest of the
 project's local dev configuration.
 
-Local dbt development uses keyless Application Default Credentials. The active
-ADC target for dbt commands is the dbt service account.
+Local dbt development uses the dbt service-account JSON file configured through
+`DBT_GOOGLE_APPLICATION_CREDENTIALS`.
 
 ## End-To-End Dev Setup
 
@@ -167,9 +167,8 @@ Run this subsection as a platform maintainer.
 
 Every time this subsection is resumed from the middle, rerun the first block
 below before running a resource block. The resource blocks create datasets and
-grant IAM, so they run from the bootstrap configuration without service account
-impersonation. The dbt service account intentionally cannot create datasets or
-grant access to itself.
+grant IAM, so they run from the authenticated platform-maintainer configuration.
+The dbt service account intentionally cannot grant access to itself.
 
 ```bash
 export PROJECT_ID=kevinesg-dev
@@ -187,15 +186,12 @@ export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
 
 gcloud config configurations activate "$PLATFORM_BOOTSTRAP_CONFIGURATION"
-gcloud config unset auth/impersonate_service_account
 gcloud config set project "$PROJECT_ID"
 gcloud config list
 ```
 
-If `gcloud config list` shows `auth.impersonate_service_account`, or if a
-command prints `This command is using service account impersonation`, stop and
-rerun the block above before continuing. `DEVELOPER_ID` is a stable lowercase
-identifier containing 3-8 letters or digits.
+`DEVELOPER_ID` is a stable lowercase identifier containing 3-8 letters or
+digits.
 
 Verify or enable the shared services needed by dbt:
 
@@ -204,7 +200,6 @@ enable_missing_dbt_services() {
   local required_dbt_services=(
     bigquery.googleapis.com
     iam.googleapis.com
-    iamcredentials.googleapis.com
     serviceusage.googleapis.com
   )
   local enabled_dbt_services
@@ -323,7 +318,7 @@ bq show \
 Create or verify the dbt staging dataset:
 
 This block is a platform-maintainer resource block. It must run from the
-bootstrap configuration without service account impersonation.
+authenticated bootstrap configuration.
 
 ```bash
 if bq show \
@@ -360,7 +355,7 @@ is `dbt_<developer>_staging`.
 Create or verify the additional dbt write datasets used by the current project:
 
 This block is a platform-maintainer resource block. It must run from the
-bootstrap configuration without service account impersonation.
+authenticated bootstrap configuration.
 
 ```bash
 for DBT_WRITE_DATASET in \
@@ -402,25 +397,9 @@ use `+schema: seed_personal_finance`, so the default BigQuery dataset name is
 `+schema: mart_personal_finance`, so the default BigQuery dataset name is
 `dbt_<developer>_mart_personal_finance`.
 
-Grant local impersonation permission:
-
-```bash
-gcloud iam service-accounts add-iam-policy-binding \
-  "$DBT_SERVICE_ACCOUNT_EMAIL" \
-  --project="$PROJECT_ID" \
-  --member="user:$DEVELOPER_EMAIL" \
-  --role="roles/iam.serviceAccountTokenCreator"
-```
-
-Do not create JSON service-account keys for local development.
-
 ### dbt Local Workstation
 
 Run this subsection on the development workstation.
-
-Every time local dbt validation is resumed after a platform-maintainer resource
-block, rerun the first block below so CLI verification commands use the dbt
-service account and dbt commands use the dbt ADC target.
 
 ```bash
 export PROJECT_ID=kevinesg-dev
@@ -436,6 +415,8 @@ export DBT_PERSONAL_FINANCE_MART_DATASET="${DBT_DATASET}_mart_personal_finance"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
+export DATA_PLATFORM_SECRETS_DIR="${DATA_PLATFORM_SECRETS_DIR:-$HOME/dev/secrets/data-platform}"
+export DBT_GOOGLE_APPLICATION_CREDENTIALS="$DATA_PLATFORM_SECRETS_DIR/dbt-service-account.json"
 
 if gcloud config configurations describe \
   "$DEVELOPER_CONFIGURATION" >/dev/null 2>&1; then
@@ -448,18 +429,11 @@ gcloud auth login "$DEVELOPER_EMAIL"
 gcloud config set account "$DEVELOPER_EMAIL"
 gcloud config set project "$PROJECT_ID"
 gcloud config unset auth/impersonate_service_account
-
-gcloud auth application-default login \
-  --impersonate-service-account="$DBT_SERVICE_ACCOUNT_EMAIL"
-
-gcloud config set \
-  auth/impersonate_service_account \
-  "$DBT_SERVICE_ACCOUNT_EMAIL"
 ```
 
-Do not follow impersonated ADC setup with
-`gcloud auth application-default set-quota-project`. That command updates user
-ADC files and rejects an impersonated-service-account ADC file.
+The unset command only clears legacy local CLI state from the previous
+impersonated-ADC setup. dbt runtime authentication uses the JSON key configured
+below.
 
 Create or verify the external dev environment file:
 
@@ -479,6 +453,28 @@ else
 fi
 ```
 
+Create the dbt service-account key only when the external file does not already
+exist:
+
+```bash
+if test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"; then
+  echo "dbt service-account key already exists."
+else
+  gcloud iam service-accounts keys create \
+    "$DBT_GOOGLE_APPLICATION_CREDENTIALS" \
+    --iam-account="$DBT_SERVICE_ACCOUNT_EMAIL" \
+    --project="$PROJECT_ID"
+  chmod 600 "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+fi
+
+test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+grep -Fq "$DBT_SERVICE_ACCOUNT_EMAIL" \
+  "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+```
+
+The key is a long-lived credential. Keep it outside the repository and runtime
+image, and delete/recreate it immediately if it is exposed.
+
 Add or verify the dbt values in the external dev environment file. If another
 component already created the file, keep the existing values and merge the dbt
 values from `dbt/.env.example`.
@@ -489,6 +485,7 @@ RAW_DATASET=raw_kevinesg
 DBT_TARGET=dev
 DBT_DATASET=dbt_kevinesg
 DBT_SERVICE_ACCOUNT_EMAIL=data-platform-dbt-kevinesg@kevinesg-dev.iam.gserviceaccount.com
+DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/kevinesg/dev/secrets/data-platform/dbt-service-account.json
 DBT_THREADS=4
 BIGQUERY_LOCATION=US
 ```
@@ -511,13 +508,12 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 mkdir -p "$DBT_PROFILES_DIR"
 chmod 700 "$DBT_PROFILES_DIR"
 
-if test -f "$DBT_PROFILES_DIR/profiles.yml"; then
-  echo "dbt profile already exists: $DBT_PROFILES_DIR/profiles.yml"
-else
-  cp data_warehouse/profiles.yml.example "$DBT_PROFILES_DIR/profiles.yml"
-  chmod 600 "$DBT_PROFILES_DIR/profiles.yml"
-fi
+cp data_warehouse/profiles.yml.example "$DBT_PROFILES_DIR/profiles.yml"
+chmod 600 "$DBT_PROFILES_DIR/profiles.yml"
 ```
+
+The committed profile is environment-driven, so replacing the external copy is
+the supported way to apply authentication contract changes.
 
 Load the external environment file before running dbt commands:
 
@@ -528,9 +524,6 @@ set +a
 ```
 
 Verify the profile and connection:
-
-`gcloud config list` should show `auth.impersonate_service_account` set to the
-dbt service account before the `bq show` checks run.
 
 ```bash
 gcloud config list
@@ -552,8 +545,7 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$DBT_PERSONAL_FINANCE_MART_DATASET"
-gcloud auth application-default print-access-token >/dev/null &&
-  echo "Application Default Credentials are available."
+test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
 uv run dbt debug --project-dir data_warehouse --profiles-dir "$DBT_PROFILES_DIR"
 ```

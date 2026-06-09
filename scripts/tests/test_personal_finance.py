@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).parents[1]))
+
+import validate_config as scripts_validate_config  # noqa: E402
 
 import personal_finance  # noqa: E402
 
@@ -24,6 +27,10 @@ def set_required_env(monkeypatch, chunk_size="250", retention_days="7"):
     monkeypatch.setenv("PERSONAL_FINANCE_GCS_PREFIX", "personal_finance/")
     monkeypatch.setenv("PERSONAL_FINANCE_CHUNK_SIZE", chunk_size)
     monkeypatch.setenv("PERSONAL_FINANCE_JSONL_RETENTION_DAYS", retention_days)
+    monkeypatch.setenv(
+        "SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS",
+        "/tmp/scripts-service-account.json",
+    )
 
 
 def test_tables_define_expected_google_sheet_contract():
@@ -110,6 +117,111 @@ def test_load_config_rejects_empty_prefix(monkeypatch):
 
     with pytest.raises(ValueError, match="PERSONAL_FINANCE_GCS_PREFIX must not be empty"):
         personal_finance.load_config()
+
+
+def test_load_google_credentials_uses_configured_service_account_file(monkeypatch):
+    set_required_env(monkeypatch)
+    expected_credentials = object()
+    captured = {}
+
+    def fake_from_service_account_file(filename, scopes):
+        captured["filename"] = filename
+        captured["scopes"] = scopes
+        return expected_credentials
+
+    monkeypatch.setattr(
+        personal_finance.service_account.Credentials,
+        "from_service_account_file",
+        fake_from_service_account_file,
+    )
+    monkeypatch.setattr(personal_finance.Path, "is_file", lambda _path: True)
+
+    credentials = personal_finance.load_google_credentials()
+
+    assert credentials is expected_credentials
+    assert captured["filename"] == Path("/tmp/scripts-service-account.json")
+    assert captured["scopes"] == personal_finance.GOOGLE_API_SCOPES
+
+
+def valid_config_values(credentials_file):
+    return {
+        "ENVIRONMENT": "dev",
+        "DEVELOPER_ID": "kevinesg",
+        "PROJECT_ID": "kevinesg-dev",
+        "RAW_DATASET": "raw_kevinesg",
+        "SCRIPTS_SERVICE_ACCOUNT_EMAIL": (
+            "data-platform-scripts-kevinesg@kevinesg-dev.iam.gserviceaccount.com"
+        ),
+        "SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS": str(credentials_file),
+        "PERSONAL_FINANCE_GSHEET_URL": "https://docs.google.com/spreadsheets/d/example/edit",
+        "PERSONAL_FINANCE_GCS_BUCKET": "kevinesg-dev-data-platform-landing-kevinesg",
+        "PERSONAL_FINANCE_GCS_PREFIX": "personal_finance",
+        "PERSONAL_FINANCE_CHUNK_SIZE": "250",
+        "PERSONAL_FINANCE_JSONL_RETENTION_DAYS": "7",
+    }
+
+
+def write_service_account_file(path, project_id="kevinesg-dev"):
+    path.write_text(
+        json.dumps(
+            {
+                "type": "service_account",
+                "project_id": project_id,
+                "client_email": (
+                    "data-platform-scripts-kevinesg@kevinesg-dev.iam.gserviceaccount.com"
+                ),
+                "private_key": "test-private-key",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_validate_config_accepts_matching_service_account_file(tmp_path):
+    credentials_file = tmp_path / "scripts-service-account.json"
+    write_service_account_file(credentials_file)
+
+    error = scripts_validate_config.validate_values(valid_config_values(credentials_file))
+
+    assert error is None
+
+
+def test_validate_config_rejects_missing_service_account_file(tmp_path):
+    credentials_file = tmp_path / "missing-service-account.json"
+
+    error = scripts_validate_config.validate_values(valid_config_values(credentials_file))
+
+    assert error == f"service account file does not exist: {credentials_file}"
+
+
+def test_validate_config_rejects_service_account_for_another_project(tmp_path):
+    credentials_file = tmp_path / "scripts-service-account.json"
+    write_service_account_file(credentials_file, project_id="another-project")
+
+    error = scripts_validate_config.validate_values(valid_config_values(credentials_file))
+
+    assert error == (
+        "service account file project_id must match PROJECT_ID: "
+        f"{credentials_file}"
+    )
+
+
+def test_validate_config_rejects_another_component_service_account(tmp_path):
+    credentials_file = tmp_path / "dbt-service-account.json"
+    write_service_account_file(credentials_file)
+    credentials = json.loads(credentials_file.read_text(encoding="utf-8"))
+    credentials["client_email"] = (
+        "data-platform-dbt-kevinesg@kevinesg-dev.iam.gserviceaccount.com"
+    )
+    credentials_file.write_text(json.dumps(credentials), encoding="utf-8")
+
+    error = scripts_validate_config.validate_values(valid_config_values(credentials_file))
+
+    assert error == (
+        "service account file client_email must match "
+        f"SCRIPTS_SERVICE_ACCOUNT_EMAIL: {credentials_file}"
+    )
 
 
 class FakeWorksheet:

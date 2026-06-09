@@ -19,9 +19,9 @@ provided the scripts workspace values.
 Follow this file in order for scripts component setup:
 
 1. **Scripts Cloud Workspace** provisions or repairs the scripts service
-   account, landing bucket, raw dataset, and impersonation grant.
-2. **Scripts Local Workstation** configures local credentials, the external dev
-   environment file, the scripts runtime, and component access checks.
+   account, landing bucket, and raw dataset.
+2. **Scripts Local Workstation** creates the external service-account key and
+   environment file, installs the scripts runtime, and verifies configuration.
 3. **Pipeline Docs** continue source-specific setup and validation after the
    scripts component checks pass.
 
@@ -55,14 +55,12 @@ export SCRIPTS_SERVICE_ACCOUNT_EMAIL="${SCRIPTS_SERVICE_ACCOUNT_NAME}@${PROJECT_
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
 
 gcloud config configurations activate "$PLATFORM_BOOTSTRAP_CONFIGURATION"
-gcloud config unset auth/impersonate_service_account
 gcloud config set project "$PROJECT_ID"
 gcloud config list
 ```
 
-If a command prints `This command is using service account impersonation`, stop
-and rerun the block above before continuing. `DEVELOPER_ID` is a stable
-lowercase identifier containing 3-8 letters or digits.
+`DEVELOPER_ID` is a stable lowercase identifier containing 3-8 letters or
+digits.
 
 Verify or enable the shared services needed by scripts:
 
@@ -72,7 +70,6 @@ enable_missing_scripts_services() {
     bigquery.googleapis.com
     storage.googleapis.com
     iam.googleapis.com
-    iamcredentials.googleapis.com
     serviceusage.googleapis.com
   )
   local enabled_scripts_services
@@ -179,18 +176,6 @@ bq show \
   "$PROJECT_ID:$RAW_DATASET"
 ```
 
-Grant local impersonation permission:
-
-```bash
-gcloud iam service-accounts add-iam-policy-binding \
-  "$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
-  --project="$PROJECT_ID" \
-  --member="user:$DEVELOPER_EMAIL" \
-  --role="roles/iam.serviceAccountTokenCreator"
-```
-
-Do not create JSON service-account keys for local development.
-
 ### Scripts Local Workstation
 
 Run this subsection on the development workstation.
@@ -204,6 +189,8 @@ export LANDING_BUCKET="${PROJECT_ID}-data-platform-landing-${DEVELOPER_ID}"
 export SCRIPTS_SERVICE_ACCOUNT_NAME="data-platform-scripts-${DEVELOPER_ID}"
 export SCRIPTS_SERVICE_ACCOUNT_EMAIL="${SCRIPTS_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
+export DATA_PLATFORM_SECRETS_DIR="${DATA_PLATFORM_SECRETS_DIR:-$HOME/dev/secrets/data-platform}"
+export SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS="$DATA_PLATFORM_SECRETS_DIR/scripts-service-account.json"
 
 if gcloud config configurations describe \
   "$DEVELOPER_CONFIGURATION" >/dev/null 2>&1; then
@@ -216,18 +203,11 @@ gcloud auth login "$DEVELOPER_EMAIL"
 gcloud config set account "$DEVELOPER_EMAIL"
 gcloud config set project "$PROJECT_ID"
 gcloud config unset auth/impersonate_service_account
-
-gcloud auth application-default login \
-  --impersonate-service-account="$SCRIPTS_SERVICE_ACCOUNT_EMAIL"
-
-gcloud config set \
-  auth/impersonate_service_account \
-  "$SCRIPTS_SERVICE_ACCOUNT_EMAIL"
 ```
 
-Do not follow impersonated ADC setup with
-`gcloud auth application-default set-quota-project`. That command updates user
-ADC files and rejects an impersonated-service-account ADC file.
+The unset command only clears legacy local CLI state from the previous
+impersonated-ADC setup. scripts runtime authentication uses the JSON key
+configured below.
 
 Create or verify the external dev environment file:
 
@@ -247,24 +227,34 @@ else
 fi
 ```
 
-Add or verify the scripts values in the external dev environment file. If
-another component already created the file, keep the existing values and merge
-the scripts values from `scripts/.env.example`.
+Create the scripts service-account key only when the external file does not
+already exist:
 
-```dotenv
-ENVIRONMENT=dev
-DEVELOPER_ID=kevinesg
-PROJECT_ID=kevinesg-dev
-RAW_DATASET=raw_kevinesg
-PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/.../edit
-PERSONAL_FINANCE_GCS_BUCKET=kevinesg-dev-data-platform-landing-kevinesg
-PERSONAL_FINANCE_GCS_PREFIX=personal_finance
-PERSONAL_FINANCE_CHUNK_SIZE=5000
-PERSONAL_FINANCE_JSONL_RETENTION_DAYS=7
+```bash
+if test -f "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"; then
+  echo "Scripts service-account key already exists."
+else
+  gcloud iam service-accounts keys create \
+    "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS" \
+    --iam-account="$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
+    --project="$PROJECT_ID"
+  chmod 600 "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
+fi
+
+test -s "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
+grep -Fq "$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
+  "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
 ```
 
-Replace every example value. The file must not be copied into the repository,
-committed, pasted into tickets, or shared between developers.
+The key is a long-lived credential. Keep it outside the repository, never copy
+it into an image, and delete/recreate it immediately if it is exposed. Use
+`gcloud iam service-accounts keys list` to identify server-managed key IDs when
+rotation or revocation is required.
+
+Pipeline documentation defines the source-specific values to add to the
+external environment file. Keep values for other components when updating the
+shared file. The file must not be copied into the repository, committed, pasted
+into tickets, or shared between developers.
 
 Install the local scripts runtime:
 
@@ -281,13 +271,11 @@ gcloud storage ls "gs://$LANDING_BUCKET"
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$RAW_DATASET"
-gcloud auth application-default print-access-token >/dev/null &&
-  echo "Application Default Credentials are available."
-
-uv run python validate_config.py --env-file "$DATA_PLATFORM_ENV_FILE"
+test -s "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
 ```
 
-The pipeline documentation owns source access and extract/load validation.
+The pipeline documentation owns source configuration validation, source access,
+and extract/load validation.
 
 ## Runtime Contract
 
@@ -308,6 +296,23 @@ warehouse-side comparisons, and idempotent run identifiers.
 Runtime configuration comes from environment variables or an environment file
 stored outside the repository. Do not commit `.env` files, credentials, source
 exports, or warehouse data.
+
+## Docker Runtime
+
+Build the scripts image from the repository root:
+
+```bash
+docker build -t data-platform-scripts:dev scripts
+```
+
+The image contains locked runtime dependencies, schemas, script code, and the
+configuration validator. It does not contain environment files or credentials
+and does not require a repository bind mount for normal execution.
+
+Container commands that call external services must receive configuration and
+credentials at runtime. Local dev mounts the scripts service-account JSON file
+read-only. Each pipeline document owns its image entrypoint, environment
+variables, credential mount, and executable commands.
 
 ## Local Commands
 
@@ -333,17 +338,15 @@ platform.
 
 ## Validation
 
-Run formatting, linting, and tests from `scripts/` as those checks are added:
+Run formatting, linting, and tests from `scripts/`:
 
 ```bash
-uv run python validate_config.py --env-file "$DATA_PLATFORM_ENV_FILE"
 uv run ruff check .
 uv run pytest
 ```
 
-This component starts with project scaffolding only. Source-specific runtime
-dependencies, commands, schemas, and tests are added with the pipeline features
-that need them.
+Pipeline-specific configuration validation belongs in the relevant pipeline
+document.
 
 ## Schemas
 
@@ -373,5 +376,6 @@ implementation. A single pipeline note can live at `pipelines/<source>.md`; use
 non-runtime files. The importable runtime source tree is not the home for
 operational notes.
 
-Current pipeline setup and validation continue in `pipelines/personal_finance.md`
-after the scripts end-to-end dev setup has passed.
+Current pipelines:
+
+- [Personal finance](pipelines/personal_finance.md)
