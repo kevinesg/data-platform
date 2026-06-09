@@ -56,9 +56,10 @@ workstation defaults to `$HOME/dev/secrets/data-platform/.env`; the path remains
 configurable through `DATA_PLATFORM_SECRETS_DIR` or
 `DATA_PLATFORM_ENV_FILE`. QA and prod configuration belongs on the matching
 deployment platform or authorized administration host, not on a development
-workstation. Local dev uses keyless Application Default Credentials and local
-image tags. Deployed QA/prod use immutable registry image tags, workload
-credentials supplied by the runtime, and no runtime source-code bind mounts.
+workstation. Local dev uses component-specific service-account JSON files stored
+under the external secrets directory and local image tags. Deployed QA/prod use
+immutable registry image tags, environment-specific service-account JSON files
+stored on the deployment platform, and no runtime source-code bind mounts.
 
 ## Setup Flow
 

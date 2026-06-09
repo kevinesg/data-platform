@@ -192,7 +192,6 @@ enable_missing_platform_services() {
     bigquery.googleapis.com
     storage.googleapis.com
     iam.googleapis.com
-    iamcredentials.googleapis.com
     serviceusage.googleapis.com
   )
   local enabled_platform_services
@@ -230,7 +229,7 @@ Verify the exact services without the deprecated substring-filter behavior:
 gcloud services list \
   --enabled \
   --project="$PROJECT_ID" \
-  --filter='config.name~"^(bigquery|iam|iamcredentials|serviceusage|storage)\.googleapis\.com$"' \
+  --filter='config.name~"^(bigquery|iam|serviceusage|storage)\.googleapis\.com$"' \
   --format='value(config.name)' \
   --sort-by='config.name'
 ```
@@ -249,9 +248,10 @@ end-to-end path for that component so operators do not have to combine commands
 from unrelated runtime sections.
 
 - `scripts/README.md` owns the scripts service account, landing bucket, raw
-  dataset, local ADC target, environment file setup, and scripts verification.
+  dataset, external service-account key, environment file setup, and scripts
+  verification.
 - `dbt/README.md` owns the dbt service account, dbt target dataset, raw read
-  grant, external dbt profile, local ADC target, and `dbt debug`.
+  grant, external service-account key, external dbt profile, and `dbt debug`.
 - Future `airflow/README.md` and `metabase/README.md` own their component setup
   when those components are introduced.
 
@@ -265,7 +265,8 @@ QA and prod project bootstrap is performed once by platform maintainers.
 Environment configuration belongs on the matching deployment platform or an
 authorized administration host, not on a development workstation.
 
-Workloads on Google Cloud use an attached environment-specific service account.
-Workloads outside Google Cloud and CI/CD use Workload Identity Federation when
-supported. Persistent JSON keys are a fallback only when the selected runtime
-cannot use a keyless mechanism.
+Each environment uses dedicated service-account JSON files stored outside the
+repository on its deployment platform or authorized administration host. Mount
+keys read-only into runtime containers, restrict filesystem access, and rotate
+or revoke keys immediately after suspected exposure. QA and prod keys must not
+be stored on development workstations.
