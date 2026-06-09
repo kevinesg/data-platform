@@ -1,0 +1,96 @@
+name: dbt-ci
+
+# PR and push checks stay component-scoped so unchanged components are not
+# rebuilt or re-published for unrelated changes.
+
+on:
+  pull_request:
+    paths:
+      - "dbt/**"
+      - "!dbt/*.md"
+      - "!dbt/**/*.md"
+      - "!dbt/.env.example"
+      - "!dbt/**/.gitignore"
+      - "!dbt/**/.gitkeep"
+      - ".github/workflows/dbt-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "dbt/**"
+      - "!dbt/*.md"
+      - "!dbt/**/*.md"
+      - "!dbt/.env.example"
+      - "!dbt/**/.gitignore"
+      - "!dbt/**/.gitkeep"
+      - ".github/workflows/dbt-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dbt-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate dbt
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: dbt
+
+    env:
+      DBT_TARGET: dev
+      PROJECT_ID: ci-project
+      RAW_DATASET: raw_ci
+      DBT_DATASET: dbt_ci
+      DBT_GOOGLE_APPLICATION_CREDENTIALS: /tmp/data-platform-dbt-ci-service-account.json
+      DBT_THREADS: "4"
+      BIGQUERY_LOCATION: US
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: dbt/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Create CI profile
+        run: |
+          mkdir -p ci-profiles
+          cp data_warehouse/profiles.yml.example ci-profiles/profiles.yml
+
+      - name: Parse dbt project
+        # Parse is intentionally credential-free. Live BigQuery build/test
+        # validation belongs to dev and deployed QA smoke checks.
+        run: uv run dbt parse --project-dir data_warehouse --profiles-dir ci-profiles
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build dbt image
+        # CI proves the image builds, but does not publish. Publishing immutable
+        # GHCR tags belongs to CD after the commit has passed validation.
+        uses: docker/build-push-action@v7
+        with:
+          context: dbt
+          file: dbt/Dockerfile
+          push: false
+          tags: data-platform-dbt:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,102 @@
+name: airflow-ci
+
+# PR and push checks stay component-scoped so unchanged components are not
+# rebuilt or re-published for unrelated changes.
+
+on:
+  pull_request:
+    paths:
+      - "airflow/**"
+      - "!airflow/*.md"
+      - "!airflow/**/*.md"
+      - "!airflow/.env.example"
+      - "!airflow/**/.gitignore"
+      - "!airflow/**/.gitkeep"
+      - ".github/workflows/airflow-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "airflow/**"
+      - "!airflow/*.md"
+      - "!airflow/**/*.md"
+      - "!airflow/.env.example"
+      - "!airflow/**/.gitignore"
+      - "!airflow/**/.gitkeep"
+      - ".github/workflows/airflow-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: airflow-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Airflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Airflow image
+        # load: true makes the built image available to docker run in the next
+        # step. CI does not publish; GHCR publishing belongs to CD.
+        uses: docker/build-push-action@v7
+        with:
+          context: airflow
+          file: airflow/Dockerfile
+          load: true
+          push: false
+          tags: data-platform-airflow:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate DAG imports
+        # This validates packaged DAG imports without live cloud credentials.
+        # Deployed QA smoke checks should validate real GCP connections later.
+        run: |
+          docker run --rm --entrypoint python \
+            -e ENVIRONMENT=dev \
+            -e PROJECT_ID=ci-project \
+            -e RAW_DATASET=raw_ci \
+            -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
+            -e DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:ci \
+            -e SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/tmp/scripts-ci-service-account.json \
+            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/tmp/dbt-ci-service-account.json \
+            -e PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/ci/edit \
+            -e PERSONAL_FINANCE_GCS_BUCKET=ci-bucket \
+            -e PERSONAL_FINANCE_GCS_PREFIX=personal_finance \
+            -e PERSONAL_FINANCE_CHUNK_SIZE=5000 \
+            -e PERSONAL_FINANCE_JSONL_RETENTION_DAYS=7 \
+            -e DBT_TARGET=dev \
+            -e DBT_DATASET=dbt_ci \
+            -e DBT_THREADS=4 \
+            -e BIGQUERY_LOCATION=US \
+            data-platform-airflow:ci - <<'PY'
+          import importlib.util
+          import sys
+          from pathlib import Path
+
+          dag_dir = Path("/opt/airflow/dags")
+          dag_files = sorted(path for path in dag_dir.glob("*.py") if path.is_file())
+          if not dag_files:
+              raise SystemExit("no DAG files found")
+
+          for path in dag_files:
+              module_name = f"ci_dag_{path.stem}"
+              spec = importlib.util.spec_from_file_location(module_name, path)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError(f"could not load spec for {path}")
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[module_name] = module
+              spec.loader.exec_module(module)
+              print(f"imported {path.name}")
+          PY
