@@ -80,8 +80,10 @@ in the owning README so each command sequence has one canonical home.
      dataset, local credentials, runtime setup, and scripts verification.
    - `dbt/README.md` for dbt project setup, dbt service account, datasets,
      external profile, local credentials, and `dbt debug`.
-   - `airflow/README.md` and `metabase/README.md` document boundaries for now;
-     setup commands will be added when those components are implemented.
+   - `airflow/README.md` for the local Airflow runtime and empty-stack
+     validation.
+   - `metabase/README.md` documents boundaries for now; setup commands will be
+     added when that component is implemented.
 5. Run source-specific or domain-specific docs only after the owning component
    setup passes. For example, scripts pipeline commands live under
    `scripts/pipelines/`.
