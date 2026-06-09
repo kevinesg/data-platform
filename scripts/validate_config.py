@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -105,6 +106,36 @@ def validate_values(values: dict[str, str]) -> str | None:
     for name in ("PERSONAL_FINANCE_CHUNK_SIZE", "PERSONAL_FINANCE_JSONL_RETENTION_DAYS"):
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
+
+    credentials_file = Path(values["SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"]).expanduser()
+    if not credentials_file.is_file():
+        return f"service account file does not exist: {credentials_file}"
+    try:
+        credentials = json.loads(credentials_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return f"service account file is not valid JSON: {credentials_file}"
+    if credentials.get("type") != "service_account":
+        return f"credential file must contain a service_account key: {credentials_file}"
+    if credentials.get("project_id") != values["PROJECT_ID"]:
+        return (
+            "service account file project_id must match PROJECT_ID: "
+            f"{credentials_file}"
+        )
+    if credentials.get("client_email") != values["SCRIPTS_SERVICE_ACCOUNT_EMAIL"]:
+        return (
+            "service account file client_email must match "
+            f"SCRIPTS_SERVICE_ACCOUNT_EMAIL: {credentials_file}"
+        )
+    missing_key_fields = [
+        field
+        for field in ("private_key", "token_uri")
+        if not credentials.get(field)
+    ]
+    if missing_key_fields:
+        return (
+            "service account file is missing required fields "
+            f"{', '.join(missing_key_fields)}: {credentials_file}"
+        )
 
     return None
 

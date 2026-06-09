@@ -25,15 +25,15 @@ version control.
 
 ## Prerequisites
 
-Complete the shared dev and developer-workspace sections of
-`deploy/README.md`. The resulting workspace contains:
+Read the scripts component contract in [`scripts/README.md`](../README.md), then
+complete the shared dev and developer-workspace sections of `deploy/README.md`.
+The resulting workspace contains:
 
 - the shared `kevinesg-dev` project;
 - a per-developer scripts service account;
 - a per-developer GCS landing bucket;
 - a per-developer BigQuery raw dataset;
-- keyless Application Default Credentials created through service account
-  impersonation; and
+- a scripts service-account JSON key stored outside the repository; and
 - an external environment file, defaulting to
   `$HOME/dev/secrets/data-platform/.env`.
 
@@ -48,6 +48,7 @@ export RAW_DATASET="raw_${DEVELOPER_ID}"
 export LANDING_BUCKET="${PROJECT_ID}-data-platform-landing-${DEVELOPER_ID}"
 export DATA_PLATFORM_SECRETS_DIR="${DATA_PLATFORM_SECRETS_DIR:-$HOME/dev/secrets/data-platform}"
 export DATA_PLATFORM_ENV_FILE="${DATA_PLATFORM_ENV_FILE:-$DATA_PLATFORM_SECRETS_DIR/.env}"
+export SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS="$DATA_PLATFORM_SECRETS_DIR/scripts-service-account.json"
 ```
 
 `DEVELOPER_ID` uses the assigned stable identifier. Either configuration
@@ -135,6 +136,8 @@ ENVIRONMENT=dev
 DEVELOPER_ID=kevinesg
 PROJECT_ID=kevinesg-dev
 RAW_DATASET=raw_kevinesg
+SCRIPTS_SERVICE_ACCOUNT_EMAIL=data-platform-scripts-kevinesg@kevinesg-dev.iam.gserviceaccount.com
+SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/kevinesg/dev/secrets/data-platform/scripts-service-account.json
 
 PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/.../edit
 PERSONAL_FINANCE_GCS_BUCKET=kevinesg-dev-data-platform-landing-kevinesg
@@ -144,8 +147,8 @@ PERSONAL_FINANCE_JSONL_RETENTION_DAYS=7
 ```
 
 The developer identifier in the dataset and bucket names must match
-`DEVELOPER_ID`. Do not add `GOOGLE_APPLICATION_CREDENTIALS`; local
-authentication is provided by ADC.
+`DEVELOPER_ID`. Set `SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS` to the absolute
+host path created by the scripts component setup.
 
 ## Configuration Validation
 
@@ -170,12 +173,148 @@ project_id=kevinesg-dev
 raw_dataset=raw_kevinesg
 ```
 
-Resolve configuration, ADC, IAM, source sharing, dataset, and bucket errors
+Resolve configuration, credential, IAM, source sharing, dataset, and bucket errors
 before running extraction.
+
+## Docker Validation
+
+Build and validate the scripts image from the repository root:
+
+```bash
+export SCRIPTS_IMAGE=data-platform-scripts:dev
+
+test -f "$DATA_PLATFORM_ENV_FILE"
+test -f "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
+grep -Fq "$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
+  "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS"
+
+docker build -t "$SCRIPTS_IMAGE" scripts
+docker run --rm "$SCRIPTS_IMAGE" --help
+
+docker run --rm \
+  --entrypoint python \
+  --env-file "$DATA_PLATFORM_ENV_FILE" \
+  --env SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/credentials/scripts-service-account.json \
+  --mount "type=bind,source=$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/scripts-service-account.json,readonly" \
+  "$SCRIPTS_IMAGE" \
+  validate_config.py
+```
+
+The external environment file provides pipeline configuration but not Google
+credentials inside the container because its credential path points to the
+host. Define a helper that mounts the scripts service-account key read-only and
+overrides the path for every extract, load, and cleanup command:
+
+```bash
+run_personal_finance_container() {
+  docker run --rm \
+    --env-file "$DATA_PLATFORM_ENV_FILE" \
+    --env SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/credentials/scripts-service-account.json \
+    --mount "type=bind,source=$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/scripts-service-account.json,readonly" \
+    "$SCRIPTS_IMAGE" \
+    "$@"
+}
+```
+
+Do not copy the key into the image or repository.
+
+### Single-Entity Extract And Load
+
+Start with the `accounts` entity:
+
+```bash
+export RUN_ID="dev-accounts-docker-$(date -u +%Y%m%dT%H%M%SZ)"
+
+run_personal_finance_container \
+  --step extract \
+  --entity accounts \
+  --run-id "$RUN_ID"
+
+run_personal_finance_container \
+  --step load \
+  --entity accounts \
+  --run-id "$RUN_ID"
+```
+
+The extract writes run-scoped JSONL files and an `_SUCCESS` marker to GCS. The
+load requires that marker and applies the exact staged run to the raw table.
+
+Retry the same load to verify idempotent replay:
+
+```bash
+run_personal_finance_container \
+  --step load \
+  --entity accounts \
+  --run-id "$RUN_ID"
+```
+
+The retry must succeed without increasing the raw table row count.
+
+### All-Entity Extract And Load
+
+Omit `--entity` to process `transactions`, `paid_for_others`, `transfers`, and
+`accounts` with one run ID:
+
+```bash
+export RUN_ID="dev-full-docker-$(date -u +%Y%m%dT%H%M%SZ)"
+
+run_personal_finance_container \
+  --step extract \
+  --run-id "$RUN_ID"
+
+run_personal_finance_container \
+  --step load \
+  --run-id "$RUN_ID"
+```
+
+### Full Refresh
+
+Full refresh replaces the selected raw table from a completed staged run:
+
+```bash
+export RUN_ID="dev-accounts-full-refresh-docker-$(date -u +%Y%m%dT%H%M%SZ)"
+
+run_personal_finance_container \
+  --step extract \
+  --entity accounts \
+  --run-id "$RUN_ID"
+
+run_personal_finance_container \
+  --step load \
+  --entity accounts \
+  --run-id "$RUN_ID" \
+  --full-refresh
+```
+
+Use full refresh only for controlled rebuilds. Incremental merge remains the
+default path.
+
+### Cleanup
+
+Cleanup only removes completed runs whose `_SUCCESS` marker is older than
+`PERSONAL_FINANCE_JSONL_RETENTION_DAYS`. A recent run is reported as skipped.
+
+Target one entity and run ID:
+
+```bash
+run_personal_finance_container \
+  --step cleanup \
+  --entity accounts \
+  --run-id "$RUN_ID"
+```
+
+Process retention cleanup across every personal finance entity and run:
+
+```bash
+run_personal_finance_container \
+  --step cleanup
+```
+
+After cleanup deletes a run, that staged input is no longer load-retryable.
 
 ## Dev Extract Validation
 
-Begin with the smallest stable entity so source access, headers, coercion, ADC,
+Begin with the smallest stable entity so source access, headers, coercion, credentials,
 and GCS permissions are checked before warehouse loading:
 
 ```bash

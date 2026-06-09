@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import google.auth
 import gspread
 from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
+from google.oauth2 import service_account
 from gspread.utils import ValueRenderOption, rowcol_to_a1
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -71,7 +71,7 @@ def main() -> int:
 def extract(run_id: str, entity_name: str | None = None) -> None:
     config = load_config()
     extracted_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    credentials = load_google_credentials()
     storage_client = storage.Client(project=config["project_id"], credentials=credentials)
     bucket = storage_client.bucket(config["bucket_name"])
     spreadsheet = gspread.authorize(credentials).open_by_url(config["gsheet_url"])
@@ -128,7 +128,7 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
 
 def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False) -> None:
     config = load_config()
-    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    credentials = load_google_credentials()
     bq_client = bigquery.Client(project=config["project_id"], credentials=credentials)
     storage_client = storage.Client(project=config["project_id"], credentials=credentials)
     bucket = storage_client.bucket(config["bucket_name"])
@@ -209,7 +209,7 @@ def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False
 
 def cleanup(run_id: str | None = None, entity_name: str | None = None) -> None:
     config = load_config()
-    credentials, _ = google.auth.default(scopes=GOOGLE_API_SCOPES)
+    credentials = load_google_credentials()
     storage_client = storage.Client(project=config["project_id"], credentials=credentials)
     bucket = storage_client.bucket(config["bucket_name"])
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=config["retention_days"])
@@ -263,6 +263,16 @@ def load_config() -> dict[str, Any]:
         "chunk_size": chunk_size,
         "retention_days": retention_days,
     }
+
+
+def load_google_credentials() -> service_account.Credentials:
+    credentials_file = Path(env("SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS")).expanduser()
+    if not credentials_file.is_file():
+        raise ValueError(f"service account file does not exist: {credentials_file}")
+    return service_account.Credentials.from_service_account_file(
+        credentials_file,
+        scopes=GOOGLE_API_SCOPES,
+    )
 
 
 def default_env_file() -> Path | None:

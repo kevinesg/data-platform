@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.envrc
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+tests/
+.local/
+logs/
+credentials/
+*-service-account.json
+*.key
+*.pem
+.DS_Store
