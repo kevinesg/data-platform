@@ -82,7 +82,7 @@ def read_env_file(env_file: Path) -> dict[str, str]:
 
 
 def validate_values(values: dict[str, str]) -> str | None:
-    for name in ("AIRFLOW_UID", "AIRFLOW_API_PORT"):
+    for name in ("AIRFLOW_UID", "DOCKER_GID", "AIRFLOW_API_PORT"):
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
 

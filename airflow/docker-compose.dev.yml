@@ -8,6 +8,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-auth:/opt/airflow/auth
       - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
   api-server:
     build:
@@ -18,6 +19,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-auth:/opt/airflow/auth
       - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
   dag-processor:
     build:
@@ -28,6 +30,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-auth:/opt/airflow/auth
       - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
   scheduler:
     build:
@@ -38,6 +41,7 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-auth:/opt/airflow/auth
       - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
   triggerer:
     build:
@@ -48,3 +52,4 @@ services:
       - ./dags:/opt/airflow/dags
       - airflow-auth:/opt/airflow/auth
       - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
