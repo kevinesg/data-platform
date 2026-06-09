@@ -1,0 +1,86 @@
+name: scripts-ci
+
+# PR and push checks stay component-scoped so unchanged components are not
+# rebuilt or re-published for unrelated changes.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "!scripts/*.md"
+      - "!scripts/**/*.md"
+      - "!scripts/.env.example"
+      - "!scripts/**/.gitignore"
+      - "!scripts/**/.gitkeep"
+      - ".github/workflows/scripts-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/**"
+      - "!scripts/*.md"
+      - "!scripts/**/*.md"
+      - "!scripts/.env.example"
+      - "!scripts/**/.gitignore"
+      - "!scripts/**/.gitkeep"
+      - ".github/workflows/scripts-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: scripts-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: scripts
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: scripts/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Compile Python
+        run: uv run python -m compileall -q src tests validate_config.py
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build scripts image
+        # CI proves the image builds, but does not publish. Publishing immutable
+        # GHCR tags belongs to CD after the commit has passed validation.
+        uses: docker/build-push-action@v7
+        with:
+          context: scripts
+          file: scripts/Dockerfile
+          push: false
+          tags: data-platform-scripts:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
