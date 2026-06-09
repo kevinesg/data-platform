@@ -12,4 +12,6 @@ RUN apt-get update \
 
 USER airflow
 
+RUN pip install --no-cache-dir apache-airflow-providers-docker==4.5.7
+
 COPY --chown=airflow:root dags /opt/airflow/dags

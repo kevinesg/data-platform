@@ -3,6 +3,8 @@ name: ${AIRFLOW_COMPOSE_PROJECT:-data-platform-airflow}
 x-airflow-common: &airflow-common
   image: ${DATA_PLATFORM_AIRFLOW_IMAGE:?set DATA_PLATFORM_AIRFLOW_IMAGE in DATA_PLATFORM_ENV_FILE}
   user: "${AIRFLOW_UID:-50000}:0"
+  group_add:
+    - "${DOCKER_GID:-0}"
   env_file:
     - ${DATA_PLATFORM_ENV_FILE:?set DATA_PLATFORM_ENV_FILE}
   environment:
@@ -17,9 +19,12 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW_ADMIN_USERNAME}:admin
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    DATA_PLATFORM_DBT_IMAGE: ${DATA_PLATFORM_DBT_IMAGE:?set DATA_PLATFORM_DBT_IMAGE in DATA_PLATFORM_ENV_FILE}
+    DATA_PLATFORM_SCRIPTS_IMAGE: ${DATA_PLATFORM_SCRIPTS_IMAGE:?set DATA_PLATFORM_SCRIPTS_IMAGE in DATA_PLATFORM_ENV_FILE}
   volumes:
     - airflow-auth:/opt/airflow/auth
     - airflow-logs:/opt/airflow/logs
+    - /var/run/docker.sock:/var/run/docker.sock
   depends_on:
     postgres:
       condition: service_healthy

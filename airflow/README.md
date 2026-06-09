@@ -36,9 +36,12 @@ merge every Airflow value from `airflow/.env.example`. Do not create
 
 ```dotenv
 AIRFLOW_UID=50000
+DOCKER_GID=0
 AIRFLOW_COMPOSE_PROJECT=data-platform-airflow-dev
 AIRFLOW_API_PORT=8080
 DATA_PLATFORM_AIRFLOW_IMAGE=data-platform-airflow:dev
+DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:dev
+DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:dev
 
 POSTGRES_USER=airflow
 POSTGRES_PASSWORD=<local-password>
@@ -54,6 +57,12 @@ Set `AIRFLOW_UID` to the host user ID:
 
 ```bash
 id -u
+```
+
+Set `DOCKER_GID` to the host Docker socket group ID:
+
+```bash
+stat -c '%g' /var/run/docker.sock
 ```
 
 Generate API/JWT secret values with Python:
@@ -163,8 +172,9 @@ The Airflow image copies DAG files from `airflow/dags/` so CI and registry
 images are self-contained. Local development uses `docker-compose.dev.yml` to
 bind-mount `./dags` for faster iteration.
 
-This PR intentionally starts with an empty DAG directory. The personal finance
-ELT DAG belongs in a later PR after this local stack is validated.
+DAGs that launch component images use DockerOperator through the mounted host
+Docker socket. This is local runtime support for image-contract validation; DAGs
+must still keep extract/load logic in `scripts` and transform logic in `dbt`.
 
 ## Design Notes
 
