@@ -146,7 +146,7 @@ That password persists across normal `docker compose up -d` rebuilds because
 the password file is stored in the `airflow-auth` named volume. It resets if the
 volume is removed.
 
-Check the empty DAG environment:
+Check DAG parsing after local startup:
 
 ```bash
 docker compose --env-file "$DATA_PLATFORM_ENV_FILE" -f docker-compose.yml -f docker-compose.dev.yml exec scheduler airflow dags list
@@ -175,6 +175,14 @@ bind-mount `./dags` for faster iteration.
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs
 must still keep extract/load logic in `scripts` and transform logic in `dbt`.
+
+For DAGs that pass the Airflow DAG run ID into extract/load commands, retries
+and task clears are expected to replay the same staged source snapshot. Trigger
+a new DAG run when source data changed and a fresh extract is required.
+
+Do not add a README for every DAG. Add a DAG-specific runbook only when the DAG
+has operational behavior that is not already covered by the component README or
+the owning source/dbt documentation.
 
 ## Design Notes
 
