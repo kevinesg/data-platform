@@ -4,6 +4,13 @@ This runbook covers shared platform bootstrap and workstation prerequisites.
 Start with the root `README.md`, then use this file for common setup before
 following the relevant component README.
 
+This directory is named `deploy` because it owns deployment-facing contracts:
+environment bootstrap, host layout, runtime image manifests, and recovery
+runbooks. Keep component development commands in component READMEs. If the
+platform later adds infrastructure-as-code or broader operations tooling, split
+that into a separate `infra/` or `ops/` directory instead of turning `deploy/`
+into a catch-all folder.
+
 ## Choose The Applicable Path
 
 The setup responsibilities are intentionally separate:
@@ -252,8 +259,10 @@ from unrelated runtime sections.
   verification.
 - `dbt/README.md` owns the dbt service account, dbt target dataset, raw read
   grant, external service-account key, external dbt profile, and `dbt debug`.
-- Future `airflow/README.md` and `metabase/README.md` own their component setup
-  when those components are introduced.
+- `airflow/README.md` owns the local orchestration runtime, image variables,
+  Compose setup, and DAG validation.
+- `metabase/README.md` owns analytics service setup when that component is
+  implemented.
 
 Shared project creation, billing, shared API enablement, and workstation tool
 installation remain in this runbook because they are cross-component platform
@@ -270,3 +279,22 @@ repository on its deployment platform or authorized administration host. Mount
 keys read-only into runtime containers, restrict filesystem access, and rotate
 or revoke keys immediately after suspected exposure. QA and prod keys must not
 be stored on development workstations.
+
+## Deployment Image Manifest
+
+Deployed environments use an external non-secret `images.env` file beside the
+external secret `.env` file. The image manifest pins each runtime component to
+an immutable GHCR tag produced by `.github/workflows/publish-images.yml`.
+
+```text
+$HOME/secrets/data-platform/qa/images.env
+$HOME/secrets/data-platform/prod/images.env
+```
+
+Create the first copy from `deploy/images.env.example` after the publishing
+workflow has produced fresh image tags for the rebuilt repository. Replace every
+`sha-change-me` value with a real `sha-<commit-sha>` tag.
+
+`images.env` is disposable deployment state, not a secret. Recreate it from the
+published image set during clean rebuilds. Do not commit environment-specific
+copies.

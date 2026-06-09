@@ -110,6 +110,14 @@ ghcr.io/kevinesg/data-platform-dbt
 ghcr.io/kevinesg/data-platform-airflow
 ```
 
+Published registry images use immutable commit tags:
+
+```text
+ghcr.io/kevinesg/data-platform-scripts:sha-<commit-sha>
+ghcr.io/kevinesg/data-platform-dbt:sha-<commit-sha>
+ghcr.io/kevinesg/data-platform-airflow:sha-<commit-sha>
+```
+
 ## Continuous Integration
 
 Component CI runs only for changed component paths and does not use live cloud
@@ -124,8 +132,9 @@ Current workflows:
   non-secret profile, and builds the dbt image.
 - `airflow-ci`: builds the Airflow image and imports packaged DAG files with
   dummy non-secret environment values.
+- `publish-images`: publishes immutable GHCR image tags after the matching
+  component CI workflow succeeds on `main`, or through manual dispatch.
 
-Publishing immutable registry images, deployed QA smoke checks, and prod
-promotion are separate CD phases after CI passes. Workflow syntax, local
-validation options, and CI/CD boundaries are documented in
-`.github/workflows/README.md`.
+Deployed QA smoke checks and prod promotion are later CD phases after immutable
+images exist. Workflow syntax, local validation options, and CI/CD boundaries
+are documented in `.github/workflows/README.md`.
