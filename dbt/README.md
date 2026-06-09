@@ -27,6 +27,8 @@ Follow this file in order for dbt component setup:
    read grant, and dbt target datasets.
 4. **dbt Local Workstation** creates the external service-account key and
    environment file, configures the external dbt profile, and runs `dbt debug`.
+5. **dbt Docker Runtime** builds the dbt image and validates dbt commands inside
+   the container with credentials mounted at runtime.
 
 ## Project Layout
 
@@ -628,3 +630,64 @@ uv run dbt run \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select +path:models/marts/personal_finance
 ```
+
+## Docker Runtime
+
+Build the dbt image from the repository root:
+
+```bash
+docker build -t data-platform-dbt:dev dbt
+```
+
+The image contains locked runtime dependencies, the dbt project, and a
+non-secret profile copied from `data_warehouse/profiles.yml.example`. It does
+not contain environment files, service-account keys, generated dbt artifacts, or
+a repository bind mount.
+
+Container commands that call BigQuery must receive configuration and
+credentials at runtime. Local dev mounts the dbt service-account JSON file
+read-only and overrides the key path used inside the container:
+
+```bash
+export DATA_PLATFORM_SECRETS_DIR="${DATA_PLATFORM_SECRETS_DIR:-$HOME/dev/secrets/data-platform}"
+export DATA_PLATFORM_ENV_FILE="${DATA_PLATFORM_ENV_FILE:-$DATA_PLATFORM_SECRETS_DIR/.env}"
+export DBT_IMAGE=data-platform-dbt:dev
+
+test -f "$DATA_PLATFORM_ENV_FILE"
+
+set -a
+. "$DATA_PLATFORM_ENV_FILE"
+set +a
+
+test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+grep -Fq "$DBT_SERVICE_ACCOUNT_EMAIL" \
+  "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+
+docker build -t "$DBT_IMAGE" dbt
+docker run --rm "$DBT_IMAGE" --version
+
+run_dbt_container() {
+  docker run --rm \
+    --env-file "$DATA_PLATFORM_ENV_FILE" \
+    --env DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+    --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+    "$DBT_IMAGE" \
+    "$@"
+}
+```
+
+Validate the profile, parse graph, compile SQL, and build the personal finance
+models against dev:
+
+```bash
+run_dbt_container debug --project-dir data_warehouse
+run_dbt_container parse --project-dir data_warehouse
+run_dbt_container compile \
+  --project-dir data_warehouse \
+  --select +path:models/marts/personal_finance
+run_dbt_container build \
+  --project-dir data_warehouse \
+  --select +path:models/marts/personal_finance
+```
+
+Do not copy the key into the image or repository.
