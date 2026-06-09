@@ -1,0 +1,50 @@
+services:
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DATA_PLATFORM_AIRFLOW_IMAGE:-data-platform-airflow:dev}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow-auth:/opt/airflow/auth
+      - airflow-logs:/opt/airflow/logs
+
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DATA_PLATFORM_AIRFLOW_IMAGE:-data-platform-airflow:dev}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow-auth:/opt/airflow/auth
+      - airflow-logs:/opt/airflow/logs
+
+  dag-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DATA_PLATFORM_AIRFLOW_IMAGE:-data-platform-airflow:dev}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow-auth:/opt/airflow/auth
+      - airflow-logs:/opt/airflow/logs
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DATA_PLATFORM_AIRFLOW_IMAGE:-data-platform-airflow:dev}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow-auth:/opt/airflow/auth
+      - airflow-logs:/opt/airflow/logs
+
+  triggerer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DATA_PLATFORM_AIRFLOW_IMAGE:-data-platform-airflow:dev}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow-auth:/opt/airflow/auth
+      - airflow-logs:/opt/airflow/logs
