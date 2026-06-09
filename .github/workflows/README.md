@@ -11,6 +11,7 @@ for every component check.
 | `scripts-ci` | `scripts-ci.yml` | Pull requests and pushes to `main` that change scripts runtime files, plus manual dispatch | Installs the locked scripts runtime, runs lint/tests, compiles Python files, and builds the scripts Docker image without publishing it. |
 | `dbt-ci` | `dbt-ci.yml` | Pull requests and pushes to `main` that change dbt runtime files, plus manual dispatch | Installs the locked dbt runtime, parses the dbt project with non-secret placeholder values, and builds the dbt Docker image without publishing it. |
 | `airflow-ci` | `airflow-ci.yml` | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
+| `publish-images` | `publish-images.yml` | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
 
 ## CI/CD Boundary
 
@@ -18,9 +19,19 @@ CI validates code, configuration parsing, and image buildability. Pull-request C
 must not depend on live cloud credentials, developer-specific secrets, BigQuery
 datasets, GCS buckets, or Google Sheets access.
 
-CD is a separate phase. Publishing immutable registry images, deployed QA smoke
-checks, production promotion, and environment approvals belong in later CD
-workflows after the matching component CI has passed.
+CD starts by publishing immutable registry images after the matching component
+CI has passed on `main`. Deployed QA smoke checks, production promotion, and
+environment approvals belong in later deployment workflows.
+
+Published runtime image tags use this form:
+
+```text
+ghcr.io/kevinesg/data-platform-<component>:sha-<commit-sha>
+```
+
+Do not use mutable `latest`, `qa`, or `prod` tags for deployed runtime
+selection. Deployed environments should pin image refs through their external
+`images.env` manifest.
 
 ## Syntax Guide
 
@@ -96,3 +107,7 @@ options. `act` requires Docker Engine for containerized local workflow runs.
 Treat `act` as an optional fast-feedback tool, not as a replacement for the
 GitHub PR run. Runner images, Docker Buildx behavior, GitHub cache services,
 event payloads, and hosted-runner details can differ locally.
+
+Do not use local workflow emulation to push GHCR images. Local checks can prove
+the image builds; publishing is intentionally limited to GitHub Actions on
+validated commits.
