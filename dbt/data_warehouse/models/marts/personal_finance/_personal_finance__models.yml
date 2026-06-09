@@ -1,0 +1,322 @@
+version: 2
+
+models:
+  - name: personal_finance__transactions
+    description: Transaction-level personal finance mart for analytics and Metabase exploration.
+    columns:
+      - name: transaction_id
+        description: Stable transaction identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_date
+        description: Reporting/accrual date when the transaction happened.
+        data_tests:
+          - not_null
+      - name: posted_date
+        description: Account-balance movement date used by balance models.
+        data_tests:
+          - not_null
+      - name: transaction_month
+        description: First day of the transaction month.
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: cashflow_type
+        description: Transaction classification used for cashflow reporting.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: is_income_deduction
+        description: Whether the transaction should reduce net income instead of normal expense reporting.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: amount
+        description: Absolute transaction amount from the source.
+      - name: solo_part
+        description: Optional source fraction for the part of the transaction that belongs to the owner.
+      - name: personal_share_fraction
+        description: Parsed owner share between 0 and 1. Null `solo_part` defaults to 1.
+        data_tests:
+          - not_null
+      - name: personal_amount
+        description: Transaction amount multiplied by `personal_share_fraction`.
+      - name: shared_amount
+        description: Transaction amount attributed to other people.
+      - name: counterparty
+        description: Source `to` value used for income destinations and best-available merchant fallback.
+      - name: merchant
+        description: Best available expense merchant, using store when present and counterparty otherwise.
+      - name: payment_source
+        description: Nullable source account key. Null values represent cashflow-only expenses and do not create account-balance movements.
+      - name: receipt_url
+        description: Optional source receipt link.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_cashflow
+    description: Monthly personal finance gross and net cashflow.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - unique
+          - not_null
+      - name: gross_expenses
+        data_tests:
+          - not_null
+      - name: net_expenses
+        data_tests:
+          - not_null
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: net_income
+        description: Gross income less income deductions.
+        data_tests:
+          - not_null
+      - name: savings
+        description: Net income less net expenses.
+        data_tests:
+          - not_null
+      - name: running_savings
+        description: Cumulative savings ordered by transaction month.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__yearly_cashflow
+    description: Yearly personal finance gross and net cashflow.
+    columns:
+      - name: transaction_year
+        data_tests:
+          - unique
+          - not_null
+      - name: gross_expenses
+        data_tests:
+          - not_null
+      - name: net_expenses
+        data_tests:
+          - not_null
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: net_income
+        data_tests:
+          - not_null
+      - name: savings
+        data_tests:
+          - not_null
+      - name: running_savings
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_cashflow_by_type
+    description: Monthly cashflow grouped by cashflow type and source transaction type.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: cashflow_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: transaction_count
+        data_tests:
+          - not_null
+      - name: amount
+        description: Sum of personal transaction amounts for the month and type.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_income_by_source
+    description: Monthly net income grouped by income source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: income_source
+        description: Source/account/company for income after deduction mapping.
+      - name: amount
+        description: Net personal income after source-matched salary deductions and taxes.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_income_by_type_source
+    description: Monthly gross and net income grouped by income type and income source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: income_type
+        description: Income category from source transaction type. Salary deductions reduce salary; TAX transaction types reduce interest income.
+        data_tests:
+          - not_null
+      - name: income_source
+        description: Source/account/company for income. Salary deductions use counterparty; TAX rows use payment_source so interest tax subtracts from the matching interest source.
+      - name: gross_income
+        data_tests:
+          - not_null
+      - name: income_deductions
+        description: Deductions that reduce income, including salary deductions and tax.
+        data_tests:
+          - not_null
+      - name: salary_deductions
+        description: Non-tax salary deduction rows where transaction type is SALARY DEDUCTION.
+        data_tests:
+          - not_null
+      - name: salary_tax
+        description: Salary tax rows where transaction type is SALARY DEDUCTION and item is TAX.
+        data_tests:
+          - not_null
+      - name: interest_tax
+        description: Interest tax rows where transaction type is TAX.
+        data_tests:
+          - not_null
+      - name: tax
+        description: Total salary and interest tax.
+        data_tests:
+          - not_null
+      - name: net_income
+        data_tests:
+          - not_null
+
+  - name: personal_finance__monthly_expenses_by_item
+    description: Monthly non-deduction expenses grouped by transaction type, item, merchant, and payment source.
+    columns:
+      - name: transaction_month
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: item
+      - name: merchant
+      - name: payment_source
+      - name: transaction_count
+        data_tests:
+          - not_null
+      - name: amount
+        description: Sum of personal non-deduction expense amounts for the month and grouping.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__daily_account_balances
+    description: End-of-day daily account balances with exact native balances and estimated PHP values from temporary static FX rates. Do not treat PHP estimates as final reporting values until a real FX-rate source replaces the placeholders.
+    columns:
+      - name: balance_date
+        data_tests:
+          - not_null
+      - name: account_id
+        data_tests:
+          - not_null
+      - name: account_key
+        data_tests:
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        description: Parent institution or account grouping from the accounts source.
+      - name: account_type
+        description: Account type used for balance sign semantics. Credit balances remain positive as natural balances and negative as net-worth balances.
+        data_tests:
+          - not_null
+      - name: account_subtype
+        description: Optional account subtype from the accounts source.
+      - name: currency
+        data_tests:
+          - not_null
+      - name: account_status
+        data_tests:
+          - not_null
+      - name: movement_amount_native
+        description: Signed net account movement for the balance date in the account's native currency.
+        data_tests:
+          - not_null
+      - name: movement_amount_php_estimated
+        description: Estimated signed net account movement converted using temporary static PHP rates.
+        data_tests:
+          - not_null
+      - name: balance_native
+        description: End-of-day natural account balance in the account's native currency.
+        data_tests:
+          - not_null
+      - name: balance_php_estimated
+        description: "Estimated natural account balance converted using temporary static PHP rates: PHP 1, USD 61.47, JPY 0.39. Credit balances remain positive here. This value is approximate until a real FX-rate source exists."
+        data_tests:
+          - not_null
+      - name: net_worth_balance_php_estimated
+        description: Estimated savings/prepaid/investment balances less credit balances, converted to PHP using temporary static rates. This value is approximate until a real FX-rate source exists.
+        data_tests:
+          - not_null
+
+  - name: personal_finance__current_account_balances
+    description: Latest available account balances for Metabase current-balance dashboards. Native balances are exact tracked values; PHP estimates use temporary static FX rates until a real FX-rate source exists.
+    columns:
+      - name: balance_date
+        data_tests:
+          - not_null
+      - name: account_id
+        data_tests:
+          - unique
+          - not_null
+      - name: account_key
+        data_tests:
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        description: Parent institution or account grouping from the accounts source.
+      - name: account_type
+        data_tests:
+          - not_null
+      - name: account_subtype
+      - name: currency
+        data_tests:
+          - not_null
+      - name: account_status
+        data_tests:
+          - not_null
+      - name: movement_amount_native
+        description: Signed net account movement on the latest balance date in the account's native currency.
+        data_tests:
+          - not_null
+      - name: movement_amount_php_estimated
+        description: Estimated signed net account movement on the latest balance date converted using temporary static PHP rates.
+        data_tests:
+          - not_null
+      - name: balance_native
+        description: Latest natural account balance in the account's native currency. Closed accounts are reported as zero.
+        data_tests:
+          - not_null
+      - name: balance_php_estimated
+        description: Estimated natural account balance converted using temporary static PHP rates. Credit balances remain positive here. Closed accounts are reported as zero.
+        data_tests:
+          - not_null
+      - name: net_worth_balance_php_estimated
+        description: Estimated savings/prepaid/investment balances less credit balances, converted to PHP using temporary static rates. Closed accounts are reported as zero.
+        data_tests:
+          - not_null

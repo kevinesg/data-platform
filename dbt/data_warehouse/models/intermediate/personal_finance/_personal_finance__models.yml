@@ -1,0 +1,132 @@
+version: 2
+
+models:
+  - name: int_personal_finance__transactions
+    description: Active personal finance transactions classified and prepared for downstream cashflow models.
+    columns:
+      - name: transaction_id
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_date
+        data_tests:
+          - not_null
+      - name: posted_date
+        description: Account-balance movement date. Defaults to transaction_date when source posted_date is blank.
+        data_tests:
+          - not_null
+      - name: transaction_type
+        description: Uppercase source transaction type.
+        data_tests:
+          - not_null
+      - name: cashflow_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXPENSE', 'INCOME']
+      - name: is_income_deduction
+        description: Whether the row reduces a modeled income account rather than a normal payment source.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: amount
+        description: Absolute transaction amount from the source, cast to NUMERIC for downstream arithmetic.
+      - name: counterparty
+        description: Source `to` value. Used as the destination account for income rows and as the income source reference for income deductions.
+      - name: store
+        description: Source store value when present.
+      - name: solo_part
+        description: Optional source fraction for the transaction share that belongs to the owner, such as `1/2`.
+      - name: personal_share_fraction
+        description: Parsed owner share between 0 and 1. Null `solo_part` defaults to 1.
+        data_tests:
+          - not_null
+      - name: personal_amount
+        description: Transaction amount multiplied by `personal_share_fraction`.
+      - name: shared_amount
+        description: Transaction amount attributed to other people.
+      - name: merchant
+        description: Store when present, otherwise counterparty.
+      - name: payment_source
+        description: Nullable source account key for normal expense balance movements. Salary deductions use this field as an income source label, not an account key.
+      - name: receipt_url
+        description: Optional source receipt link.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+
+  - name: int_personal_finance__account_balance_movements
+    description: Signed account-balance movement rows from 2026-06-01 onward, with placeholder PHP conversion applied once for downstream balance marts.
+    columns:
+      - name: movement_id
+        data_tests:
+          - not_null
+      - name: movement_source
+        data_tests:
+          - not_null
+      - name: balance_date
+        description: Account-balance movement date. The model includes movements from 2026-06-01 through the current Philippine date.
+        data_tests:
+          - not_null
+      - name: account_reference
+        description: Source account_key before resolving to the account dimension. Income rows and non-salary income deductions use the transaction counterparty field from the raw to column; salary deductions resolve to the matching salary destination account for the same transaction month and salary source; normal expense rows use payment_source.
+        data_tests:
+          - not_null
+      - name: movement_direction
+        description: Direction before applying account-type sign logic. Credit accounts invert INCREASE/DECREASE to keep credit balances positive.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['OPENING', 'INCREASE', 'DECREASE']
+      - name: account_id
+        data_tests:
+          - not_null
+      - name: account_key
+        data_tests:
+          - not_null
+      - name: account_name
+        data_tests:
+          - not_null
+      - name: parent_name
+        description: Parent institution or account grouping from the accounts source.
+      - name: account_type
+        description: Account type used for sign handling. Credit accounts invert INCREASE and DECREASE so credit balances remain positive.
+        data_tests:
+          - not_null
+      - name: account_subtype
+        description: Optional account subtype from the accounts source.
+      - name: currency
+        data_tests:
+          - not_null
+      - name: account_status
+        description: Account status from the accounts source.
+        data_tests:
+          - not_null
+      - name: movement_amount_native
+        description: Signed movement amount in the account's native currency after account-type sign handling.
+        data_tests:
+          - not_null
+      - name: php_rate
+        description: Placeholder PHP conversion rate. Current static rates are PHP 1, USD 61.47, and JPY 0.39. Replace with a proper FX source after balance marts prove they need modeled exchange rates.
+        data_tests:
+          - not_null
+      - name: movement_amount_php_estimated
+        description: Estimated signed movement amount converted to PHP using the placeholder rate.
+        data_tests:
+          - not_null
+      - name: first_opening_balance_date
+        description: First opening-balance date for the resolved account. Non-opening movements before this date are excluded.
