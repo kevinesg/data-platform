@@ -109,3 +109,23 @@ ghcr.io/kevinesg/data-platform-scripts
 ghcr.io/kevinesg/data-platform-dbt
 ghcr.io/kevinesg/data-platform-airflow
 ```
+
+## Continuous Integration
+
+Component CI runs only for changed component paths and does not use live cloud
+credentials. Pull-request checks validate code, configuration parsing, and
+Docker image builds without publishing images or querying GCP resources.
+
+Current workflows:
+
+- `scripts-ci`: installs the locked scripts runtime, runs lint/tests, compiles
+  Python files, and builds the scripts image.
+- `dbt-ci`: installs the locked dbt runtime, parses the dbt project with a
+  non-secret profile, and builds the dbt image.
+- `airflow-ci`: builds the Airflow image and imports packaged DAG files with
+  dummy non-secret environment values.
+
+Publishing immutable registry images, deployed QA smoke checks, and prod
+promotion are separate CD phases after CI passes. Workflow syntax, local
+validation options, and CI/CD boundaries are documented in
+`.github/workflows/README.md`.
