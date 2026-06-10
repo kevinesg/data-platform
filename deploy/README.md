@@ -1,8 +1,8 @@
 # Environment Setup
 
 This runbook covers shared platform bootstrap and workstation prerequisites.
-Start with the root `README.md`, then use this file for common setup before
-following the relevant component README.
+Start with the root [README.md](../README.md), then use this file for common
+setup before following the relevant component README.
 
 This directory is named `deploy` because it owns deployment-facing contracts:
 environment bootstrap, host layout, runtime image manifests, and recovery
@@ -10,6 +10,36 @@ runbooks. Keep component development commands in component READMEs. If the
 platform later adds infrastructure-as-code or broader operations tooling, split
 that into a separate `infra/` or `ops/` directory instead of turning `deploy/`
 into a catch-all folder.
+
+## Outline
+
+- [Choose The Applicable Path](#choose-the-applicable-path)
+- [Environment Topology](#environment-topology)
+- [Workstation Tools](#workstation-tools)
+- [Bootstrap Environment Values](#bootstrap-environment-values)
+- [Platform Bootstrap](#platform-bootstrap)
+  - [Bootstrap CLI Configuration](#bootstrap-cli-configuration)
+  - [Project State](#project-state)
+  - [Billing State](#billing-state)
+  - [Shared Service State](#shared-service-state)
+- [Component Setup](#component-setup)
+- [QA And Prod](#qa-and-prod)
+- [Deployment Image Manifest](#deployment-image-manifest)
+- [Deployed Web Interfaces](#deployed-web-interfaces)
+- [Observability Surfaces](#observability-surfaces)
+- [Alerting And Runbooks](#alerting-and-runbooks)
+- [Deployed Environment Setup](#deployed-environment-setup)
+  - [QA Path Defaults](#qa-path-defaults)
+  - [Deployed GCP Workspace](#deployed-gcp-workspace)
+  - [QA Host Setup](#qa-host-setup)
+  - [QA Deploy](#qa-deploy)
+  - [QA Verification](#qa-verification)
+  - [Prod Path Defaults](#prod-path-defaults)
+  - [Prod Host Setup](#prod-host-setup)
+  - [Prod Deploy](#prod-deploy)
+  - [Prod Verification](#prod-verification)
+  - [Prod Rollback](#prod-rollback)
+- [Deployed Metabase Runtime](#deployed-metabase-runtime)
 
 ## Choose The Applicable Path
 
@@ -280,15 +310,16 @@ component that owns the runtime. Each component README is written as an
 end-to-end path for that component so operators do not have to combine commands
 from unrelated runtime sections.
 
-- `scripts/README.md` owns the scripts service account, landing bucket, raw
-  dataset, external service-account key, environment file setup, and scripts
-  verification.
-- `dbt/README.md` owns the dbt service account, dbt target dataset, raw read
-  grant, external service-account key, external dbt profile, and `dbt debug`.
-- `airflow/README.md` owns the local orchestration runtime, image variables,
-  Compose setup, and DAG validation.
-- `metabase/README.md` owns analytics service setup, local/deployed Compose
-  commands, and BigQuery read-only connection setup.
+- [scripts/README.md](../scripts/README.md) owns the scripts service account,
+  landing bucket, raw dataset, external service-account key, environment file
+  setup, and scripts verification.
+- [dbt/README.md](../dbt/README.md) owns the dbt service account, dbt target
+  dataset, raw read grant, external service-account key, external dbt profile,
+  and `dbt debug`.
+- [airflow/README.md](../airflow/README.md) owns the local orchestration
+  runtime, image variables, Compose setup, and DAG validation.
+- [metabase/README.md](../metabase/README.md) owns analytics service setup,
+  local/deployed Compose commands, and BigQuery read-only connection setup.
 
 Shared project creation, billing, shared API enablement, and workstation tool
 installation remain in this runbook because they are cross-component platform
@@ -310,20 +341,104 @@ be stored on development workstations.
 
 Deployed environments use an external non-secret `images.env` file beside the
 external secret `.env` file. The image manifest pins each runtime component to
-an immutable GHCR tag produced by `.github/workflows/publish-images.yml`.
+an immutable GHCR tag produced by
+[.github/workflows/publish-images.yml](../.github/workflows/publish-images.yml).
 
 ```text
 $HOME/secrets/data-platform/qa/images.env
 $HOME/secrets/data-platform/prod/images.env
 ```
 
-Create the first copy from `deploy/images.env.example` after the publishing
-workflow has produced fresh image tags for the rebuilt repository. Replace every
+Create the first copy from
+[deploy/images.env.example](images.env.example) after the publishing workflow
+has produced fresh image tags for the rebuilt repository. Replace every
 `sha-change-me` value with a real `sha-<commit-sha>` tag.
 
 `images.env` is disposable deployment state, not a secret. Recreate it from the
 published image set during clean rebuilds. Do not commit environment-specific
 copies.
+
+## Deployed Web Interfaces
+
+External web access uses Cloudflare Tunnel hostnames that forward to services
+bound on the deployment host. Keep runtime containers bound to localhost unless
+direct LAN access is intentionally required.
+
+![Deployed interface access](../assets/diagrams/websites.svg)
+
+| Surface | Hostname | Current posture |
+| --- | --- | --- |
+| Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) | Authenticated operational UI. Public-viewer credentials are future work and must be read-only before broader sharing. |
+| Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) | Authenticated analytics UI. Public access should be limited to explicitly reviewed public dashboards later. |
+| dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) | Not up yet. Intended for generated dbt documentation after metadata is reviewed for sensitive names or descriptions. |
+| Elementary Data Reliability docs | [edr.kevinesg.com](https://edr.kevinesg.com) | Not up yet. Intended for static Elementary Data Reliability output after report contents are reviewed. |
+
+Airflow and Metabase remain protected by application login and role-based
+access control. Do not expose Airflow anonymously. Do not expose Metabase admin,
+query-builder, or database-connection pages publicly.
+
+Static dbt docs and Elementary Data Reliability reports can be made public only
+after reviewing generated metadata for sensitive project, source, column,
+description, test, owner, or incident details. If those reports contain
+sensitive metadata, keep them behind access control instead of publishing them
+as anonymous static sites.
+
+## Observability Surfaces
+
+The current production observability baseline is intentionally simple. Add new
+tooling only when it produces operational signal that changes how failures are
+triaged.
+
+| Surface | Owner | Purpose | Status |
+| --- | --- | --- | --- |
+| Airflow UI | Airflow runtime | DAG state, task retries, task logs, import errors, and manual triggers. | Active through `airflow.kevinesg.com`. |
+| dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Planned. Do not commit generated artifacts. |
+| dbt docs | dbt runtime | Static documentation for models, tests, lineage, and column contracts. | Planned for `dbt.kevinesg.com`. |
+| Elementary Data Reliability docs | dbt observability runtime | Static data-quality report for dbt test history, freshness, and schema-change checks. | Planned for `edr.kevinesg.com`. |
+| Metabase | Analytics runtime | Business-facing dashboards and exploration, not pipeline incident triage. | Active through `metabase.kevinesg.com`. |
+| BigQuery metadata | Platform operations | Table storage, table age, row counts, and warehouse cost investigations. | Planned as targeted runbook queries. |
+
+Generated dbt docs, Elementary Data Reliability output, and dbt artifacts belong
+in external runtime storage with explicit retention, not in Git. Use a dedicated
+artifacts location separate from source landing data when those jobs are added.
+
+Elementary should stay centralized and separate from business DAGs. It can read
+dbt artifacts and warehouse metadata, but it should not be embedded into every
+pipeline DAG. Keep Elementary OSS scoped to freshness, dbt test history,
+schema-change checks, and static reports until real incidents justify broader
+volume or anomaly monitoring.
+
+Warehouse storage monitoring should use BigQuery metadata views such as
+`INFORMATION_SCHEMA.TABLE_STORAGE` only through bounded, environment-specific
+queries. Do not run broad cross-project storage scans from pull-request CI.
+
+## Alerting And Runbooks
+
+Automated alerts are future work. Until Slack or an equivalent notification
+channel is implemented, production operators should use Airflow, dbt logs,
+warehouse metadata, and the deployment workflow history for manual triage.
+
+When alerting is added, keep the contract narrow:
+
+- Alert on production failures that need action, not every retry or expected
+  transient condition.
+- Include environment, DAG or workflow name, task or job name, run identifier,
+  failure time, and a link to the owning UI or workflow run.
+- Do not include secrets, raw records, credentials, or sensitive source values
+  in alert payloads.
+- Route ownership by component or pipeline so the responder knows whether to
+  inspect scripts, dbt, Airflow, Metabase, GitHub Actions, or cloud resources.
+- Add deduplication or grouping before alert volume becomes noisy.
+
+Runbooks should stay close to ownership boundaries:
+
+- deployment failures and environment recovery live in this file.
+- scripts extract/load failures live under `scripts/` or the source pipeline
+  docs.
+- dbt model, test, and docs failures live under `dbt/`.
+- Airflow runtime and DAG import failures live under `airflow/`.
+- Metabase application database and analytics runtime failures live under
+  `metabase/`.
 
 ## Deployed Environment Setup
 

@@ -10,12 +10,25 @@ growth across many domains and thousands of models.
 Pipeline-specific model behavior lives near the relevant dbt models, tests, or
 domain docs instead of accumulating in this component README.
 
+## Outline
+
+- [Command Flow](#command-flow)
+- [Project Layout](#project-layout)
+- [Local Runtime Setup](#local-runtime-setup)
+- [First-Time Repository Initialization](#first-time-repository-initialization)
+- [Existing-Checkout Setup](#existing-checkout-setup)
+- [Profile Contract](#profile-contract)
+- [End-To-End Dev Setup](#end-to-end-dev-setup)
+  - [dbt Cloud Workspace](#dbt-cloud-workspace)
+  - [dbt Local Workstation](#dbt-local-workstation)
+- [Docker Runtime](#docker-runtime)
+
 ## Command Flow
 
-Use this README after reading the root `README.md` and completing the applicable
-shared setup in `deploy/README.md`. For an existing dev environment, that
-usually means workstation tools are installed and the platform maintainer has
-provided the dbt workspace values.
+Use this README after reading the root [README.md](../README.md) and completing
+the applicable shared setup in [deploy/README.md](../deploy/README.md). For an
+existing dev environment, that usually means workstation tools are installed and
+the platform maintainer has provided the dbt workspace values.
 
 Follow this file in order for dbt component setup:
 
@@ -41,11 +54,15 @@ generated project skeleton before the CLI works locally.
 Profiles, sources, models, seeds, tests, and dbt-specific cloud resources are
 added after project initialization, in the commits that need them.
 
+![dbt warehouse layer flow](../assets/diagrams/dbt-layer.svg)
+
 There are two setup paths:
 
-- First-time repository initialization creates `dbt/data_warehouse/` with
-  `dbt init`, then removes dbt's starter tutorial files before committing.
-- Existing-checkout setup starts from the committed `dbt/data_warehouse/`
+- First-time repository initialization creates
+  [dbt/data_warehouse/](data_warehouse/) with `dbt init`, then removes dbt's
+  starter tutorial files before committing.
+- Existing-checkout setup starts from the committed
+  [dbt/data_warehouse/](data_warehouse/)
   project and installs the locked local runtime.
 
 ## Local Runtime Setup
@@ -110,13 +127,14 @@ Clean up the generated starter project before committing:
   including `my_first_dbt_model.sql`, `my_second_dbt_model.sql`, and
   `schema.yml` when dbt generates them.
 - Remove the generated `models.data_warehouse.example` configuration from
-  `data_warehouse/dbt_project.yml`.
-- Replace the generated `data_warehouse/README.md` starter text with this
-  project's dbt ownership notes.
+  [data_warehouse/dbt_project.yml](data_warehouse/dbt_project.yml).
+- Replace the generated [data_warehouse/README.md](data_warehouse/README.md)
+  starter text with this project's dbt ownership notes.
 - Keep the standard dbt directories: `analyses/`, `macros/`, `models/`,
   `seeds/`, `snapshots/`, and `tests/`.
 - Add `.gitkeep` files only for empty standard directories that Git must track.
-- Keep `data_warehouse/.gitignore` for dbt-generated `target/`,
+- Keep [data_warehouse/.gitignore](data_warehouse/.gitignore) for dbt-generated
+  `target/`,
   `dbt_packages/`, and `logs/`.
 - Leave generated local runtime files untracked, including `dbt/.venv/`,
   `dbt/logs/`, `data_warehouse/target/`, and `data_warehouse/dbt_packages/`.
@@ -158,7 +176,7 @@ name and use the profile embedded in the published dbt image.
 This section sets up the dbt component from workspace provisioning through
 local `dbt debug`. Platform project creation, billing, shared service
 enablement, and workstation tool installation are covered by
-`deploy/README.md`.
+[deploy/README.md](../deploy/README.md).
 
 The service check in this section keeps the component runbook self-contained.
 In an already configured dev project, it reports that the required services are

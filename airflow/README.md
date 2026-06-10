@@ -9,6 +9,16 @@ transformation logic, or imports from sibling component source trees.
 DAGs are designed as if many teams and hundreds of DAGs will share the same
 orchestration environment.
 
+Use this README after reading the root [README.md](../README.md) and completing
+the applicable shared setup in [deploy/README.md](../deploy/README.md).
+
+## Outline
+
+- [Local Setup](#local-setup)
+- [Local Commands](#local-commands)
+- [DAGs](#dags)
+- [Design Notes](#design-notes)
+
 ## Local Setup
 
 Run commands from the repository root unless a block changes directories.

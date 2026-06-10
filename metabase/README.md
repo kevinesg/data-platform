@@ -14,11 +14,23 @@ permissions, and database connections, so the platform does not create matching
 dev and QA Metabase instances unless there is a concrete review or permission
 need. Local Compose is still useful for smoke testing runtime configuration.
 
+## Outline
+
+- [Command Flow](#command-flow)
+- [Local Smoke Test](#local-smoke-test)
+- [Local Commands](#local-commands)
+- [Runtime Contract](#runtime-contract)
+- [Runtime Hardening](#runtime-hardening)
+- [Application Database](#application-database)
+- [Warehouse Connections](#warehouse-connections)
+- [CI/CD Scope](#cicd-scope)
+
 ## Command Flow
 
-Use this README after reading the root `README.md` and completing the applicable
-shared setup in `deploy/README.md`. For an existing dev environment, that
-usually means workstation tools and an external environment file only.
+Use this README after reading the root [README.md](../README.md) and completing
+the applicable shared setup in [deploy/README.md](../deploy/README.md). For an
+existing dev environment, that usually means workstation tools and an external
+environment file only.
 
 Run commands from the `metabase/` component directory unless a block changes
 directories:
