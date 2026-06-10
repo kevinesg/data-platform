@@ -7,17 +7,28 @@ The repository is organized by component:
 
 ```text
 data-platform/
-  scripts/   # extract/load commands and source-specific pipeline code
-  dbt/       # warehouse transformations, tests, and dbt project configuration
-  airflow/   # orchestration runtime and DAGs
-  metabase/  # analytics service runtime/configuration
-  deploy/    # shared environment bootstrap and deployment documentation
+|-- scripts/   # extract/load commands and source-specific pipeline code
+|-- dbt/       # warehouse transformations, tests, and dbt project configuration
+|-- airflow/   # orchestration runtime and DAGs
+|-- metabase/  # analytics service runtime/configuration
+`-- deploy/    # shared environment bootstrap and deployment documentation
 ```
 
 Each component is developed as an independent project with its own README,
 dependencies, tests, and runtime contract. Components interact through Docker
 images, APIs, warehouse tables, or documented artifacts rather than relative
 imports or production runtime bind mounts.
+
+## Outline
+
+- [Production-Scale Assumption](#production-scale-assumption)
+- [Initial Delivery Direction](#initial-delivery-direction)
+- [Environments](#environments)
+- [Deployed Interfaces](#deployed-interfaces)
+- [Setup Flow](#setup-flow)
+- [Images](#images)
+- [CI/CD](#cicd)
+- [Public Readiness Gate](#public-readiness-gate)
 
 ## Production-Scale Assumption
 
@@ -29,6 +40,8 @@ functional data engineering team.
 The first pipeline can be small, but the platform architecture is not reduced
 to one-pipeline assumptions. MVP shortcuts are acceptable only when they keep
 the core workflow moving and are documented as temporary.
+
+![Data platform overview](assets/diagrams/overview.svg)
 
 ## Initial Delivery Direction
 
@@ -61,6 +74,21 @@ under the external secrets directory and local image tags. Deployed QA/prod use
 immutable registry image tags, environment-specific service-account JSON files
 stored on the deployment platform, and no runtime source-code bind mounts.
 
+## Deployed Interfaces
+
+Deployed web interfaces are exposed through Cloudflare Tunnel hostnames when
+they are ready for external access. The canonical endpoint inventory and access
+posture live in [deploy/README.md](deploy/README.md) so public exposure
+decisions stay in the deployment runbook rather than being duplicated across
+component READMEs.
+
+| Surface | Hostname |
+| --- | --- |
+| Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) |
+| Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) |
+| dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) |
+| Elementary Data Reliability docs | [edr.kevinesg.com](https://edr.kevinesg.com) |
+
 ## Setup Flow
 
 Start here before running component commands. The root README explains the
@@ -69,24 +97,25 @@ in the owning README so each command sequence has one canonical home.
 
 1. Read this README for repository boundaries, environment promotion, and
    production-scale assumptions.
-2. Read `deploy/README.md` for workstation tools, CLI authentication, shared
-   dev project topology, and platform bootstrap rules.
-3. Run `deploy/README.md` **Platform Bootstrap** only when creating or repairing
-   shared project resources. Team members joining an existing dev environment
-   skip platform bootstrap after receiving their assigned component workspace
-   values.
+2. Read [deploy/README.md](deploy/README.md) for workstation tools, CLI
+   authentication, shared dev project topology, and platform bootstrap rules.
+3. Run [deploy/README.md](deploy/README.md) **Platform Bootstrap** only when
+   creating or repairing shared project resources. Team members joining an
+   existing dev environment skip platform bootstrap after receiving their
+   assigned component workspace values.
 4. Run the relevant component README end to end:
-   - `scripts/README.md` for extract/load service account, landing bucket, raw
-     dataset, local credentials, runtime setup, and scripts verification.
-   - `dbt/README.md` for dbt project setup, dbt service account, datasets,
-     external profile, local credentials, and `dbt debug`.
-   - `airflow/README.md` for the local Airflow runtime and empty-stack
-     validation.
-   - `metabase/README.md` for the analytics service runtime, application
-     database, and BigQuery connection setup.
+   - [scripts/README.md](scripts/README.md) for extract/load service account,
+     landing bucket, raw dataset, local credentials, runtime setup, and scripts
+     verification.
+   - [dbt/README.md](dbt/README.md) for dbt project setup, dbt service account,
+     datasets, external profile, local credentials, and `dbt debug`.
+   - [airflow/README.md](airflow/README.md) for the local Airflow runtime and
+     empty-stack validation.
+   - [metabase/README.md](metabase/README.md) for the analytics service
+     runtime, application database, and BigQuery connection setup.
 5. Run source-specific or domain-specific docs only after the owning component
    setup passes. For example, scripts pipeline commands live under
-   `scripts/pipelines/`.
+   [scripts/pipelines/](scripts/pipelines/).
 6. Validate changes against dev first, then QA, then prod. Do not run
    cloud-connected commands until the matching documented prerequisites are
    complete.
@@ -143,4 +172,27 @@ Current workflows:
   environment approval and deployed smoke checks.
 
 Workflow syntax, local validation options, and CI/CD boundaries are documented
-in `.github/workflows/README.md`.
+in [.github/workflows/README.md](.github/workflows/README.md).
+
+## Public Readiness Gate
+
+Before making the repository public, complete a review pass that treats docs,
+metadata, examples, generated files, and Git history as publishable surfaces.
+
+Required checks:
+
+- Confirm the working tree and index contain only intentional public files.
+- Confirm `AGENTS.md`, local `docs/`, `data-platform-archive/`, local snapshots,
+  `.env` files, service-account keys, credentials, generated artifacts,
+  backups, warehouse exports, and runtime logs are not staged.
+- Run a current-tree secret scan and a full-history secret scan with an approved
+  scanner. Keep scan outputs outside the repository unless they are sanitized.
+- Review README and component docs for private host paths, credentials, project
+  internals, personal finance details, incident details, and sensitive metadata.
+- Review generated dbt docs and Elementary Data Reliability output before
+  exposing static sites publicly.
+- Re-check external hostnames and public access posture in
+  [deploy/README.md](deploy/README.md).
+
+Do not make the repository public until the current tree, history, and generated
+documentation surfaces have all passed review.

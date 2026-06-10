@@ -9,12 +9,26 @@ script commands later, but extraction and loading logic belongs here.
 Source-specific contracts and commands live near the relevant pipeline
 implementation instead of accumulating in this component README.
 
+## Outline
+
+- [Command Flow](#command-flow)
+- [End-To-End Dev Setup](#end-to-end-dev-setup)
+  - [Scripts Cloud Workspace](#scripts-cloud-workspace)
+  - [Scripts Local Workstation](#scripts-local-workstation)
+- [Runtime Contract](#runtime-contract)
+- [Docker Runtime](#docker-runtime)
+- [Local Commands](#local-commands)
+- [Validation](#validation)
+- [Schemas](#schemas)
+- [Design Notes](#design-notes)
+- [Pipeline Docs](#pipeline-docs)
+
 ## Command Flow
 
-Use this README after reading the root `README.md` and completing the applicable
-shared setup in `deploy/README.md`. For an existing dev environment, that
-usually means workstation tools are installed and the platform maintainer has
-provided the scripts workspace values.
+Use this README after reading the root [README.md](../README.md) and completing
+the applicable shared setup in [deploy/README.md](../deploy/README.md). For an
+existing dev environment, that usually means workstation tools are installed and
+the platform maintainer has provided the scripts workspace values.
 
 Follow this file in order for scripts component setup:
 
@@ -30,7 +44,7 @@ Follow this file in order for scripts component setup:
 This section sets up the scripts component from workspace provisioning through
 local verification. Platform project creation, billing, shared service
 enablement, and workstation tool installation are covered by
-`deploy/README.md`.
+[deploy/README.md](../deploy/README.md).
 
 The service check in this section keeps the component runbook self-contained.
 In an already configured dev project, it reports that the required services are

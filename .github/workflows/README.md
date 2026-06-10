@@ -4,16 +4,29 @@ This directory owns repository-level CI/CD workflow files. Keep the workflows
 split by component so the platform can grow without every pull request paying
 for every component check.
 
+## Outline
+
+- [Flow](#flow)
+- [Current Workflows](#current-workflows)
+- [CI/CD Boundary](#cicd-boundary)
+- [Syntax Guide](#syntax-guide)
+- [Action Versions](#action-versions)
+- [Local Validation](#local-validation)
+
+## Flow
+
+![GitHub Actions CI/CD flow](../../assets/diagrams/github-actions-flow.svg)
+
 ## Current Workflows
 
 | Workflow | File | When it runs | What it proves |
 | --- | --- | --- | --- |
-| `scripts-ci` | `scripts-ci.yml` | Pull requests and pushes to `main` that change scripts runtime files, plus manual dispatch | Installs the locked scripts runtime, runs lint/tests, compiles Python files, and builds the scripts Docker image without publishing it. |
-| `dbt-ci` | `dbt-ci.yml` | Pull requests and pushes to `main` that change dbt runtime files, plus manual dispatch | Installs the locked dbt runtime, parses the dbt project with non-secret placeholder values, and builds the dbt Docker image without publishing it. |
-| `airflow-ci` | `airflow-ci.yml` | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
-| `publish-images` | `publish-images.yml` | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
-| `deploy-qa` | `deploy-qa.yml` | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
-| `deploy-prod` | `deploy-prod.yml` | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
+| `scripts-ci` | [scripts-ci.yml](scripts-ci.yml) | Pull requests and pushes to `main` that change scripts runtime files, plus manual dispatch | Installs the locked scripts runtime, runs lint/tests, compiles Python files, and builds the scripts Docker image without publishing it. |
+| `dbt-ci` | [dbt-ci.yml](dbt-ci.yml) | Pull requests and pushes to `main` that change dbt runtime files, plus manual dispatch | Installs the locked dbt runtime, parses the dbt project with non-secret placeholder values, and builds the dbt Docker image without publishing it. |
+| `airflow-ci` | [airflow-ci.yml](airflow-ci.yml) | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
+| `publish-images` | [publish-images.yml](publish-images.yml) | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
+| `deploy-qa` | [deploy-qa.yml](deploy-qa.yml) | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
+| `deploy-prod` | [deploy-prod.yml](deploy-prod.yml) | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
 
 ## CI/CD Boundary
 
@@ -98,9 +111,10 @@ issues.
 
 Then run the component checks documented by the changed component's README:
 
-- `scripts/README.md` for scripts runtime validation.
-- `dbt/README.md` for dbt parsing/build validation.
-- `airflow/README.md` for Airflow image and DAG import validation.
+- [scripts/README.md](../../scripts/README.md) for scripts runtime validation.
+- [dbt/README.md](../../dbt/README.md) for dbt parsing/build validation.
+- [airflow/README.md](../../airflow/README.md) for Airflow image and DAG
+  import validation.
 
 For workflow emulation, `act` can run GitHub Actions locally through Docker:
 
