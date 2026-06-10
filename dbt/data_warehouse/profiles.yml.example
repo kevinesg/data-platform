@@ -1,7 +1,7 @@
 data_warehouse:
   target: "{{ env_var('DBT_TARGET', 'dev') }}"
   outputs:
-    dev:
+    dev: &bigquery_defaults
       type: bigquery
       method: service-account
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
@@ -12,3 +12,9 @@ data_warehouse:
       priority: interactive
       job_execution_timeout_seconds: 300
       job_retries: 1
+
+    qa:
+      <<: *bigquery_defaults
+
+    prod:
+      <<: *bigquery_defaults

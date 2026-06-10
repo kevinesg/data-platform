@@ -149,6 +149,10 @@ project's local dev configuration.
 Local dbt development uses the dbt service-account JSON file configured through
 `DBT_GOOGLE_APPLICATION_CREDENTIALS`.
 
+The committed profile defines `dev`, `qa`, and `prod` targets. Local dev uses
+`DBT_TARGET=dev`; deployed environments set `DBT_TARGET` to their environment
+name and use the profile embedded in the published dbt image.
+
 ## End-To-End Dev Setup
 
 This section sets up the dbt component from workspace provisioning through
@@ -649,6 +653,10 @@ The image contains locked runtime dependencies, the dbt project, and a
 non-secret profile copied from `data_warehouse/profiles.yml.example`. It does
 not contain environment files, service-account keys, generated dbt artifacts, or
 a repository bind mount.
+
+Because the profile is baked into the image, every deployed target selected by
+`DBT_TARGET` must exist in `data_warehouse/profiles.yml.example` before the dbt
+image is published.
 
 Container commands that call BigQuery must receive configuration and
 credentials at runtime. Local dev mounts the dbt service-account JSON file
