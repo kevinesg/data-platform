@@ -1,0 +1,221 @@
+name: deploy-prod
+
+# Manual prod deployment to the self-hosted deployment runner. Prod promotes
+# the QA image manifest by default, so prod runs the same immutable image set
+# that was validated in QA.
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Git ref to deploy. Use main for the latest QA-validated release.
+        required: true
+        default: main
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  PROD_REPO_DIR: ${{ vars.PROD_REPO_DIR }}
+  PROD_DATA_PLATFORM_ENV_FILE: ${{ vars.PROD_DATA_PLATFORM_ENV_FILE }}
+  PROD_IMAGE_ENV_FILE: ${{ vars.PROD_IMAGE_ENV_FILE }}
+  PROD_SOURCE_IMAGE_ENV_FILE: ${{ vars.PROD_SOURCE_IMAGE_ENV_FILE }}
+
+jobs:
+  deploy:
+    name: Deploy Prod Airflow
+    runs-on:
+      - self-hosted
+      - linux
+      - data-platform-prod
+    timeout-minutes: 30
+    environment: prod
+    env:
+      DEPLOY_GIT_REF: ${{ inputs.git_ref }}
+    steps:
+      - name: Resolve prod host paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "PROD_REPO_DIR=${PROD_REPO_DIR:-$HOME/prod/data-platform}"
+            echo "PROD_DATA_PLATFORM_ENV_FILE=${PROD_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/prod/.env}"
+            echo "PROD_IMAGE_ENV_FILE=${PROD_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/prod/images.env}"
+            echo "PROD_SOURCE_IMAGE_ENV_FILE=${PROD_SOURCE_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/qa/images.env}"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate prod host state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$PROD_REPO_DIR/.git"
+          test -f "$PROD_DATA_PLATFORM_ENV_FILE"
+          test -f "$PROD_SOURCE_IMAGE_ENV_FILE"
+          test -d "$(dirname "$PROD_IMAGE_ENV_FILE")"
+
+      - name: Check active prod DAG runs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$PROD_IMAGE_ENV_FILE" ]]; then
+            echo "No existing prod image manifest; skipping active DAG run check."
+            exit 0
+          fi
+
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          set +a
+
+          cd "$PROD_REPO_DIR/airflow"
+          scheduler_container="$(
+            DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
+              docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml ps -q scheduler || true
+          )"
+          if [[ -z "$scheduler_container" ]]; then
+            echo "No existing prod scheduler container; skipping active DAG run check."
+            exit 0
+          fi
+
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
+            docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler python - <<'PY'
+          from airflow.models.dagrun import DagRun
+          from airflow.utils.session import create_session
+          from airflow.utils.state import DagRunState
+
+          active_states = [DagRunState.QUEUED, DagRunState.RUNNING]
+          with create_session() as session:
+              rows = (
+                  session.query(DagRun.dag_id, DagRun.run_id, DagRun.state)
+                  .filter(DagRun.state.in_(active_states))
+                  .order_by(DagRun.dag_id, DagRun.run_id)
+                  .all()
+              )
+
+          if rows:
+              print("Prod deploy blocked because active DAG runs exist:")
+              for dag_id, run_id, state in rows:
+                  print(f"{dag_id} {run_id} {state}")
+              raise SystemExit(1)
+
+          print("No queued or running prod DAG runs found.")
+          PY
+
+      - name: Update prod checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROD_REPO_DIR"
+          git fetch --prune origin
+
+          if [[ "$DEPLOY_GIT_REF" == "main" ]]; then
+            git switch main
+            git pull --ff-only origin main
+          else
+            git checkout --detach "$DEPLOY_GIT_REF"
+          fi
+
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote QA image manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_SOURCE_IMAGE_ENV_FILE"
+          set +a
+
+          test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
+          test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
+          test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+
+          docker manifest inspect "$DATA_PLATFORM_AIRFLOW_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_SCRIPTS_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_DBT_IMAGE" >/dev/null
+
+          if [[ -f "$PROD_IMAGE_ENV_FILE" ]]; then
+            cp "$PROD_IMAGE_ENV_FILE" "$PROD_IMAGE_ENV_FILE.previous"
+            chmod 600 "$PROD_IMAGE_ENV_FILE.previous"
+          fi
+
+          {
+            printf 'DATA_PLATFORM_AIRFLOW_IMAGE=%s\n' "$DATA_PLATFORM_AIRFLOW_IMAGE"
+            printf 'DATA_PLATFORM_SCRIPTS_IMAGE=%s\n' "$DATA_PLATFORM_SCRIPTS_IMAGE"
+            printf 'DATA_PLATFORM_DBT_IMAGE=%s\n' "$DATA_PLATFORM_DBT_IMAGE"
+          } > "$PROD_IMAGE_ENV_FILE"
+          chmod 600 "$PROD_IMAGE_ENV_FILE"
+
+          cat "$PROD_IMAGE_ENV_FILE"
+
+      - name: Validate prod dbt compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          source "$PROD_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DBT_GOOGLE_APPLICATION_CREDENTIALS:-}"
+          test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+
+          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker run --rm \
+            --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+            -e DBT_TARGET \
+            -e PROJECT_ID \
+            -e RAW_DATASET \
+            -e DBT_DATASET \
+            -e DBT_THREADS \
+            -e BIGQUERY_LOCATION \
+            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+            "$DATA_PLATFORM_DBT_IMAGE" compile --project-dir data_warehouse --target "$DBT_TARGET"
+
+      - name: Pull and start prod Airflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          set +a
+
+          # DockerOperator starts sibling containers through the host Docker daemon.
+          # Pull task images here while the workflow is logged in to GHCR so Airflow
+          # does not need registry credentials inside the scheduler container.
+          docker pull "$DATA_PLATFORM_AIRFLOW_IMAGE"
+          docker pull "$DATA_PLATFORM_SCRIPTS_IMAGE"
+          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+
+          cd "$PROD_REPO_DIR/airflow"
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml pull
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml ps
+
+      - name: Prod Airflow smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          set +a
+
+          cd "$PROD_REPO_DIR/airflow"
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list-import-errors
