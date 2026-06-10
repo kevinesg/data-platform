@@ -896,6 +896,11 @@ The workflow:
 The prod workflow does not run `dbt build`, dbt tests, or Airflow DAGs. Those
 are production operations, not deploy steps.
 
+The workflow retries registry manifest and pull operations because transient
+GHCR 5xx or token endpoint failures can happen even when package permissions are
+correct. If those failures persist across the built-in retries, wait and rerun
+`deploy-prod`.
+
 ### Prod Verification
 
 Run on the deployment host after `deploy-prod` succeeds:

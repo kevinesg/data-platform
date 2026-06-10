@@ -144,9 +144,25 @@ jobs:
           test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
           test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
 
-          docker manifest inspect "$DATA_PLATFORM_AIRFLOW_IMAGE" >/dev/null
-          docker manifest inspect "$DATA_PLATFORM_SCRIPTS_IMAGE" >/dev/null
-          docker manifest inspect "$DATA_PLATFORM_DBT_IMAGE" >/dev/null
+          docker_manifest_inspect_with_retry() {
+            local image="$1"
+            local attempt
+
+            for attempt in {1..5}; do
+              if docker manifest inspect "$image" >/dev/null; then
+                return 0
+              fi
+
+              echo "Retrying manifest check after registry failure: $image"
+              sleep 15
+            done
+
+            docker manifest inspect "$image" >/dev/null
+          }
+
+          docker_manifest_inspect_with_retry "$DATA_PLATFORM_AIRFLOW_IMAGE"
+          docker_manifest_inspect_with_retry "$DATA_PLATFORM_SCRIPTS_IMAGE"
+          docker_manifest_inspect_with_retry "$DATA_PLATFORM_DBT_IMAGE"
 
           if [[ -f "$PROD_IMAGE_ENV_FILE" ]]; then
             cp "$PROD_IMAGE_ENV_FILE" "$PROD_IMAGE_ENV_FILE.previous"
@@ -175,7 +191,23 @@ jobs:
           test -n "${DBT_GOOGLE_APPLICATION_CREDENTIALS:-}"
           test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
-          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker_pull_with_retry() {
+            local image="$1"
+            local attempt
+
+            for attempt in {1..5}; do
+              if docker pull "$image"; then
+                return 0
+              fi
+
+              echo "Retrying pull after registry failure: $image"
+              sleep 15
+            done
+
+            docker pull "$image"
+          }
+
+          docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
           docker run --rm \
             --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
             -e DBT_TARGET \
@@ -198,13 +230,44 @@ jobs:
           # DockerOperator starts sibling containers through the host Docker daemon.
           # Pull task images here while the workflow is logged in to GHCR so Airflow
           # does not need registry credentials inside the scheduler container.
-          docker pull "$DATA_PLATFORM_AIRFLOW_IMAGE"
-          docker pull "$DATA_PLATFORM_SCRIPTS_IMAGE"
-          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker_pull_with_retry() {
+            local image="$1"
+            local attempt
+
+            for attempt in {1..5}; do
+              if docker pull "$image"; then
+                return 0
+              fi
+
+              echo "Retrying pull after registry failure: $image"
+              sleep 15
+            done
+
+            docker pull "$image"
+          }
+
+          docker_compose_pull_with_retry() {
+            local attempt
+
+            for attempt in {1..5}; do
+              if DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml pull; then
+                return 0
+              fi
+
+              echo "Retrying compose pull after registry failure."
+              sleep 15
+            done
+
+            DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml pull
+          }
+
+          docker_pull_with_retry "$DATA_PLATFORM_AIRFLOW_IMAGE"
+          docker_pull_with_retry "$DATA_PLATFORM_SCRIPTS_IMAGE"
+          docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
 
           cd "$PROD_REPO_DIR/airflow"
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet
-          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml pull
+          docker_compose_pull_with_retry
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml ps
 
