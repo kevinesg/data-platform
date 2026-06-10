@@ -287,8 +287,8 @@ from unrelated runtime sections.
   grant, external service-account key, external dbt profile, and `dbt debug`.
 - `airflow/README.md` owns the local orchestration runtime, image variables,
   Compose setup, and DAG validation.
-- `metabase/README.md` owns analytics service setup when that component is
-  implemented.
+- `metabase/README.md` owns analytics service setup, local/deployed Compose
+  commands, and BigQuery read-only connection setup.
 
 Shared project creation, billing, shared API enablement, and workstation tool
 installation remain in this runbook because they are cross-component platform
@@ -965,3 +965,125 @@ DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
 
 Do not run `docker compose down -v` for rollback. That removes Airflow metadata
 and Postgres state.
+
+## Deployed Metabase Runtime
+
+The default deployment strategy is one prod Metabase instance, not matching
+Metabase instances for dev, QA, and prod. Metabase carries application state such
+as users, dashboards, questions, collections, permissions, and database
+connections; add a separate QA Metabase only when there is a concrete dashboard
+review, permission, embedded analytics, plugin, upgrade, or serialization need.
+
+The deployed Metabase instance uses a separate external
+`$HOME/secrets/data-platform/prod/metabase.env` file. It does not use the prod
+Airflow/dbt `.env` file or `images.env` because Metabase runs from the official
+pinned `METABASE_IMAGE`, not a repo-built GHCR image.
+
+Before first start, create the external Metabase env file from the repository
+example:
+
+```bash
+export REPO_DIR="$HOME/prod/data-platform"
+export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+
+cd "$REPO_DIR"
+
+if test -f "$METABASE_ENV_FILE"; then
+  echo "Metabase env file already exists: $METABASE_ENV_FILE"
+else
+  cp metabase/.env.example "$METABASE_ENV_FILE"
+  chmod 600 "$METABASE_ENV_FILE"
+fi
+```
+
+Edit `$METABASE_ENV_FILE`, replace every `change-me` value, and set prod values
+for `METABASE_COMPOSE_PROJECT`, `METABASE_PORT`, `MB_SITE_URL`, `MB_DB_PASS`,
+and `MB_ENCRYPTION_SECRET_KEY`. Generate `MB_ENCRYPTION_SECRET_KEY` once and
+keep it stable:
+
+```bash
+openssl rand -base64 32
+```
+
+Start or update Metabase on the deployment host:
+
+```bash
+export REPO_DIR="$HOME/prod/data-platform"
+export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+
+cd "$REPO_DIR/metabase"
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml config --quiet
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml pull
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml up -d --remove-orphans
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml ps
+```
+
+After changing deployed Metabase `metabase.env` values, recreate the Metabase
+stack without deleting volumes:
+
+```bash
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+```
+
+Do not use `docker compose down -v` for routine changes. That removes the
+Metabase application database volume, which contains users, dashboards,
+questions, collections, permissions, and connection metadata.
+
+Back up the deployed Metabase application database before upgrades or major
+dashboard/permission changes:
+
+```bash
+export REPO_DIR="$HOME/prod/data-platform"
+export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+export BACKUP_DIR="$HOME/runtime/data-platform/prod/metabase-backups"
+export BACKUP_FILE="$BACKUP_DIR/metabase-$(date +%Y%m%dT%H%M%S).sql"
+
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+set -a
+. "$METABASE_ENV_FILE"
+set +a
+
+cd "$REPO_DIR/metabase"
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
+  pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" > "$BACKUP_FILE"
+
+chmod 600 "$BACKUP_FILE"
+```
+
+Restore into a fresh or intentionally reset Metabase application database only:
+
+```bash
+export REPO_DIR="$HOME/prod/data-platform"
+export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+export BACKUP_FILE="$HOME/runtime/data-platform/prod/metabase-backups/metabase-backup.sql"
+
+set -a
+. "$METABASE_ENV_FILE"
+set +a
+
+cd "$REPO_DIR/metabase"
+
+DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
+  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
+  psql -U "$MB_DB_USER" "$MB_DB_DBNAME" < "$BACKUP_FILE"
+```
+
+Cloudflare Tunnel should point to `http://localhost:$METABASE_PORT`. Keep
+`METABASE_BIND_ADDRESS=127.0.0.1` unless direct LAN access is intentional, and
+set `MB_SITE_URL` to the external HTTPS URL once the hostname is chosen.
+
+Metabase BigQuery read-only service account setup lives in
+[metabase/README.md](../metabase/README.md).
