@@ -82,8 +82,8 @@ in the owning README so each command sequence has one canonical home.
      external profile, local credentials, and `dbt debug`.
    - `airflow/README.md` for the local Airflow runtime and empty-stack
      validation.
-   - `metabase/README.md` documents boundaries for now; setup commands will be
-     added when that component is implemented.
+   - `metabase/README.md` for the analytics service runtime, application
+     database, and BigQuery connection setup.
 5. Run source-specific or domain-specific docs only after the owning component
    setup passes. For example, scripts pipeline commands live under
    `scripts/pipelines/`.
@@ -117,6 +117,9 @@ ghcr.io/kevinesg/data-platform-scripts:sha-<commit-sha>
 ghcr.io/kevinesg/data-platform-dbt:sha-<commit-sha>
 ghcr.io/kevinesg/data-platform-airflow:sha-<commit-sha>
 ```
+
+Metabase uses an official pinned `metabase/metabase` image configured through
+its own external `metabase.env` file instead of a repository-built image.
 
 ## CI/CD
 
