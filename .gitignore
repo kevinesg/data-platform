@@ -28,6 +28,7 @@ build/
 # Local generated data
 scripts/.local/
 dbt/logs/
+metabase/backups/
 
 # OS and editors
 .DS_Store

@@ -1,0 +1,49 @@
+name: ${METABASE_COMPOSE_PROJECT:-data-platform-metabase}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${MB_DB_DBNAME:?set MB_DB_DBNAME in the Metabase env file}
+      POSTGRES_PASSWORD: ${MB_DB_PASS:?set MB_DB_PASS in the Metabase env file}
+      POSTGRES_USER: ${MB_DB_USER:?set MB_DB_USER in the Metabase env file}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MB_DB_USER} -d ${MB_DB_DBNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  metabase:
+    image: ${METABASE_IMAGE:?set METABASE_IMAGE in the Metabase env file}
+    env_file:
+      - ${DATA_PLATFORM_ENV_FILE:?set DATA_PLATFORM_ENV_FILE to the Metabase env file path}
+    environment:
+      MB_ANON_TRACKING_ENABLED: ${MB_ANON_TRACKING_ENABLED:-false}
+      MB_DB_DBNAME: ${MB_DB_DBNAME:?set MB_DB_DBNAME in the Metabase env file}
+      MB_DB_HOST: ${MB_DB_HOST:-postgres}
+      MB_DB_PASS: ${MB_DB_PASS:?set MB_DB_PASS in the Metabase env file}
+      MB_DB_PORT: ${MB_DB_PORT:-5432}
+      MB_DB_TYPE: ${MB_DB_TYPE:-postgres}
+      MB_DB_USER: ${MB_DB_USER:?set MB_DB_USER in the Metabase env file}
+      MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY:?set MB_ENCRYPTION_SECRET_KEY in the Metabase env file}
+      MB_SITE_NAME: ${MB_SITE_NAME:-Data Platform}
+      MB_SITE_URL: ${MB_SITE_URL:-}
+      JAVA_TIMEZONE: ${JAVA_TIMEZONE:-UTC}
+    ports:
+      - "${METABASE_BIND_ADDRESS:-127.0.0.1}:${METABASE_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail -I http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
