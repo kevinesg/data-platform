@@ -399,6 +399,12 @@ use `+schema: seed_personal_finance`, so the default BigQuery dataset name is
 `+schema: mart_personal_finance`, so the default BigQuery dataset name is
 `dbt_<developer>_mart_personal_finance`.
 
+For deployed `qa` and `prod` targets, `generate_schema_name` uses exact custom
+schema names instead of prefixing them with `DBT_DATASET`. For example,
+`+schema: staging` builds in `staging`, and
+`+schema: mart_personal_finance` builds in `mart_personal_finance`. Local dev
+keeps the default prefixed schema behavior for developer isolation.
+
 ### dbt Local Workstation
 
 Run this subsection on the development workstation.

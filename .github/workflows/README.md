@@ -12,6 +12,7 @@ for every component check.
 | `dbt-ci` | `dbt-ci.yml` | Pull requests and pushes to `main` that change dbt runtime files, plus manual dispatch | Installs the locked dbt runtime, parses the dbt project with non-secret placeholder values, and builds the dbt Docker image without publishing it. |
 | `airflow-ci` | `airflow-ci.yml` | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
 | `publish-images` | `publish-images.yml` | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
+| `deploy-qa` | `deploy-qa.yml` | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
 
 ## CI/CD Boundary
 
@@ -20,8 +21,9 @@ must not depend on live cloud credentials, developer-specific secrets, BigQuery
 datasets, GCS buckets, or Google Sheets access.
 
 CD starts by publishing immutable registry images after the matching component
-CI has passed on `main`. Deployed QA smoke checks, production promotion, and
-environment approvals belong in later deployment workflows.
+CI has passed on `main`. QA deployment uses those immutable images on a
+self-hosted deployment runner. Production promotion and approval gates belong in
+later deployment workflows.
 
 Published runtime image tags use this form:
 
@@ -32,6 +34,12 @@ ghcr.io/kevinesg/data-platform-<component>:sha-<commit-sha>
 Do not use mutable `latest`, `qa`, or `prod` tags for deployed runtime
 selection. Deployed environments should pin image refs through their external
 `images.env` manifest.
+
+Image publishing also depends on the repository Actions token settings. In the
+GitHub repository, verify **Settings** > **Actions** > **General** >
+**Workflow permissions** is set to **Read and write permissions** before running
+`publish-images`. The workflow still narrows its own token scope with
+`permissions: contents: read` and `packages: write`.
 
 ## Syntax Guide
 
