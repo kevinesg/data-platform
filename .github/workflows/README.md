@@ -13,6 +13,7 @@ for every component check.
 | `airflow-ci` | `airflow-ci.yml` | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
 | `publish-images` | `publish-images.yml` | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
 | `deploy-qa` | `deploy-qa.yml` | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
+| `deploy-prod` | `deploy-prod.yml` | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
 
 ## CI/CD Boundary
 
@@ -22,8 +23,8 @@ datasets, GCS buckets, or Google Sheets access.
 
 CD starts by publishing immutable registry images after the matching component
 CI has passed on `main`. QA deployment uses those immutable images on a
-self-hosted deployment runner. Production promotion and approval gates belong in
-later deployment workflows.
+self-hosted deployment runner. Prod deployment promotes the QA image manifest
+after manual approval through the GitHub `prod` environment.
 
 Published runtime image tags use this form:
 

@@ -108,6 +108,15 @@ export PROJECT_NAME="Data Platform QA"
 export BIGQUERY_LOCATION=US
 ```
 
+For prod:
+
+```bash
+export ENVIRONMENT=prod
+export PROJECT_ID=kevinesg-prod
+export PROJECT_NAME="Data Platform Prod"
+export BIGQUERY_LOCATION=US
+```
+
 ## Platform Bootstrap
 
 This section is for an authorized platform maintainer. Team members joining an
@@ -316,7 +325,9 @@ workflow has produced fresh image tags for the rebuilt repository. Replace every
 published image set during clean rebuilds. Do not commit environment-specific
 copies.
 
-## QA Deployment Path
+## Deployed Environment Setup
+
+### QA Path Defaults
 
 QA deployment uses:
 
@@ -337,18 +348,32 @@ QA_DATA_PLATFORM_ENV_FILE
 QA_IMAGE_ENV_FILE
 ```
 
-### QA GCP Workspace
+### Deployed GCP Workspace
 
-Run this section once as a platform maintainer after the QA GCP project exists
-and billing is enabled. If the project does not exist yet, use **Platform
-Bootstrap** first with `PROJECT_ID=kevinesg-qa` and `PROJECT_NAME="Data Platform
-QA"`. Use an authenticated machine with permission to enable APIs, create
-service accounts, create buckets/datasets, grant IAM, and create service-account
-keys.
+Run this section once per deployed environment as a platform maintainer after
+the GCP project exists and billing is enabled. If the project does not exist
+yet, use **Platform Bootstrap** first with the matching environment values from
+**Bootstrap Environment Values**. Use an authenticated machine with permission
+to enable APIs, create service accounts, create buckets/datasets, grant IAM, and
+create service-account keys.
+
+For QA:
 
 ```bash
 export ENVIRONMENT=qa
 export PROJECT_ID=kevinesg-qa
+```
+
+For prod:
+
+```bash
+export ENVIRONMENT=prod
+export PROJECT_ID=kevinesg-prod
+```
+
+Then set the shared deployed workspace values:
+
+```bash
 export BIGQUERY_LOCATION=US
 export RAW_DATASET=raw
 export DBT_DEFAULT_DATASET=analytics
@@ -369,7 +394,7 @@ gcloud config list
 Enable missing services:
 
 ```bash
-enable_missing_qa_services() {
+enable_missing_deployed_services() {
   local required_services=(
     bigquery.googleapis.com
     drive.googleapis.com
@@ -400,11 +425,11 @@ enable_missing_qa_services() {
       "${missing_services[@]}" \
       --project="$PROJECT_ID"
   else
-    echo "All required QA services are enabled."
+    echo "All required deployed-environment services are enabled."
   fi
 }
 
-enable_missing_qa_services
+enable_missing_deployed_services
 ```
 
 Create or verify service accounts:
@@ -417,7 +442,7 @@ if gcloud iam service-accounts describe \
 else
   gcloud iam service-accounts create "$SCRIPTS_SERVICE_ACCOUNT_NAME" \
     --project="$PROJECT_ID" \
-    --display-name="Data Platform Scripts QA"
+    --display-name="Data Platform Scripts $ENVIRONMENT"
 fi
 
 if gcloud iam service-accounts describe \
@@ -427,16 +452,71 @@ if gcloud iam service-accounts describe \
 else
   gcloud iam service-accounts create "$DBT_SERVICE_ACCOUNT_NAME" \
     --project="$PROJECT_ID" \
-    --display-name="Data Platform dbt QA"
+    --display-name="Data Platform dbt $ENVIRONMENT"
 fi
+```
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/bigquery.jobUser"
+Wait until both service accounts are visible to IAM before granting roles. This
+avoids transient `service account does not exist` failures immediately after
+creation:
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL" \
-  --role="roles/bigquery.jobUser"
+```bash
+wait_for_service_account() {
+  local service_account_email="$1"
+  local attempt
+
+  for attempt in {1..12}; do
+    if gcloud iam service-accounts describe \
+      "$service_account_email" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+      echo "Service account is visible: $service_account_email"
+      return 0
+    fi
+
+    echo "Waiting for service account to propagate: $service_account_email"
+    sleep 10
+  done
+
+  gcloud iam service-accounts describe \
+    "$service_account_email" \
+    --project="$PROJECT_ID"
+}
+
+wait_for_service_account "$SCRIPTS_SERVICE_ACCOUNT_EMAIL"
+wait_for_service_account "$DBT_SERVICE_ACCOUNT_EMAIL"
+```
+
+Grant project-level BigQuery job permissions:
+
+```bash
+add_project_iam_binding_with_retry() {
+  local member="$1"
+  local role="$2"
+  local attempt
+
+  for attempt in {1..6}; do
+    if gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+      --member="$member" \
+      --role="$role"; then
+      return 0
+    fi
+
+    echo "Retrying IAM binding after propagation delay: $member $role"
+    sleep 10
+  done
+
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="$member" \
+    --role="$role"
+}
+
+add_project_iam_binding_with_retry \
+  "serviceAccount:$SCRIPTS_SERVICE_ACCOUNT_EMAIL" \
+  "roles/bigquery.jobUser"
+
+add_project_iam_binding_with_retry \
+  "serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL" \
+  "roles/bigquery.jobUser"
 ```
 
 Create or verify the landing bucket:
@@ -538,10 +618,12 @@ fi
 chmod 600 "$SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS" "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 ```
 
-Share the personal finance Google Sheet with the QA scripts service account:
+Share the personal finance Google Sheet with the deployed scripts service
+account:
 
 ```text
 data-platform-scripts-qa@kevinesg-qa.iam.gserviceaccount.com
+data-platform-scripts-prod@kevinesg-prod.iam.gserviceaccount.com
 ```
 
 ### QA Host Setup
@@ -646,11 +728,19 @@ DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
   docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml ps
 
 DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
+  docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml exec -T api-server cat /opt/airflow/auth/simple_auth_manager_passwords.json.generated
+
+DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
   docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list
 
 DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
   docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list-import-errors
 ```
+
+The generated Simple Auth password lives in the `airflow-auth` Docker volume and
+should persist across normal `deploy-qa`, `docker compose up -d`, and
+`--force-recreate` operations. It can change if that volume is deleted, if
+`docker compose down -v` is used, or if `AIRFLOW_COMPOSE_PROJECT` changes.
 
 Trigger the personal finance DAG manually from the Airflow UI, or from the
 scheduler container when an end-to-end QA run is needed:
@@ -675,3 +765,198 @@ DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
 
 Do not run `docker compose down -v` for ordinary QA configuration changes. That
 removes Airflow metadata and Postgres state.
+
+### Prod Path Defaults
+
+Prod deployment uses:
+
+```text
+Prod repo clone:           $HOME/prod/data-platform
+Prod secrets file:         $HOME/secrets/data-platform/prod/.env
+Prod image manifest:       $HOME/secrets/data-platform/prod/images.env
+Prod source image manifest: $HOME/secrets/data-platform/qa/images.env
+Prod runner dir:           $HOME/actions-runners/data-platform/prod
+Prod runner label:         data-platform-prod
+```
+
+The `deploy-prod` workflow defaults to those paths. Add GitHub environment
+variables only when the host uses different absolute paths:
+
+```text
+PROD_REPO_DIR
+PROD_DATA_PLATFORM_ENV_FILE
+PROD_IMAGE_ENV_FILE
+PROD_SOURCE_IMAGE_ENV_FILE
+```
+
+`PROD_SOURCE_IMAGE_ENV_FILE` defaults to the QA image manifest. Prod deployment
+promotes those immutable image refs into the prod image manifest, so prod runs
+the same image set that was deployed to QA.
+
+### Prod Host Setup
+
+Run this on the deployment host after the prod GCP workspace is provisioned with
+**Deployed GCP Workspace**:
+
+```bash
+mkdir -p "$HOME/prod"
+mkdir -p "$HOME/secrets/data-platform/prod"
+mkdir -p "$HOME/actions-runners/data-platform/prod"
+chmod 700 "$HOME/secrets/data-platform/prod"
+
+git clone git@github.com:kevinesg/data-platform.git "$HOME/prod/data-platform"
+cd "$HOME/prod/data-platform"
+git switch main
+
+cp deploy/env.example "$HOME/secrets/data-platform/prod/.env"
+cp deploy/images.env.example "$HOME/secrets/data-platform/prod/images.env"
+chmod 600 "$HOME/secrets/data-platform/prod/.env" "$HOME/secrets/data-platform/prod/images.env"
+```
+
+Edit `$HOME/secrets/data-platform/prod/.env` and set prod values. At minimum:
+
+```text
+AIRFLOW_COMPOSE_PROJECT=data-platform-airflow-prod
+AIRFLOW_API_PORT=<prod Airflow port that does not conflict on the host>
+ENVIRONMENT=prod
+PROJECT_ID=kevinesg-prod
+PERSONAL_FINANCE_GCS_BUCKET=kevinesg-prod-data-platform-landing
+SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/scripts-service-account.json
+DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/dbt-service-account.json
+ETL__PERSONAL_FINANCE_SCHEDULE=<prod cron or preset schedule>
+DBT_TARGET=prod
+DBT_DATASET=analytics
+BIGQUERY_LOCATION=US
+```
+
+Also replace all generated Airflow/Postgres passwords and secrets. Keep
+`PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Prod DAG import requires
+`ETL__PERSONAL_FINANCE_SCHEDULE` because prod is the scheduled environment; use
+QA for manual-only validation.
+
+Useful host values:
+
+```bash
+id -u
+stat -c '%g' /var/run/docker.sock
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+realpath "$HOME/secrets/data-platform/prod/scripts-service-account.json"
+realpath "$HOME/secrets/data-platform/prod/dbt-service-account.json"
+```
+
+Create a GitHub environment named `prod` before using `deploy-prod`: repository
+**Settings** > **Environments** > **New environment**. Configure required
+reviewers so prod deployment waits for explicit approval.
+
+Register the prod self-hosted runner from GitHub: repository **Settings** >
+**Actions** > **Runners** > **New self-hosted runner**. Use the Linux commands
+shown by GitHub from this directory:
+
+```bash
+cd "$HOME/actions-runners/data-platform/prod"
+```
+
+During runner configuration:
+
+```text
+runner group: Default
+runner name: a stable repo/environment/host name, for example data-platform-prod-homeserver
+additional labels: data-platform-prod
+work folder: _work
+```
+
+Install and start the runner service:
+
+```bash
+cd "$HOME/actions-runners/data-platform/prod"
+sudo ./svc.sh install
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+### Prod Deploy
+
+Run GitHub Actions > `deploy-prod` with `git_ref` set to the same `main` release
+that passed QA. If new commits have landed on `main` since the QA validation,
+rerun `deploy-qa` and validate QA before promoting prod.
+
+The workflow:
+
+1. Checks the prod host paths and the QA source image manifest.
+2. Blocks deployment when existing prod Airflow metadata has queued or running
+   DAG runs.
+3. Updates the persistent prod checkout.
+4. Saves the existing prod image manifest as `images.env.previous`, then
+   promotes the QA image manifest to prod.
+5. Runs `dbt compile` in the deployed dbt image with prod credentials.
+6. Pulls runtime images and recreates the prod Airflow stack.
+7. Runs Airflow DAG import smoke checks.
+
+The prod workflow does not run `dbt build`, dbt tests, or Airflow DAGs. Those
+are production operations, not deploy steps.
+
+### Prod Verification
+
+Run on the deployment host after `deploy-prod` succeeds:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+
+cd "$PROD_REPO_DIR/airflow"
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+set +a
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml ps
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T api-server cat /opt/airflow/auth/simple_auth_manager_passwords.json.generated
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list-import-errors
+```
+
+Do not manually trigger prod DAGs as part of deployment unless you intentionally
+want to run that production pipeline. Scheduled/manual prod DAG execution is an
+operational action, not a deployment workflow step.
+
+### Prod Rollback
+
+Prod rollback restores the previous runtime image set. It does not undo
+warehouse writes from a DAG that already ran, and it does not restore Airflow
+metadata. Investigate partial production runs before triggering any follow-up
+pipeline execution.
+
+If `deploy-prod` already wrote a new prod image manifest and the previous
+manifest exists, restore it and recreate the stack:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+
+test -f "$PROD_IMAGE_ENV_FILE.previous"
+cp "$PROD_IMAGE_ENV_FILE.previous" "$PROD_IMAGE_ENV_FILE"
+chmod 600 "$PROD_IMAGE_ENV_FILE"
+
+cd "$PROD_REPO_DIR/airflow"
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+set +a
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml ps
+```
+
+Do not run `docker compose down -v` for rollback. That removes Airflow metadata
+and Postgres state.
