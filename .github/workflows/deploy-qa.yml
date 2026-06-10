@@ -1,0 +1,217 @@
+name: deploy-qa
+
+# Manual QA deployment to the self-hosted deployment runner. This deploys
+# already-published immutable images; it does not build images or run prod work.
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Git ref to deploy. Use main for the latest approved release.
+        required: true
+        default: main
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  QA_REPO_DIR: ${{ vars.QA_REPO_DIR }}
+  QA_DATA_PLATFORM_ENV_FILE: ${{ vars.QA_DATA_PLATFORM_ENV_FILE }}
+  QA_IMAGE_ENV_FILE: ${{ vars.QA_IMAGE_ENV_FILE }}
+  REGISTRY_PREFIX: ghcr.io/kevinesg
+
+jobs:
+  deploy:
+    name: Deploy QA Airflow
+    runs-on:
+      - self-hosted
+      - linux
+      - data-platform-qa
+    timeout-minutes: 30
+    environment: qa
+    env:
+      DEPLOY_GIT_REF: ${{ inputs.git_ref }}
+    steps:
+      - name: Resolve QA host paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "QA_REPO_DIR=${QA_REPO_DIR:-$HOME/qa/data-platform}"
+            echo "QA_DATA_PLATFORM_ENV_FILE=${QA_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/qa/.env}"
+            echo "QA_IMAGE_ENV_FILE=${QA_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/qa/images.env}"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate QA host state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$QA_REPO_DIR/.git"
+          test -f "$QA_DATA_PLATFORM_ENV_FILE"
+          test -d "$(dirname "$QA_IMAGE_ENV_FILE")"
+
+      - name: Update QA checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$QA_REPO_DIR"
+          previous_sha="$(git rev-parse HEAD)"
+          git fetch --prune origin
+
+          if [[ "$DEPLOY_GIT_REF" == "main" ]]; then
+            git switch main
+            git pull --ff-only origin main
+          else
+            git checkout --detach "$DEPLOY_GIT_REF"
+          fi
+
+          echo "PREVIOUS_DEPLOY_SHA=$previous_sha" >> "$GITHUB_ENV"
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update QA image manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$QA_REPO_DIR"
+
+          set_image_from_latest_published_tag() {
+            local component="$1"
+            local var_name="$2"
+            shift 2
+            local runtime_sha
+            local image_sha
+            local image
+
+            runtime_sha="$(git log --first-parent -1 --format=%H "$DEPLOY_SHA" -- "$@")"
+            if [[ -z "$runtime_sha" ]]; then
+              echo "::error::No runtime change found for $component in git history."
+              exit 1
+            fi
+
+            for image_sha in $(git rev-list --first-parent "$DEPLOY_SHA"); do
+              image="$REGISTRY_PREFIX/data-platform-$component:sha-$image_sha"
+              if docker manifest inspect "$image" >/dev/null 2>&1; then
+                printf -v "$var_name" '%s' "$image"
+                echo "Selected $component image: $image"
+                return 0
+              fi
+
+              if [[ "$image_sha" == "$runtime_sha" ]]; then
+                echo "::error::No published $component image found at or after latest runtime change $runtime_sha."
+                exit 1
+              fi
+            done
+          }
+
+          set_image_from_latest_published_tag airflow DATA_PLATFORM_AIRFLOW_IMAGE \
+            "airflow/**" \
+            ":(exclude)airflow/*.md" \
+            ":(exclude)airflow/**/*.md" \
+            ":(exclude)airflow/.env.example" \
+            ":(exclude)airflow/**/.gitignore" \
+            ":(exclude)airflow/**/.gitkeep"
+          set_image_from_latest_published_tag scripts DATA_PLATFORM_SCRIPTS_IMAGE \
+            "scripts/**" \
+            ":(exclude)scripts/*.md" \
+            ":(exclude)scripts/**/*.md" \
+            ":(exclude)scripts/.env.example" \
+            ":(exclude)scripts/**/.gitignore" \
+            ":(exclude)scripts/**/.gitkeep"
+          set_image_from_latest_published_tag dbt DATA_PLATFORM_DBT_IMAGE \
+            "dbt/**" \
+            ":(exclude)dbt/*.md" \
+            ":(exclude)dbt/**/*.md" \
+            ":(exclude)dbt/.env.example" \
+            ":(exclude)dbt/**/.gitignore" \
+            ":(exclude)dbt/**/.gitkeep"
+
+          test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
+          test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
+          test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+
+          {
+            printf 'DATA_PLATFORM_AIRFLOW_IMAGE=%s\n' "$DATA_PLATFORM_AIRFLOW_IMAGE"
+            printf 'DATA_PLATFORM_SCRIPTS_IMAGE=%s\n' "$DATA_PLATFORM_SCRIPTS_IMAGE"
+            printf 'DATA_PLATFORM_DBT_IMAGE=%s\n' "$DATA_PLATFORM_DBT_IMAGE"
+          } > "$QA_IMAGE_ENV_FILE"
+          chmod 600 "$QA_IMAGE_ENV_FILE"
+
+          cat "$QA_IMAGE_ENV_FILE"
+
+      - name: Validate QA dbt compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$QA_IMAGE_ENV_FILE"
+          source "$QA_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DBT_GOOGLE_APPLICATION_CREDENTIALS:-}"
+          test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+
+          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker run --rm \
+            --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+            -e DBT_TARGET \
+            -e PROJECT_ID \
+            -e RAW_DATASET \
+            -e DBT_DATASET \
+            -e DBT_THREADS \
+            -e BIGQUERY_LOCATION \
+            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+            "$DATA_PLATFORM_DBT_IMAGE" compile --project-dir data_warehouse --target "$DBT_TARGET"
+
+      - name: Pull and start QA Airflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$QA_IMAGE_ENV_FILE"
+          set +a
+
+          docker manifest inspect "$DATA_PLATFORM_AIRFLOW_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_SCRIPTS_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_DBT_IMAGE" >/dev/null
+
+          # DockerOperator starts sibling containers through the host Docker daemon.
+          # Pull task images here while the workflow is logged in to GHCR so Airflow
+          # does not need registry credentials inside the scheduler container.
+          docker pull "$DATA_PLATFORM_AIRFLOW_IMAGE"
+          docker pull "$DATA_PLATFORM_SCRIPTS_IMAGE"
+          docker pull "$DATA_PLATFORM_DBT_IMAGE"
+
+          cd "$QA_REPO_DIR/airflow"
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml pull
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml ps
+
+      - name: QA Airflow smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$QA_IMAGE_ENV_FILE"
+          set +a
+
+          cd "$QA_REPO_DIR/airflow"
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list
+          DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list-import-errors

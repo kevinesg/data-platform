@@ -118,7 +118,7 @@ ghcr.io/kevinesg/data-platform-dbt:sha-<commit-sha>
 ghcr.io/kevinesg/data-platform-airflow:sha-<commit-sha>
 ```
 
-## Continuous Integration
+## CI/CD
 
 Component CI runs only for changed component paths and does not use live cloud
 credentials. Pull-request checks validate code, configuration parsing, and
@@ -134,7 +134,9 @@ Current workflows:
   dummy non-secret environment values.
 - `publish-images`: publishes immutable GHCR image tags after the matching
   component CI workflow succeeds on `main`, or through manual dispatch.
+- `deploy-qa`: deploys the selected Git ref to the QA host with the latest
+  matching immutable runtime images.
 
-Deployed QA smoke checks and prod promotion are later CD phases after immutable
-images exist. Workflow syntax, local validation options, and CI/CD boundaries
-are documented in `.github/workflows/README.md`.
+Prod promotion is a later CD phase after QA deployment is working. Workflow
+syntax, local validation options, and CI/CD boundaries are documented in
+`.github/workflows/README.md`.
