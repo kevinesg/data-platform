@@ -624,6 +624,10 @@ The workflow:
 5. Pulls runtime images and recreates the QA Airflow stack.
 6. Runs Airflow DAG import smoke checks.
 
+The `dbt compile` step uses the profile baked into the selected dbt image. That
+profile is copied from `dbt/data_warehouse/profiles.yml.example` at image build
+time, so the image must include a target matching `DBT_TARGET=qa`.
+
 ### QA Verification
 
 Run on the deployment host after `deploy-qa` succeeds:
