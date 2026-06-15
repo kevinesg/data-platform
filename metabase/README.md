@@ -203,6 +203,17 @@ Create warehouse/database connections from the Metabase UI after the service is
 running. For BigQuery, use a least-privilege Metabase service account for the
 deployed analytics instance.
 
+Metabase's BigQuery connector requires a service-account JSON file. For prod,
+use the Metabase-specific read-only key created below:
+
+```text
+$HOME/secrets/data-platform/prod/metabase-bigquery-service-account.json
+```
+
+Do not use the scripts or dbt service-account keys for Metabase. They have
+different runtime responsibilities and broader write access than the analytics
+service needs.
+
 Minimum read-only permissions:
 
 - `roles/bigquery.jobUser` on the project where Metabase runs query jobs.
@@ -310,14 +321,22 @@ chmod 600 "$KEY_FILE"
 After the key exists:
 
 1. Open Metabase and complete the first-run admin setup if needed.
-2. Go to Admin settings > Databases > Add a database.
-3. Choose Google BigQuery.
-4. Enter the GCP project ID without any legacy `project_name:` prefix.
-5. Upload or paste the service-account JSON key.
+2. When Metabase asks to connect data during first-run setup, choose Google
+   BigQuery. If first-run setup is already complete, go to Admin settings >
+   Databases > Add a database and choose Google BigQuery.
+3. Use a clear display name such as `kevinesg-prod BigQuery`.
+4. Enter `kevinesg-prod` as the Project ID. Do not include any legacy
+   `project_name:` prefix.
+5. Upload the service-account JSON file from
+   `$HOME/secrets/data-platform/prod/metabase-bigquery-service-account.json`,
+   or paste the full JSON contents when the UI offers a paste field.
 6. In dataset sync settings, choose only published mart datasets, such as
-   `mart_personal_finance`.
-7. Save the connection and let Metabase sync database metadata.
-8. Confirm Metabase can browse analytics tables and run a small row-limited
+   `mart_personal_finance`. Enter dataset names only, not table names or
+   `project.dataset` values.
+7. Leave JVM timezone off unless the Metabase instance intentionally handles
+   BigQuery timezone conversion itself.
+8. Save the connection and let Metabase sync database metadata.
+9. Confirm Metabase can browse analytics tables and run a small row-limited
    query.
 
 ## CI/CD Scope
