@@ -39,6 +39,7 @@ into a catch-all folder.
   - [Prod Deploy](#prod-deploy)
   - [Prod Verification](#prod-verification)
   - [Prod Rollback](#prod-rollback)
+- [Deployed dbt Docs](#deployed-dbt-docs)
 - [Deployed Metabase Runtime](#deployed-metabase-runtime)
 
 ## Choose The Applicable Path
@@ -370,7 +371,7 @@ direct LAN access is intentionally required.
 | --- | --- | --- |
 | Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) | Authenticated operational UI. Public-viewer credentials are future work and must be read-only before broader sharing. |
 | Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) | Authenticated analytics UI. Public access should be limited to explicitly reviewed public dashboards later. |
-| dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) | Not up yet. Intended for generated dbt documentation after metadata is reviewed for sensitive names or descriptions. |
+| dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) | Static docs refresh workflow added. Public exposure waits for generated metadata review. |
 | Elementary Data Reliability docs | [edr.kevinesg.com](https://edr.kevinesg.com) | Not up yet. Intended for static Elementary Data Reliability output after report contents are reviewed. |
 
 Airflow and Metabase remain protected by application login and role-based
@@ -393,7 +394,7 @@ triaged.
 | --- | --- | --- | --- |
 | Airflow UI | Airflow runtime | DAG state, task retries, task logs, import errors, and manual triggers. | Active through `airflow.kevinesg.com`. |
 | dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Planned. Do not commit generated artifacts. |
-| dbt docs | dbt runtime | Static documentation for models, tests, lineage, and column contracts. | Planned for `dbt.kevinesg.com`. |
+| dbt docs | dbt runtime | Static documentation for models, tests, lineage, and column contracts. | Refresh workflow added for `dbt.kevinesg.com`; expose only after metadata review. |
 | Elementary Data Reliability docs | dbt observability runtime | Static data-quality report for dbt test history, freshness, and schema-change checks. | Planned for `edr.kevinesg.com`. |
 | Metabase | Analytics runtime | Business-facing dashboards and exploration, not pipeline incident triage. | Active through `metabase.kevinesg.com`. |
 | BigQuery metadata | Platform operations | Table storage, table age, row counts, and warehouse cost investigations. | Planned as targeted runbook queries. |
@@ -1080,6 +1081,127 @@ DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
 
 Do not run `docker compose down -v` for rollback. That removes Airflow metadata
 and Postgres state.
+
+## Deployed dbt Docs
+
+dbt docs are generated from the deployed prod dbt image so the documentation
+matches the dbt code and profile contract selected for prod. Generated files are
+runtime artifacts and must not be committed.
+
+The [refresh-dbt-docs](../.github/workflows/refresh-dbt-docs.yml) workflow runs
+after successful `deploy-prod` workflow runs and can also be started manually.
+It reads the deployed prod image manifest and environment file from the
+deployment host, generates a static `static_index.html`, copies it to a runtime
+directory, and serves it with nginx bound to localhost.
+
+Automatic runs skip docs generation when the existing `index.html` was produced
+from the same deployed dbt image recorded in `.dbt-image`. Manual workflow runs
+always regenerate docs and recreate the serving container.
+
+Default prod paths and port:
+
+```text
+Prod repo clone:        $HOME/prod/data-platform
+Prod secrets file:      $HOME/secrets/data-platform/prod/.env
+Prod image manifest:    $HOME/secrets/data-platform/prod/images.env
+dbt docs directory:     $HOME/runtime/data-platform/prod/dbt-docs
+dbt docs target dir:    $HOME/runtime/data-platform/prod/dbt-docs-target
+dbt docs local URL:     http://127.0.0.1:8082
+dbt docs container:     data-platform-dbt-docs-prod
+```
+
+Add repository variables only when the host uses different absolute paths or
+port:
+
+```text
+PROD_REPO_DIR
+PROD_DATA_PLATFORM_ENV_FILE
+PROD_IMAGE_ENV_FILE
+DBT_DOCS_DIR
+DBT_DOCS_TARGET_DIR
+DBT_DOCS_PORT
+```
+
+Manual recovery/debug command on the deployment host:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+export DBT_DOCS_DIR="$HOME/runtime/data-platform/prod/dbt-docs"
+export DBT_DOCS_TARGET_DIR="$HOME/runtime/data-platform/prod/dbt-docs-target"
+export DBT_DOCS_PORT=8082
+export DBT_DOCS_CONTAINER=data-platform-dbt-docs-prod
+
+mkdir -p "$DBT_DOCS_DIR" "$DBT_DOCS_TARGET_DIR"
+chmod 755 "$DBT_DOCS_DIR"
+
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+. "$PROD_ENV_FILE"
+set +a
+
+test -n "$DATA_PLATFORM_DBT_IMAGE"
+test -n "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+
+docker_pull_with_retry() {
+  local image="$1"
+  local attempt
+
+  for attempt in {1..5}; do
+    if docker pull "$image"; then
+      return 0
+    fi
+
+    echo "Retrying pull after registry failure: $image"
+    sleep 15
+  done
+
+  docker pull "$image"
+}
+
+docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
+docker run --rm \
+  --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+  --mount "type=bind,source=$DBT_DOCS_TARGET_DIR,target=/app/data_warehouse/target" \
+  -e DBT_TARGET \
+  -e PROJECT_ID \
+  -e RAW_DATASET \
+  -e DBT_DATASET \
+  -e DBT_THREADS \
+  -e BIGQUERY_LOCATION \
+  -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+  "$DATA_PLATFORM_DBT_IMAGE" docs generate \
+    --project-dir data_warehouse \
+    --target "$DBT_TARGET" \
+    --static
+
+test -f "$DBT_DOCS_TARGET_DIR/static_index.html"
+cp "$DBT_DOCS_TARGET_DIR/static_index.html" "$DBT_DOCS_DIR/index.html"
+printf '%s\n' "$DATA_PLATFORM_DBT_IMAGE" > "$DBT_DOCS_DIR/.dbt-image"
+chmod 644 "$DBT_DOCS_DIR/index.html" "$DBT_DOCS_DIR/.dbt-image"
+
+docker rm -f "$DBT_DOCS_CONTAINER" 2>/dev/null || true
+docker run -d \
+  --name "$DBT_DOCS_CONTAINER" \
+  --restart unless-stopped \
+  -p "127.0.0.1:$DBT_DOCS_PORT:80" \
+  --mount "type=bind,source=$DBT_DOCS_DIR,target=/usr/share/nginx/html,readonly" \
+  nginx:alpine
+
+curl --fail --silent --head "http://127.0.0.1:$DBT_DOCS_PORT" >/dev/null
+```
+
+For Cloudflare Tunnel, point `dbt.kevinesg.com` to
+`http://localhost:8082`. Keep nginx bound to `127.0.0.1` unless direct LAN
+access is intentional.
+
+Review generated dbt docs before public exposure. Treat model names, source
+names, column names, descriptions, test names, lineage, and compiled SQL as
+potentially sensitive metadata. If the generated docs contain sensitive
+metadata, keep the hostname behind Cloudflare Access, an identity-aware proxy,
+VPN, or another authenticated front door instead of publishing it anonymously.
 
 ## Deployed Metabase Runtime
 

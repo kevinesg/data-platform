@@ -1,0 +1,165 @@
+name: refresh-dbt-docs
+
+# Refresh static dbt docs from the deployed prod dbt image. This serves generated
+# documentation from the deployment host without committing dbt artifacts.
+
+on:
+  workflow_run:
+    workflows:
+      - deploy-prod
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-dbt-docs-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  PROD_REPO_DIR: ${{ vars.PROD_REPO_DIR }}
+  PROD_DATA_PLATFORM_ENV_FILE: ${{ vars.PROD_DATA_PLATFORM_ENV_FILE }}
+  PROD_IMAGE_ENV_FILE: ${{ vars.PROD_IMAGE_ENV_FILE }}
+  DBT_DOCS_DIR: ${{ vars.DBT_DOCS_DIR }}
+  DBT_DOCS_TARGET_DIR: ${{ vars.DBT_DOCS_TARGET_DIR }}
+  DBT_DOCS_PORT: ${{ vars.DBT_DOCS_PORT }}
+
+jobs:
+  refresh:
+    name: Refresh prod dbt docs
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on:
+      - self-hosted
+      - linux
+      - data-platform-prod
+    timeout-minutes: 30
+    steps:
+      - name: Resolve prod docs paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "PROD_REPO_DIR=${PROD_REPO_DIR:-$HOME/prod/data-platform}"
+            echo "PROD_DATA_PLATFORM_ENV_FILE=${PROD_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/prod/.env}"
+            echo "PROD_IMAGE_ENV_FILE=${PROD_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/prod/images.env}"
+            echo "DBT_DOCS_DIR=${DBT_DOCS_DIR:-$HOME/runtime/data-platform/prod/dbt-docs}"
+            echo "DBT_DOCS_TARGET_DIR=${DBT_DOCS_TARGET_DIR:-$HOME/runtime/data-platform/prod/dbt-docs-target}"
+            echo "DBT_DOCS_PORT=${DBT_DOCS_PORT:-8082}"
+            echo "DBT_DOCS_CONTAINER=data-platform-dbt-docs-prod"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate prod host state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$PROD_REPO_DIR/.git"
+          test -f "$PROD_DATA_PLATFORM_ENV_FILE"
+          test -f "$PROD_IMAGE_ENV_FILE"
+          mkdir -p "$DBT_DOCS_DIR" "$DBT_DOCS_TARGET_DIR"
+          chmod 755 "$DBT_DOCS_DIR"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate static dbt docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          source "$PROD_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DBT_GOOGLE_APPLICATION_CREDENTIALS:-}"
+          test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
+
+          if [[ "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ]]; then
+            if [[ -f "$DBT_DOCS_DIR/index.html" ]] &&
+              [[ -f "$DBT_DOCS_DIR/.dbt-image" ]] &&
+              [[ "$(cat "$DBT_DOCS_DIR/.dbt-image")" == "$DATA_PLATFORM_DBT_IMAGE" ]]; then
+              echo "dbt docs already match $DATA_PLATFORM_DBT_IMAGE"
+              echo "DBT_DOCS_REFRESHED=false" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          fi
+
+          echo "DBT_DOCS_REFRESHED=true" >> "$GITHUB_ENV"
+
+          docker_pull_with_retry() {
+            local image="$1"
+            local attempt
+
+            for attempt in {1..5}; do
+              if docker pull "$image"; then
+                return 0
+              fi
+
+              echo "Retrying pull after registry failure: $image"
+              sleep 15
+            done
+
+            docker pull "$image"
+          }
+
+          docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
+          docker run --rm \
+            --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+            --mount "type=bind,source=$DBT_DOCS_TARGET_DIR,target=/app/data_warehouse/target" \
+            -e DBT_TARGET \
+            -e PROJECT_ID \
+            -e RAW_DATASET \
+            -e DBT_DATASET \
+            -e DBT_THREADS \
+            -e BIGQUERY_LOCATION \
+            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+            "$DATA_PLATFORM_DBT_IMAGE" docs generate \
+              --project-dir data_warehouse \
+              --target "$DBT_TARGET" \
+              --static
+
+          test -f "$DBT_DOCS_TARGET_DIR/static_index.html"
+          cp "$DBT_DOCS_TARGET_DIR/static_index.html" "$DBT_DOCS_DIR/index.html"
+          printf '%s\n' "$DATA_PLATFORM_DBT_IMAGE" > "$DBT_DOCS_DIR/.dbt-image"
+          chmod 644 "$DBT_DOCS_DIR/index.html" "$DBT_DOCS_DIR/.dbt-image"
+
+      - name: Serve static dbt docs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${DBT_DOCS_REFRESHED:-true}" == "false" ]]; then
+            if curl --fail --silent --head "http://127.0.0.1:$DBT_DOCS_PORT" >/dev/null; then
+              echo "Existing dbt docs nginx is reachable"
+              exit 0
+            fi
+
+            echo "Existing docs match the deployed dbt image, but nginx is not reachable; recreating."
+          fi
+
+          docker rm -f "$DBT_DOCS_CONTAINER" >/dev/null 2>&1 || true
+          docker run -d \
+            --name "$DBT_DOCS_CONTAINER" \
+            --restart unless-stopped \
+            -p "127.0.0.1:$DBT_DOCS_PORT:80" \
+            --mount "type=bind,source=$DBT_DOCS_DIR,target=/usr/share/nginx/html,readonly" \
+            nginx:alpine
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --head "http://127.0.0.1:$DBT_DOCS_PORT" >/dev/null; then
+              echo "dbt docs nginx is reachable"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          curl -I "http://127.0.0.1:$DBT_DOCS_PORT"

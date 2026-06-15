@@ -28,7 +28,6 @@ imports or production runtime bind mounts.
 - [Setup Flow](#setup-flow)
 - [Images](#images)
 - [CI/CD](#cicd)
-- [Public Readiness Gate](#public-readiness-gate)
 
 ## Production-Scale Assumption
 
@@ -170,29 +169,9 @@ Current workflows:
   matching immutable runtime images.
 - `deploy-prod`: promotes the QA image manifest to prod after GitHub
   environment approval and deployed smoke checks.
+- `refresh-dbt-docs`: generates static dbt docs from the deployed prod dbt
+  image and serves them from the prod host without committing generated
+  artifacts.
 
 Workflow syntax, local validation options, and CI/CD boundaries are documented
 in [.github/workflows/README.md](.github/workflows/README.md).
-
-## Public Readiness Gate
-
-Before making the repository public, complete a review pass that treats docs,
-metadata, examples, generated files, and Git history as publishable surfaces.
-
-Required checks:
-
-- Confirm the working tree and index contain only intentional public files.
-- Confirm `AGENTS.md`, local `docs/`, `data-platform-archive/`, local snapshots,
-  `.env` files, service-account keys, credentials, generated artifacts,
-  backups, warehouse exports, and runtime logs are not staged.
-- Run a current-tree secret scan and a full-history secret scan with an approved
-  scanner. Keep scan outputs outside the repository unless they are sanitized.
-- Review README and component docs for private host paths, credentials, project
-  internals, personal finance details, incident details, and sensitive metadata.
-- Review generated dbt docs and Elementary Data Reliability output before
-  exposing static sites publicly.
-- Re-check external hostnames and public access posture in
-  [deploy/README.md](deploy/README.md).
-
-Do not make the repository public until the current tree, history, and generated
-documentation surfaces have all passed review.

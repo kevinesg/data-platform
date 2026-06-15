@@ -27,6 +27,7 @@ for every component check.
 | `publish-images` | [publish-images.yml](publish-images.yml) | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
 | `deploy-qa` | [deploy-qa.yml](deploy-qa.yml) | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
 | `deploy-prod` | [deploy-prod.yml](deploy-prod.yml) | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
+| `refresh-dbt-docs` | [refresh-dbt-docs.yml](refresh-dbt-docs.yml) | Successful `deploy-prod` runs, plus manual dispatch | Generates static dbt docs from the deployed prod dbt image and serves them from the prod host without committing artifacts. |
 
 ## CI/CD Boundary
 
@@ -38,6 +39,12 @@ CD starts by publishing immutable registry images after the matching component
 CI has passed on `main`. QA deployment uses those immutable images on a
 self-hosted deployment runner. Prod deployment promotes the QA image manifest
 after manual approval through the GitHub `prod` environment.
+
+Documentation refresh workflows are operational jobs, not application deploys.
+`refresh-dbt-docs` uses the deployed prod dbt image and environment files on the
+prod host so the published docs match the selected runtime image. It writes
+generated HTML under `$HOME/runtime/data-platform/prod/dbt-docs` by default and
+does not commit generated dbt artifacts.
 
 Published runtime image tags use this form:
 
