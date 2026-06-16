@@ -232,11 +232,12 @@ DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL=<Slack incoming webhook URL>
 Use a dedicated test Slack channel and webhook for dev or QA alert testing.
 Leave `DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL` unset for day-to-day
 local development or manual-only QA if alerts would create noise. Do not commit
-webhook URLs.
+webhook URLs. If a webhook URL is exposed in chat, logs, screenshots, or Git,
+revoke it in Slack and create a replacement.
 
-Alert payloads include environment, DAG id, task id, run id, try count, failure
-timestamp, a clickable Airflow task-log link when available, and a short
-exception summary.
+Alert payloads include DAG id, task id, run id, failure timestamp, a clickable
+task-log link when available, exception summary, and recent container log lines
+when Airflow exposes them on the exception.
 
 Set `AIRFLOW__API__BASE_URL` in the external environment file when alert links
 should open a specific Airflow UI hostname. For local development, use
@@ -246,6 +247,12 @@ Dev alert testing is useful before QA because it proves the callback code,
 external env value, Airflow import path, and Slack webhook delivery. QA testing
 is still required after deploy because it proves the packaged image and deployed
 environment files.
+
+Airflow callbacks run only when a DAG or task state changes because a worker
+executed it. Manually marking a task as failed from the UI or CLI updates
+metadata state but does not execute the failure callback. Use the manual
+callback test below to verify Slack delivery, or trigger a real task execution
+that fails.
 
 Test alert delivery from the local Airflow stack after setting the webhook URL
 and `AIRFLOW__API__BASE_URL=http://localhost:8080` in the external environment
@@ -257,7 +264,10 @@ cd airflow
 docker compose --env-file "$DATA_PLATFORM_ENV_FILE" -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate --remove-orphans
 
 docker compose --env-file "$DATA_PLATFORM_ENV_FILE" -f docker-compose.yml -f docker-compose.dev.yml exec -T scheduler python - <<'PY'
+import sys
 from types import SimpleNamespace
+
+sys.path.insert(0, "/opt/airflow/dags")
 
 from _alerting import send_failure_alert
 
@@ -266,8 +276,6 @@ send_failure_alert(
         "task_instance": SimpleNamespace(
             dag_id="alert_test",
             task_id="manual_test",
-            try_number=1,
-            max_tries=1,
             log_url="http://localhost:8080",
         ),
         "dag_run": SimpleNamespace(run_id="manual_alert_test"),
@@ -277,6 +285,9 @@ send_failure_alert(
 )
 PY
 ```
+
+The manual `python` process adds `/opt/airflow/dags` to `sys.path` because it
+does not run through Airflow's DAG importer.
 
 ## Design Notes
 

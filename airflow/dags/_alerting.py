@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 WEBHOOK_URL_ENV = "DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL"
 REQUEST_TIMEOUT_SECONDS = 5
 EXCEPTION_SUMMARY_LIMIT = 500
+EXCEPTION_LOG_LINE_LIMIT = 25
 
 
 def send_failure_alert(context: dict[str, Any]) -> None:
@@ -37,7 +38,6 @@ def build_failure_payload(context: dict[str, Any]) -> dict[str, str]:
     dag_run = context.get("dag_run")
     dag = context.get("dag")
 
-    environment = first_present(os.getenv("ENVIRONMENT"), "unknown")
     dag_id = first_present(
         getattr(task_instance, "dag_id", None),
         getattr(dag, "dag_id", None),
@@ -49,8 +49,6 @@ def build_failure_payload(context: dict[str, Any]) -> dict[str, str]:
         context.get("run_id"),
         "unknown",
     )
-    try_number = first_present(getattr(task_instance, "try_number", None), "unknown")
-    max_tries = first_present(getattr(task_instance, "max_tries", None), "unknown")
     failure_time = first_present(
         context.get("ts"),
         context.get("logical_date"),
@@ -58,35 +56,41 @@ def build_failure_payload(context: dict[str, Any]) -> dict[str, str]:
         "unknown",
     )
     log_url = first_present(getattr(task_instance, "log_url", None), "")
-    exception_summary = summarize_exception(context.get("exception"))
+    exception_text = format_exception(context.get("exception"))
+    task_text = f"<{log_url}|{task_id}>" if log_url else task_id
 
     lines = [
-        "Airflow task failed",
-        f"Environment: {environment}",
         f"DAG: {dag_id}",
-        f"Task: {task_id}",
+        f"Task: {task_text}",
         f"Run: {run_id}",
-        f"Try: {try_number} of {max_tries}",
         f"Time: {failure_time}",
     ]
 
-    if log_url:
-        lines.append(f"Log: <{log_url}|Airflow task log>")
-    if exception_summary:
-        lines.append(f"Exception: {exception_summary}")
+    if exception_text:
+        lines.append(f"Exception: {exception_text}")
 
     return {"text": "\n".join(lines)}
 
 
-def summarize_exception(exception: object) -> str:
+def format_exception(exception: object) -> str:
     if exception is None:
         return ""
 
-    summary = f"{type(exception).__name__}: {exception}"
-    summary = " ".join(summary.split())
-    if len(summary) > EXCEPTION_SUMMARY_LIMIT:
-        return summary[: EXCEPTION_SUMMARY_LIMIT - 3] + "..."
-    return summary
+    lines = [" ".join(f"{type(exception).__name__}: {exception}".split())]
+    exception_logs = getattr(exception, "logs", None)
+    if exception_logs:
+        log_lines = [str(line).strip() for line in exception_logs if str(line).strip()]
+        if log_lines:
+            lines.append("Container logs:")
+            lines.extend(log_lines[-EXCEPTION_LOG_LINE_LIMIT:])
+
+    return truncate("\n".join(lines), EXCEPTION_SUMMARY_LIMIT)
+
+
+def truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3] + "..."
 
 
 def first_present(*values: object) -> str:
