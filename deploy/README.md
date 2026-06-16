@@ -415,11 +415,12 @@ queries. Do not run broad cross-project storage scans from pull-request CI.
 
 ## Alerting And Runbooks
 
-Automated alerts are future work. Until Slack or an equivalent notification
-channel is implemented, production operators should use Airflow, dbt logs,
-warehouse metadata, and the deployment workflow history for manual triage.
+Airflow task failure alerts are implemented in the Airflow component as a
+best-effort callback. Production operators should still use Airflow, dbt logs,
+warehouse metadata, and deployment workflow history as the source of truth for
+triage.
 
-When alerting is added, keep the contract narrow:
+Keep the alerting contract narrow:
 
 - Alert on production failures that need action, not every retry or expected
   transient condition.
@@ -430,14 +431,109 @@ When alerting is added, keep the contract narrow:
 - Route ownership by component or pipeline so the responder knows whether to
   inspect scripts, dbt, Airflow, Metabase, GitHub Actions, or cloud resources.
 - Add deduplication or grouping before alert volume becomes noisy.
+- Do not send success alerts by default.
+
+Airflow alert delivery is enabled by setting a webhook URL in the external
+environment file used by the deployed Airflow stack. Create the webhook through
+Slack's app settings: create or open a Slack app, enable **Incoming Webhooks**,
+select **Add New Webhook to Workspace**, choose the alert channel, authorize the
+app, and copy the generated webhook URL. Slack treats this URL as a secret.
+
+```dotenv
+AIRFLOW__API__BASE_URL=<Airflow UI URL>
+DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL=<Slack incoming webhook URL>
+```
+
+Keep the webhook URL out of Git. Leave it unset for manual-only QA unless alert
+delivery is being tested; use a separate QA channel when testing.
+
+Set `AIRFLOW__API__BASE_URL` to the URL operators should open from Slack, such
+as `https://airflow.kevinesg.com` for prod.
+
+Test deployed alert delivery from the target Airflow stack after setting
+`DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL` in that environment's
+external `.env` file, deploying an Airflow image that contains the alert
+callback, and recreating the Airflow containers.
+
+For QA:
+
+```bash
+export QA_REPO_DIR="$HOME/qa/data-platform"
+export QA_ENV_FILE="$HOME/secrets/data-platform/qa/.env"
+export QA_IMAGE_ENV_FILE="$HOME/secrets/data-platform/qa/images.env"
+
+cd "$QA_REPO_DIR/airflow"
+set -a
+. "$QA_IMAGE_ENV_FILE"
+set +a
+
+DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
+  docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml exec -T scheduler python - <<'PY'
+import os
+from types import SimpleNamespace
+
+from _alerting import send_failure_alert
+
+send_failure_alert(
+    {
+        "task_instance": SimpleNamespace(
+            dag_id="alert_test",
+            task_id="manual_test",
+            try_number=1,
+            max_tries=1,
+            log_url=os.getenv("AIRFLOW__API__BASE_URL", "http://localhost:8081"),
+        ),
+        "dag_run": SimpleNamespace(run_id="manual_alert_test"),
+        "ts": "manual test",
+        "exception": RuntimeError("manual Slack alert test"),
+    }
+)
+PY
+```
+
+For prod:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+
+cd "$PROD_REPO_DIR/airflow"
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+set +a
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T scheduler python - <<'PY'
+import os
+from types import SimpleNamespace
+
+from _alerting import send_failure_alert
+
+send_failure_alert(
+    {
+        "task_instance": SimpleNamespace(
+            dag_id="alert_test",
+            task_id="manual_test",
+            try_number=1,
+            max_tries=1,
+            log_url=os.getenv("AIRFLOW__API__BASE_URL", "https://airflow.kevinesg.com"),
+        ),
+        "dag_run": SimpleNamespace(run_id="manual_alert_test"),
+        "ts": "manual test",
+        "exception": RuntimeError("manual Slack alert test"),
+    }
+)
+PY
+```
 
 Runbooks should stay close to ownership boundaries:
 
-- deployment failures and environment recovery live in this file.
+- deployment failures and environment recovery live in this file;
 - scripts extract/load failures live under `scripts/` or the source pipeline
   docs.
-- dbt model, test, and docs failures live under `dbt/`.
-- Airflow runtime and DAG import failures live under `airflow/`.
+- dbt model, test, and docs failures live under `dbt/`;
+- Airflow runtime and DAG import failures live under `airflow/`;
 - Metabase application database and analytics runtime failures live under
   `metabase/`.
 
@@ -934,6 +1030,7 @@ Edit `$HOME/secrets/data-platform/prod/.env` and set prod values. At minimum:
 ```text
 AIRFLOW_COMPOSE_PROJECT=data-platform-airflow-prod
 AIRFLOW_API_PORT=<prod Airflow port that does not conflict on the host>
+AIRFLOW__API__BASE_URL=https://airflow.kevinesg.com
 ENVIRONMENT=prod
 PROJECT_ID=kevinesg-prod
 PERSONAL_FINANCE_GCS_BUCKET=kevinesg-prod-data-platform-landing

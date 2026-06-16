@@ -86,7 +86,12 @@ jobs:
           from pathlib import Path
 
           dag_dir = Path("/opt/airflow/dags")
-          dag_files = sorted(path for path in dag_dir.glob("*.py") if path.is_file())
+          sys.path.insert(0, str(dag_dir))
+          dag_files = sorted(
+              path
+              for path in dag_dir.glob("*.py")
+              if path.is_file() and not path.name.startswith("_")
+          )
           if not dag_files:
               raise SystemExit("no DAG files found")
 
