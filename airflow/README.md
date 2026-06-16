@@ -17,6 +17,7 @@ the applicable shared setup in [deploy/README.md](../deploy/README.md).
 - [Local Setup](#local-setup)
 - [Local Commands](#local-commands)
 - [DAGs](#dags)
+- [Failure Alerts](#failure-alerts)
 - [Design Notes](#design-notes)
 
 ## Local Setup
@@ -61,6 +62,10 @@ AIRFLOW_ADMIN_USERNAME=admin
 AIRFLOW_SECRET_KEY=<generated-secret>
 AIRFLOW_JWT_SECRET=<generated-secret>
 AIRFLOW_FERNET_KEY=<generated-fernet-key>
+
+# Optional, external only:
+# AIRFLOW__API__BASE_URL=http://localhost:8080
+# DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL=<Slack incoming webhook URL>
 ```
 
 Set `AIRFLOW_UID` to the host user ID:
@@ -182,6 +187,11 @@ The Airflow image copies DAG files from `airflow/dags/` so CI and registry
 images are self-contained. Local development uses `docker-compose.dev.yml` to
 bind-mount `./dags` for faster iteration.
 
+Private DAG helper modules use a leading underscore, such as
+`airflow/dags/_alerting.py`. The `.airflowignore` file excludes `_*.py` from
+Airflow DAG discovery while keeping those modules importable by DAG files.
+Use the same pattern for future helper modules such as `_dag_factory.py`.
+
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs
 must still keep extract/load logic in `scripts` and transform logic in `dbt`.
@@ -193,6 +203,80 @@ a new DAG run when source data changed and a fresh extract is required.
 Do not add a README for every DAG. Add a DAG-specific runbook only when the DAG
 has operational behavior that is not already covered by the component README or
 the owning source/dbt documentation.
+
+## Failure Alerts
+
+Airflow task failure alerts are implemented as a reusable callback in
+[dags/_alerting.py](dags/_alerting.py). The callback sends only failure alerts,
+never success alerts, and delivery is best effort. If the webhook is missing or
+temporarily unavailable, Airflow prints the alert failure and keeps the original
+task failure as the source of truth.
+
+Create the Slack incoming webhook URL:
+
+1. Open [Slack API Apps](https://api.slack.com/apps) and create an app for the
+   workspace, or open an existing platform alerts app.
+2. Open **Incoming Webhooks** for the app and turn on **Activate Incoming
+   Webhooks**.
+3. Select **Add New Webhook to Workspace**, choose the channel that should
+   receive Airflow alerts, and authorize the app.
+4. Copy the generated webhook URL from **Webhook URLs for Your Workspace**.
+   Slack treats this URL as a secret; keep it out of Git.
+
+Configure alert delivery through the external Airflow environment file:
+
+```dotenv
+DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL=<Slack incoming webhook URL>
+```
+
+Use a dedicated test Slack channel and webhook for dev or QA alert testing.
+Leave `DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL` unset for day-to-day
+local development or manual-only QA if alerts would create noise. Do not commit
+webhook URLs.
+
+Alert payloads include environment, DAG id, task id, run id, try count, failure
+timestamp, a clickable Airflow task-log link when available, and a short
+exception summary.
+
+Set `AIRFLOW__API__BASE_URL` in the external environment file when alert links
+should open a specific Airflow UI hostname. For local development, use
+`http://localhost:8080` unless `AIRFLOW_API_PORT` is different.
+
+Dev alert testing is useful before QA because it proves the callback code,
+external env value, Airflow import path, and Slack webhook delivery. QA testing
+is still required after deploy because it proves the packaged image and deployed
+environment files.
+
+Test alert delivery from the local Airflow stack after setting the webhook URL
+and `AIRFLOW__API__BASE_URL=http://localhost:8080` in the external environment
+file. Recreate the stack so the containers read the updated env file:
+
+```bash
+cd airflow
+
+docker compose --env-file "$DATA_PLATFORM_ENV_FILE" -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate --remove-orphans
+
+docker compose --env-file "$DATA_PLATFORM_ENV_FILE" -f docker-compose.yml -f docker-compose.dev.yml exec -T scheduler python - <<'PY'
+from types import SimpleNamespace
+
+from _alerting import send_failure_alert
+
+send_failure_alert(
+    {
+        "task_instance": SimpleNamespace(
+            dag_id="alert_test",
+            task_id="manual_test",
+            try_number=1,
+            max_tries=1,
+            log_url="http://localhost:8080",
+        ),
+        "dag_run": SimpleNamespace(run_id="manual_alert_test"),
+        "ts": "manual test",
+        "exception": RuntimeError("manual Slack alert test"),
+    }
+)
+PY
+```
 
 ## Design Notes
 

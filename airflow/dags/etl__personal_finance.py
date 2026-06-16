@@ -7,6 +7,8 @@ from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sdk import DAG, TaskGroup
 from docker.types import Mount
 
+from _alerting import send_failure_alert
+
 SCRIPTS_CREDENTIALS_CONTAINER_PATH = "/credentials/scripts-service-account.json"
 DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 RUN_ID = "{{ dag_run.run_id }}"
@@ -67,6 +69,7 @@ def docker_task(
         execution_timeout=TASK_EXECUTION_TIMEOUT,
         retries=TASK_RETRIES,
         retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
     )
 
 
