@@ -424,8 +424,8 @@ Keep the alerting contract narrow:
 
 - Alert on production failures that need action, not every retry or expected
   transient condition.
-- Include environment, DAG or workflow name, task or job name, run identifier,
-  failure time, and a link to the owning UI or workflow run.
+- Include DAG or workflow name, task or job name, run identifier, failure time,
+  and a link to the owning UI or workflow run.
 - Do not include secrets, raw records, credentials, or sensitive source values
   in alert payloads.
 - Route ownership by component or pipeline so the responder knows whether to
@@ -445,7 +445,9 @@ DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL=<Slack incoming webhook URL>
 ```
 
 Keep the webhook URL out of Git. Leave it unset for manual-only QA unless alert
-delivery is being tested; use a separate QA channel when testing.
+delivery is being tested; use a separate QA channel when testing. If a webhook
+URL is exposed in chat, logs, screenshots, or Git, revoke it in Slack and create
+a replacement.
 
 Set `AIRFLOW__API__BASE_URL` to the URL operators should open from Slack, such
 as `https://airflow.kevinesg.com` for prod.
@@ -454,6 +456,12 @@ Test deployed alert delivery from the target Airflow stack after setting
 `DATA_PLATFORM_AIRFLOW_FAILURE_ALERT_WEBHOOK_URL` in that environment's
 external `.env` file, deploying an Airflow image that contains the alert
 callback, and recreating the Airflow containers.
+
+Airflow callbacks run only when a DAG or task state changes because a worker
+executed it. Manually marking a task as failed from the UI or CLI updates
+metadata state but does not execute the failure callback. Use the manual
+callback test below to verify Slack delivery, or trigger a real task execution
+that fails.
 
 For QA:
 
@@ -470,7 +478,10 @@ set +a
 DATA_PLATFORM_ENV_FILE="$QA_ENV_FILE" \
   docker compose --env-file "$QA_ENV_FILE" -f docker-compose.yml exec -T scheduler python - <<'PY'
 import os
+import sys
 from types import SimpleNamespace
+
+sys.path.insert(0, "/opt/airflow/dags")
 
 from _alerting import send_failure_alert
 
@@ -479,8 +490,6 @@ send_failure_alert(
         "task_instance": SimpleNamespace(
             dag_id="alert_test",
             task_id="manual_test",
-            try_number=1,
-            max_tries=1,
             log_url=os.getenv("AIRFLOW__API__BASE_URL", "http://localhost:8081"),
         ),
         "dag_run": SimpleNamespace(run_id="manual_alert_test"),
@@ -506,7 +515,10 @@ set +a
 DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
   docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T scheduler python - <<'PY'
 import os
+import sys
 from types import SimpleNamespace
+
+sys.path.insert(0, "/opt/airflow/dags")
 
 from _alerting import send_failure_alert
 
@@ -515,8 +527,6 @@ send_failure_alert(
         "task_instance": SimpleNamespace(
             dag_id="alert_test",
             task_id="manual_test",
-            try_number=1,
-            max_tries=1,
             log_url=os.getenv("AIRFLOW__API__BASE_URL", "https://airflow.kevinesg.com"),
         ),
         "dag_run": SimpleNamespace(run_id="manual_alert_test"),
@@ -526,6 +536,9 @@ send_failure_alert(
 )
 PY
 ```
+
+The manual `python` process adds `/opt/airflow/dags` to `sys.path` because it
+does not run through Airflow's DAG importer.
 
 Runbooks should stay close to ownership boundaries:
 
