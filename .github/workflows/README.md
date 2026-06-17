@@ -28,6 +28,7 @@ for every component check.
 | `deploy-qa` | [deploy-qa.yml](deploy-qa.yml) | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
 | `deploy-prod` | [deploy-prod.yml](deploy-prod.yml) | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
 | `refresh-dbt-docs` | [refresh-dbt-docs.yml](refresh-dbt-docs.yml) | Successful `deploy-prod` runs, plus manual dispatch | Generates static dbt docs from the deployed prod dbt image and serves them from the prod host without committing artifacts. |
+| `backup-metadata` | [backup-metadata.yml](backup-metadata.yml) | Daily schedule, plus manual dispatch | Backs up prod Airflow metadata and Metabase application databases from the prod host without committing artifacts. |
 
 ## CI/CD Boundary
 
@@ -45,6 +46,12 @@ Documentation refresh workflows are operational jobs, not application deploys.
 prod host so the published docs match the selected runtime image. It writes
 generated HTML under `$HOME/runtime/data-platform/prod/dbt-docs` by default and
 does not commit generated dbt artifacts.
+
+Metadata backup workflows are operational jobs, not application deploys.
+`backup-metadata` runs on the prod host, reads the external prod Airflow,
+image-manifest, and Metabase environment files, writes compressed SQL dumps
+under `$HOME/runtime/data-platform/prod/metadata-backups` by default, and does
+not commit backup artifacts.
 
 Published runtime image tags use this form:
 

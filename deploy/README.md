@@ -39,6 +39,7 @@ into a catch-all folder.
   - [Prod Deploy](#prod-deploy)
   - [Prod Verification](#prod-verification)
   - [Prod Rollback](#prod-rollback)
+- [Deployed Metadata Backups](#deployed-metadata-backups)
 - [Deployed dbt Docs](#deployed-dbt-docs)
 - [Deployed Metabase Runtime](#deployed-metabase-runtime)
 
@@ -372,17 +373,16 @@ direct LAN access is intentionally required.
 | Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) | Authenticated operational UI. Public-viewer credentials are future work and must be read-only before broader sharing. |
 | Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) | Authenticated analytics UI. Public access should be limited to explicitly reviewed public dashboards later. |
 | dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) | Static docs refresh workflow added. Public exposure waits for generated metadata review. |
-| Elementary Data Reliability docs | [edr.kevinesg.com](https://edr.kevinesg.com) | Not up yet. Intended for static Elementary Data Reliability output after report contents are reviewed. |
+| Data-quality dashboard | TBD | Backlog. No dashboard product is selected yet. |
 
 Airflow and Metabase remain protected by application login and role-based
 access control. Do not expose Airflow anonymously. Do not expose Metabase admin,
 query-builder, or database-connection pages publicly.
 
-Static dbt docs and Elementary Data Reliability reports can be made public only
-after reviewing generated metadata for sensitive project, source, column,
+Static dbt docs and future data-quality reports can be made externally visible
+only after reviewing generated metadata for sensitive project, source, column,
 description, test, owner, or incident details. If those reports contain
-sensitive metadata, keep them behind access control instead of publishing them
-as anonymous static sites.
+sensitive metadata, keep them behind access control.
 
 ## Observability Surfaces
 
@@ -393,21 +393,23 @@ triaged.
 | Surface | Owner | Purpose | Status |
 | --- | --- | --- | --- |
 | Airflow UI | Airflow runtime | DAG state, task retries, task logs, import errors, and manual triggers. | Active through `airflow.kevinesg.com`. |
-| dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Planned. Do not commit generated artifacts. |
+| dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Generated during dbt commands. External archival is deferred until a concrete consumer needs it. Do not commit generated artifacts. |
 | dbt docs | dbt runtime | Static documentation for models, tests, lineage, and column contracts. | Refresh workflow added for `dbt.kevinesg.com`; expose only after metadata review. |
-| Elementary Data Reliability docs | dbt observability runtime | Static data-quality report for dbt test history, freshness, and schema-change checks. | Planned for `edr.kevinesg.com`. |
+| Native dbt freshness and monitor tests | dbt observability runtime | Source freshness and selected data-quality checks run outside every business DAG when they have useful signal. | Backlog. Add after audit-backed freshness checks or intentional non-blocking monitor tests exist. |
+| Data-quality dashboard | Observability runtime | Dashboard view for data quality history, incidents, alerts, and metadata if native dbt checks are not enough. | Backlog decision. No product is selected yet. |
 | Metabase | Analytics runtime | Business-facing dashboards and exploration, not pipeline incident triage. | Active through `metabase.kevinesg.com`. |
 | BigQuery metadata | Platform operations | Table storage, table age, row counts, and warehouse cost investigations. | Planned as targeted runbook queries. |
 
-Generated dbt docs, Elementary Data Reliability output, and dbt artifacts belong
-in external runtime storage with explicit retention, not in Git. Use a dedicated
-artifacts location separate from source landing data when those jobs are added.
+Generated dbt docs, future data-quality reports, and dbt artifacts belong in
+external runtime storage with explicit retention, not in Git. Add artifact
+archival only when a concrete consumer needs historical files or queryable run
+history beyond Airflow, dbt docs, and native checks.
 
-Elementary should stay centralized and separate from business DAGs. It can read
-dbt artifacts and warehouse metadata, but it should not be embedded into every
-pipeline DAG. Keep Elementary OSS scoped to freshness, dbt test history,
-schema-change checks, and static reports until real incidents justify broader
-volume or anomaly monitoring.
+Business DAGs run the blocking `dbt build` tests for the graph they publish. A
+dedicated observability DAG or workflow belongs in backlog until it has useful
+signal, such as audit-backed freshness checks or intentionally non-blocking
+monitor tests. Do not run all freshness checks or all dbt tests in every
+business DAG.
 
 Warehouse storage monitoring should use BigQuery metadata views such as
 `INFORMATION_SCHEMA.TABLE_STORAGE` only through bounded, environment-specific
@@ -1192,6 +1194,157 @@ DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
 Do not run `docker compose down -v` for rollback. That removes Airflow metadata
 and Postgres state.
 
+## Deployed Metadata Backups
+
+The [backup-metadata](../.github/workflows/backup-metadata.yml) workflow backs
+up production Airflow metadata and Metabase application metadata from the prod
+self-hosted runner. It runs daily at `18:17` UTC, which is `02:17` Philippine
+Time, and can also be started manually.
+
+The workflow runs `pg_dump` inside each service's Postgres container, compresses
+the SQL dump with `gzip`, stores backups on the deployment host, and deletes
+old backup files after the retention window. Backups are runtime artifacts and
+must not be committed.
+
+These local backups protect against application-state mistakes, bad upgrades,
+and accidental metadata loss on the deployment host. They do not protect
+against host or disk loss; off-host encrypted backup replication is separate
+future operations work.
+
+Default prod paths and retention:
+
+```text
+Prod repo clone:         $HOME/prod/data-platform
+Prod Airflow env file:   $HOME/secrets/data-platform/prod/.env
+Prod image manifest:     $HOME/secrets/data-platform/prod/images.env
+Prod Metabase env file:  $HOME/secrets/data-platform/prod/metabase.env
+Metadata backup root:    $HOME/runtime/data-platform/prod/metadata-backups
+Airflow backups:         $HOME/runtime/data-platform/prod/metadata-backups/airflow
+Metabase backups:        $HOME/runtime/data-platform/prod/metadata-backups/metabase
+Retention:               30 days
+```
+
+Add repository variables only when the host uses different absolute paths or
+retention:
+
+```text
+PROD_REPO_DIR
+PROD_DATA_PLATFORM_ENV_FILE
+PROD_IMAGE_ENV_FILE
+PROD_METABASE_ENV_FILE
+METADATA_BACKUP_DIR
+METADATA_BACKUP_RETENTION_DAYS
+```
+
+Manual backup/debug command on the deployment host:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+export PROD_METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+export METADATA_BACKUP_DIR="$HOME/runtime/data-platform/prod/metadata-backups"
+export BACKUP_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+set -euo pipefail
+
+mkdir -p "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
+chmod 700 "$METADATA_BACKUP_DIR" "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
+
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+. "$PROD_ENV_FILE"
+set +a
+
+cd "$PROD_REPO_DIR/airflow"
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T postgres \
+  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" |
+  gzip -9 > "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
+chmod 600 "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
+
+set -a
+. "$PROD_METABASE_ENV_FILE"
+set +a
+
+cd "$PROD_REPO_DIR/metabase"
+DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
+  docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
+  pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" |
+  gzip -9 > "$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
+chmod 600 "$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
+```
+
+Restore backups only into a fresh or intentionally reset metadata database.
+Never pipe a backup into an active populated database as a routine operation.
+For Airflow, keep the same `AIRFLOW_FERNET_KEY` when restoring metadata that
+contains encrypted Airflow connections or variables. For Metabase, keep the
+same `MB_ENCRYPTION_SECRET_KEY` when restoring metadata that contains encrypted
+database connection details.
+
+Restore Airflow metadata after the target Airflow stack is stopped or freshly
+initialized:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
+export AIRFLOW_BACKUP_FILE="$HOME/runtime/data-platform/prod/metadata-backups/airflow/airflow-metadata-backup.sql.gz"
+
+set -euo pipefail
+
+set -a
+. "$PROD_IMAGE_ENV_FILE"
+. "$PROD_ENV_FILE"
+set +a
+
+cd "$PROD_REPO_DIR/airflow"
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml stop api-server scheduler dag-processor triggerer
+
+gunzip -c "$AIRFLOW_BACKUP_FILE" |
+  DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+    docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T postgres \
+    psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+
+DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
+  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+```
+
+Restore Metabase metadata after the target Metabase application service is
+stopped or freshly initialized:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
+export METABASE_BACKUP_FILE="$HOME/runtime/data-platform/prod/metadata-backups/metabase/metabase-app-backup.sql.gz"
+
+set -euo pipefail
+
+set -a
+. "$PROD_METABASE_ENV_FILE"
+set +a
+
+cd "$PROD_REPO_DIR/metabase"
+
+DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
+  docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml stop metabase
+
+gunzip -c "$METABASE_BACKUP_FILE" |
+  DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
+    docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
+    psql -U "$MB_DB_USER" "$MB_DB_DBNAME"
+
+DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
+  docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+```
+
+After any restore, validate the owning UI and run the normal Airflow or
+Metabase verification commands before treating the restored service as healthy.
+Test restore on a non-production or intentionally reset target before relying on
+the backup workflow as a production control.
+
 ## Deployed dbt Docs
 
 dbt docs are generated from the deployed prod dbt image so the documentation
@@ -1385,48 +1538,10 @@ Do not use `docker compose down -v` for routine changes. That removes the
 Metabase application database volume, which contains users, dashboards,
 questions, collections, permissions, and connection metadata.
 
-Back up the deployed Metabase application database before upgrades or major
-dashboard/permission changes:
-
-```bash
-export REPO_DIR="$HOME/prod/data-platform"
-export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
-export BACKUP_DIR="$HOME/runtime/data-platform/prod/metabase-backups"
-export BACKUP_FILE="$BACKUP_DIR/metabase-$(date +%Y%m%dT%H%M%S).sql"
-
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
-set -a
-. "$METABASE_ENV_FILE"
-set +a
-
-cd "$REPO_DIR/metabase"
-
-DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
-  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" > "$BACKUP_FILE"
-
-chmod 600 "$BACKUP_FILE"
-```
-
-Restore into a fresh or intentionally reset Metabase application database only:
-
-```bash
-export REPO_DIR="$HOME/prod/data-platform"
-export METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
-export BACKUP_FILE="$HOME/runtime/data-platform/prod/metabase-backups/metabase-backup.sql"
-
-set -a
-. "$METABASE_ENV_FILE"
-set +a
-
-cd "$REPO_DIR/metabase"
-
-DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
-  docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  psql -U "$MB_DB_USER" "$MB_DB_DBNAME" < "$BACKUP_FILE"
-```
+The [Deployed Metadata Backups](#deployed-metadata-backups) section owns
+scheduled Metabase application database backups, ad hoc pre-change backup
+commands, and restore commands. Run an ad hoc backup before upgrades or major
+dashboard, permission, collection, user, or database-connection changes.
 
 Cloudflare Tunnel should point to `http://localhost:$METABASE_PORT`. Keep
 `METABASE_BIND_ADDRESS=127.0.0.1` unless direct LAN access is intentional, and
