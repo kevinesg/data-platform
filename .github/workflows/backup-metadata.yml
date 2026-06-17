@@ -1,0 +1,137 @@
+name: backup-metadata
+
+# Back up deployed prod metadata databases from the prod self-hosted runner.
+# Backups stay on the deployment host and are not committed.
+
+on:
+  schedule:
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: backup-metadata-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PROD_REPO_DIR: ${{ vars.PROD_REPO_DIR }}
+  PROD_DATA_PLATFORM_ENV_FILE: ${{ vars.PROD_DATA_PLATFORM_ENV_FILE }}
+  PROD_IMAGE_ENV_FILE: ${{ vars.PROD_IMAGE_ENV_FILE }}
+  PROD_METABASE_ENV_FILE: ${{ vars.PROD_METABASE_ENV_FILE }}
+  METADATA_BACKUP_DIR: ${{ vars.METADATA_BACKUP_DIR }}
+  METADATA_BACKUP_RETENTION_DAYS: ${{ vars.METADATA_BACKUP_RETENTION_DAYS }}
+
+jobs:
+  backup:
+    name: Back up prod metadata
+    runs-on:
+      - self-hosted
+      - linux
+      - data-platform-prod
+    timeout-minutes: 20
+    steps:
+      - name: Resolve prod backup paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "PROD_REPO_DIR=${PROD_REPO_DIR:-$HOME/prod/data-platform}"
+            echo "PROD_DATA_PLATFORM_ENV_FILE=${PROD_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/prod/.env}"
+            echo "PROD_IMAGE_ENV_FILE=${PROD_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/prod/images.env}"
+            echo "PROD_METABASE_ENV_FILE=${PROD_METABASE_ENV_FILE:-$HOME/secrets/data-platform/prod/metabase.env}"
+            echo "METADATA_BACKUP_DIR=${METADATA_BACKUP_DIR:-$HOME/runtime/data-platform/prod/metadata-backups}"
+            echo "METADATA_BACKUP_RETENTION_DAYS=${METADATA_BACKUP_RETENTION_DAYS:-30}"
+            echo "BACKUP_TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate prod backup inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$PROD_REPO_DIR/.git"
+          test -f "$PROD_DATA_PLATFORM_ENV_FILE"
+          test -f "$PROD_IMAGE_ENV_FILE"
+          test -f "$PROD_METABASE_ENV_FILE"
+
+          if ! [[ "$METADATA_BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+            echo "METADATA_BACKUP_RETENTION_DAYS must be a non-negative integer."
+            exit 1
+          fi
+
+          mkdir -p "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
+          chmod 700 "$METADATA_BACKUP_DIR" "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
+
+      - name: Back up Airflow metadata database
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          source "$PROD_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
+          test -n "${POSTGRES_USER:-}"
+          test -n "${POSTGRES_DB:-}"
+
+          cd "$PROD_REPO_DIR/airflow"
+
+          backup_file="$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
+          temp_file="$backup_file.tmp"
+
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
+            docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T postgres \
+            pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip -9 > "$temp_file"
+
+          mv "$temp_file" "$backup_file"
+          chmod 600 "$backup_file"
+          test -s "$backup_file"
+          echo "Created $backup_file"
+
+      - name: Back up Metabase application database
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_METABASE_ENV_FILE"
+          set +a
+
+          test -n "${MB_DB_USER:-}"
+          test -n "${MB_DB_DBNAME:-}"
+
+          cd "$PROD_REPO_DIR/metabase"
+
+          backup_file="$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
+          temp_file="$backup_file.tmp"
+
+          DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
+            docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
+            pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" | gzip -9 > "$temp_file"
+
+          mv "$temp_file" "$backup_file"
+          chmod 600 "$backup_file"
+          test -s "$backup_file"
+          echo "Created $backup_file"
+
+      - name: Apply metadata backup retention
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find "$METADATA_BACKUP_DIR/airflow" \
+            -type f \
+            -name 'airflow-metadata-*.sql.gz' \
+            -mtime +"$METADATA_BACKUP_RETENTION_DAYS" \
+            -print \
+            -delete
+
+          find "$METADATA_BACKUP_DIR/metabase" \
+            -type f \
+            -name 'metabase-app-*.sql.gz' \
+            -mtime +"$METADATA_BACKUP_RETENTION_DAYS" \
+            -print \
+            -delete

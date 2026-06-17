@@ -86,7 +86,6 @@ component READMEs.
 | Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) |
 | Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) |
 | dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) |
-| Elementary Data Reliability docs | [edr.kevinesg.com](https://edr.kevinesg.com) |
 
 ## Setup Flow
 
