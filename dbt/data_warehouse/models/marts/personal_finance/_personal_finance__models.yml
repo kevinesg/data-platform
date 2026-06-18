@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: personal_finance__transactions
-    description: Transaction-level personal finance mart for analytics and Metabase exploration.
+    description: Transaction-level personal finance mart for settled cashflow analytics and Metabase exploration. Pending transactions are excluded until moved to the transactions source tab.
     columns:
       - name: transaction_id
         description: Stable transaction identifier from the source sheet.
@@ -223,7 +223,7 @@ models:
           - not_null
 
   - name: personal_finance__daily_account_balances
-    description: End-of-day daily account balances with exact native balances and estimated PHP values from temporary static FX rates. Do not treat PHP estimates as final reporting values until a real FX-rate source replaces the placeholders.
+    description: End-of-day daily account balances with exact native balances and estimated PHP values from temporary static FX rates. Includes pending transactions for balance movements only. Do not treat PHP estimates as final reporting values until a real FX-rate source replaces the placeholders.
     columns:
       - name: balance_date
         data_tests:
@@ -273,7 +273,7 @@ models:
           - not_null
 
   - name: personal_finance__current_account_balances
-    description: Latest available account balances for Metabase current-balance dashboards. Native balances are exact tracked values; PHP estimates use temporary static FX rates until a real FX-rate source exists.
+    description: Latest available account balances for Metabase current-balance dashboards. Native balances include pending transaction movements; PHP estimates use temporary static FX rates until a real FX-rate source exists.
     columns:
       - name: balance_date
         data_tests:

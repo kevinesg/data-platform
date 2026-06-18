@@ -34,6 +34,34 @@ sources:
           - name: _is_deleted
             description: Whether the latest loaded source snapshot marked the row deleted.
 
+      - name: pending_transactions
+        identifier: personal_finance__pending_transactions
+        description: Already-paid transaction rows for future reporting dates. Balance models use them; cashflow models ignore them until rows are moved to transactions.
+        columns:
+          - name: id
+            description: Source pending transaction identifier.
+          - name: year
+          - name: month
+          - name: day
+          - name: posted_date
+            description: Account-balance movement date. Populate this when the payment already affected an account before the future reporting date.
+          - name: item
+          - name: type
+          - name: cost
+          - name: to
+          - name: store
+          - name: source
+          - name: receipt
+          - name: solo_part
+          - name: created_at
+          - name: updated_at
+          - name: _extracted_at
+            description: Timestamp assigned when the row was extracted from the source.
+          - name: _inserted_at
+            description: Timestamp assigned when the row was inserted into the raw table.
+          - name: _is_deleted
+            description: Whether the latest loaded source snapshot marked the row deleted.
+
       - name: paid_for_others
         identifier: personal_finance__paid_for_others
         description: Payments made for other people.

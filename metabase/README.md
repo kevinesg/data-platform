@@ -171,31 +171,29 @@ volume before upgrading Metabase or treating dashboards as production assets.
 Create a logical backup of the application database:
 
 ```bash
-set -a
-. "$METABASE_ENV_FILE"
-set +a
-
 mkdir -p backups
 
 DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
   docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" > "backups/metabase-$(date +%Y%m%dT%H%M%S).sql"
+  sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "backups/metabase-$(date +%Y%m%dT%H%M%S).sql"
 ```
 
 Restore into a fresh or intentionally reset application database only:
 
 ```bash
-set -a
-. "$METABASE_ENV_FILE"
-set +a
-
 DATA_PLATFORM_ENV_FILE="$METABASE_ENV_FILE" \
   docker compose --env-file "$METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  psql -U "$MB_DB_USER" "$MB_DB_DBNAME" < backups/metabase-backup.sql
+  sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' < backups/metabase-backup.sql
 ```
 
-Local backup files under `metabase/backups/` are ignored by git. Store deployed
-backups outside the repo and test restore before relying on them.
+These commands pass `metabase.env` to Docker Compose instead of sourcing it in
+Bash. Values such as `MB_SITE_NAME=Data Platform` are valid Compose env-file
+values but are not valid unquoted shell assignments. The `POSTGRES_USER` and
+`POSTGRES_DB` references are container environment variables set by the official
+Postgres image from the Compose `MB_DB_*` values; do not add shared
+`POSTGRES_*` variables to `metabase.env`. Local backup files under
+`metabase/backups/` are ignored by git. Store deployed backups outside the repo
+and test restore before relying on them.
 
 ## Warehouse Connections
 
@@ -230,8 +228,8 @@ accounts, grant IAM, and create service-account keys:
 
 ```bash
 export ENVIRONMENT=prod
-export PROJECT_ID=kevinesg-prod
-export DATASET_IDS="mart_personal_finance"
+export PROJECT_ID="prod-project-id"
+export PUBLISHED_DATASET_IDS="mart_<domain>"
 export SERVICE_ACCOUNT_ID="metabase-$ENVIRONMENT"
 export KEY_FILE="$HOME/secrets/data-platform/$ENVIRONMENT/metabase-bigquery-service-account.json"
 
@@ -298,7 +296,7 @@ add_project_iam_binding_with_retry \
   "serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
   "roles/bigquery.jobUser"
 
-for DATASET_ID in $DATASET_IDS; do
+for DATASET_ID in $PUBLISHED_DATASET_IDS; do
   bq query \
     --project_id="$PROJECT_ID" \
     --use_legacy_sql=false \
@@ -324,15 +322,14 @@ After the key exists:
 2. When Metabase asks to connect data during first-run setup, choose Google
    BigQuery. If first-run setup is already complete, go to Admin settings >
    Databases > Add a database and choose Google BigQuery.
-3. Use a clear display name such as `kevinesg-prod BigQuery`.
-4. Enter `kevinesg-prod` as the Project ID. Do not include any legacy
+3. Use a clear display name that includes the environment and warehouse.
+4. Enter the GCP project ID. Do not include any legacy
    `project_name:` prefix.
 5. Upload the service-account JSON file from
    `$HOME/secrets/data-platform/prod/metabase-bigquery-service-account.json`,
    or paste the full JSON contents when the UI offers a paste field.
-6. In dataset sync settings, choose only published mart datasets, such as
-   `mart_personal_finance`. Enter dataset names only, not table names or
-   `project.dataset` values.
+6. In dataset sync settings, choose only published mart datasets. Enter dataset
+   names only, not table names or `project.dataset` values.
 7. Leave JVM timezone off unless the Metabase instance intentionally handles
    BigQuery timezone conversion itself.
 8. Save the connection and let Metabase sync database metadata.

@@ -203,8 +203,7 @@ export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
-export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
-export DBT_PERSONAL_FINANCE_MART_DATASET="${DBT_DATASET}_mart_personal_finance"
+export DBT_WRITE_DATASETS="$DBT_INTERMEDIATE_DATASET"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export PLATFORM_BOOTSTRAP_CONFIGURATION=data-platform-bootstrap-dev
@@ -376,16 +375,15 @@ dbt creates BigQuery datasets from the target dataset plus a model layer suffix.
 The staging models use `+schema: staging`, so the default BigQuery dataset name
 is `dbt_<developer>_staging`.
 
-Create or verify the additional dbt write datasets used by the current project:
+Create or verify additional dbt write datasets needed by the selected model or
+domain work:
 
 This block is a platform-maintainer resource block. It must run from the
 authenticated bootstrap configuration.
 
 ```bash
 for DBT_WRITE_DATASET in \
-  "$DBT_INTERMEDIATE_DATASET" \
-  "$DBT_PERSONAL_FINANCE_SEED_DATASET" \
-  "$DBT_PERSONAL_FINANCE_MART_DATASET"; do
+  $DBT_WRITE_DATASETS; do
   if bq show \
     --project_id="$PROJECT_ID" \
     "$PROJECT_ID:$DBT_WRITE_DATASET"; then
@@ -415,17 +413,14 @@ done
 ```
 
 Intermediate models use `+schema: intermediate`, so the default BigQuery dataset
-name is `dbt_<developer>_intermediate`. Personal finance classification seeds
-use `+schema: seed_personal_finance`, so the default BigQuery dataset name is
-`dbt_<developer>_seed_personal_finance`. Personal finance marts use
-`+schema: mart_personal_finance`, so the default BigQuery dataset name is
-`dbt_<developer>_mart_personal_finance`.
+name is `dbt_<developer>_intermediate`. Domain-specific seeds and marts may use
+additional custom schemas. Their owning model or domain docs should list the
+dataset names to append to `DBT_WRITE_DATASETS`.
 
 For deployed `qa` and `prod` targets, `generate_schema_name` uses exact custom
 schema names instead of prefixing them with `DBT_DATASET`. For example,
-`+schema: staging` builds in `staging`, and
-`+schema: mart_personal_finance` builds in `mart_personal_finance`. Local dev
-keeps the default prefixed schema behavior for developer isolation.
+`+schema: staging` builds in `staging`. Local dev keeps the default prefixed
+schema behavior for developer isolation.
 
 ### dbt Local Workstation
 
@@ -440,8 +435,7 @@ export RAW_DATASET="raw_${DEVELOPER_ID}"
 export DBT_DATASET="dbt_${DEVELOPER_ID}"
 export DBT_STAGING_DATASET="${DBT_DATASET}_staging"
 export DBT_INTERMEDIATE_DATASET="${DBT_DATASET}_intermediate"
-export DBT_PERSONAL_FINANCE_SEED_DATASET="${DBT_DATASET}_seed_personal_finance"
-export DBT_PERSONAL_FINANCE_MART_DATASET="${DBT_DATASET}_mart_personal_finance"
+export DBT_WRITE_DATASETS="$DBT_INTERMEDIATE_DATASET"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-${DEVELOPER_ID}"
 export DBT_SERVICE_ACCOUNT_EMAIL="${DBT_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export DEVELOPER_CONFIGURATION="data-platform-dev-${DEVELOPER_ID}"
@@ -569,12 +563,11 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$DBT_INTERMEDIATE_DATASET"
-bq show \
-  --project_id="$PROJECT_ID" \
-  "$PROJECT_ID:$DBT_PERSONAL_FINANCE_SEED_DATASET"
-bq show \
-  --project_id="$PROJECT_ID" \
-  "$PROJECT_ID:$DBT_PERSONAL_FINANCE_MART_DATASET"
+for DBT_WRITE_DATASET in $DBT_WRITE_DATASETS; do
+  bq show \
+    --project_id="$PROJECT_ID" \
+    "$PROJECT_ID:$DBT_WRITE_DATASET"
+done
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
 uv run dbt debug --project-dir data_warehouse --profiles-dir "$DBT_PROFILES_DIR"
@@ -589,35 +582,39 @@ uv run dbt ls \
   --resource-type source
 ```
 
-After staging models are added, verify dbt can list and run only the staging
-path:
+After staging models are added, verify dbt can list and run only the relevant
+staging selector:
 
 ```bash
+export DBT_STAGING_SELECTOR="path:models/staging/<domain>"
+
 uv run dbt ls \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --resource-type model \
-  --select path:models/staging/personal_finance
+  --select "$DBT_STAGING_SELECTOR"
 
 uv run dbt run \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:models/staging/personal_finance
+  --select "$DBT_STAGING_SELECTOR"
 ```
 
-After staging model tests are added, run only the staging tests:
+After staging model tests are added, run only the relevant staging tests:
 
 ```bash
 uv run dbt test \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:models/staging/personal_finance
+  --select "$DBT_STAGING_SELECTOR"
 ```
 
-After personal finance seeds and downstream models are added, materialize seeds
+After seeds and downstream models are added, materialize the relevant seeds
 before running models that depend on them. `dbt run` does not run seed files.
 
 ```bash
+export DBT_SEED_SELECTOR="<seed-selector>"
+
 uv run dbt ls \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
@@ -626,37 +623,42 @@ uv run dbt ls \
 uv run dbt seed \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select personal_finance__transaction_type_classification
+  --select "$DBT_SEED_SELECTOR"
 ```
 
-After personal finance intermediate models are added, run and test only that
-layer:
+After intermediate models are added, run and test only the relevant layer or
+domain selector:
 
 ```bash
+export DBT_INTERMEDIATE_SELECTOR="path:models/intermediate/<domain>"
+export DBT_INTERMEDIATE_TEST_SELECTOR="path:tests/<domain>"
+
 uv run dbt run \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:models/intermediate/personal_finance
+  --select "$DBT_INTERMEDIATE_SELECTOR"
 
 uv run dbt test \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select personal_finance__transaction_type_classification path:models/intermediate/personal_finance path:tests/personal_finance
+  --select "$DBT_INTERMEDIATE_SELECTOR" "$DBT_INTERMEDIATE_TEST_SELECTOR"
 ```
 
-After personal finance marts are added, seed first, then run the selected mart
-path with its upstream models:
+After marts are added, seed first when needed, then run the selected mart
+selector with its upstream models:
 
 ```bash
+export DBT_MART_SELECTOR="path:models/marts/<domain>"
+
 uv run dbt seed \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select personal_finance__transaction_type_classification
+  --select "$DBT_SEED_SELECTOR"
 
 uv run dbt run \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select +path:models/marts/personal_finance
+  --select "+$DBT_MART_SELECTOR"
 ```
 
 ## Docker Runtime
@@ -708,18 +710,20 @@ run_dbt_container() {
 }
 ```
 
-Validate the profile, parse graph, compile SQL, and build the personal finance
-models against dev:
+Validate the profile, parse graph, compile SQL, and build the selected model
+graph against dev:
 
 ```bash
+export DBT_MODEL_SELECTOR="path:models/marts/<domain>"
+
 run_dbt_container debug --project-dir data_warehouse
 run_dbt_container parse --project-dir data_warehouse
 run_dbt_container compile \
   --project-dir data_warehouse \
-  --select +path:models/marts/personal_finance
+  --select "+$DBT_MODEL_SELECTOR"
 run_dbt_container build \
   --project-dir data_warehouse \
-  --select +path:models/marts/personal_finance
+  --select "+$DBT_MODEL_SELECTOR"
 ```
 
 Do not copy the key into the image or repository.

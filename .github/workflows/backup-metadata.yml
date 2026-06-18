@@ -71,12 +71,9 @@ jobs:
           set -euo pipefail
           set -a
           source "$PROD_IMAGE_ENV_FILE"
-          source "$PROD_DATA_PLATFORM_ENV_FILE"
           set +a
 
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
-          test -n "${POSTGRES_USER:-}"
-          test -n "${POSTGRES_DB:-}"
 
           cd "$PROD_REPO_DIR/airflow"
 
@@ -85,7 +82,7 @@ jobs:
 
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
             docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T postgres \
-            pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip -9 > "$temp_file"
+            sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip -9 > "$temp_file"
 
           mv "$temp_file" "$backup_file"
           chmod 600 "$backup_file"
@@ -96,12 +93,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set -a
-          source "$PROD_METABASE_ENV_FILE"
-          set +a
-
-          test -n "${MB_DB_USER:-}"
-          test -n "${MB_DB_DBNAME:-}"
 
           cd "$PROD_REPO_DIR/metabase"
 
@@ -110,7 +101,7 @@ jobs:
 
           DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
             docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-            pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" | gzip -9 > "$temp_file"
+            sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip -9 > "$temp_file"
 
           mv "$temp_file" "$backup_file"
           chmod 600 "$backup_file"

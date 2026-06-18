@@ -18,9 +18,51 @@ first_opening_balance AS (
     GROUP BY 1
 ),
 
-transactions AS (
-    SELECT *
+settled_transactions AS (
+    SELECT
+        transaction_id
+        , transaction_date
+        , posted_date
+        , transaction_type
+        , cashflow_type
+        , is_income_deduction
+        , amount
+        , counterparty
+        , payment_source
+        , 'TRANSACTION' AS movement_source
     FROM {{ ref('int_personal_finance__transactions') }}
+),
+
+classification AS (
+    SELECT *
+    FROM {{ ref('personal_finance__transaction_type_classification') }}
+),
+
+pending_transactions AS (
+    SELECT
+        p.transaction_id
+        , p.transaction_date
+        , p.posted_date
+        , UPPER(NULLIF(TRIM(p.transaction_type), '')) AS transaction_type
+        , c.cashflow_type
+        , c.is_income_deduction
+        , SAFE_CAST(p.amount AS NUMERIC) AS amount
+        , p.counterparty
+        , p.payment_source
+        , 'PENDING_TRANSACTION' AS movement_source
+    FROM {{ ref('stg_personal_finance__pending_transactions') }} AS p
+    LEFT JOIN classification AS c
+        ON UPPER(NULLIF(TRIM(p.transaction_type), '')) = c.transaction_type
+    LEFT JOIN settled_transactions AS t
+        ON p.transaction_id = t.transaction_id
+    WHERE NOT p.is_deleted
+        AND t.transaction_id IS NULL
+),
+
+transactions AS (
+    SELECT * FROM settled_transactions
+    UNION ALL
+    SELECT * FROM pending_transactions
 ),
 
 salary_accounts AS (
@@ -37,7 +79,7 @@ salary_accounts AS (
 transaction_entries AS (
     SELECT
         t.transaction_id AS movement_id
-        , 'TRANSACTION' AS movement_source
+        , t.movement_source
         , t.posted_date AS balance_date
         , CASE
             WHEN t.cashflow_type = 'INCOME' THEN t.counterparty
