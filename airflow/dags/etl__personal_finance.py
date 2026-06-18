@@ -12,7 +12,15 @@ from _alerting import send_failure_alert
 SCRIPTS_CREDENTIALS_CONTAINER_PATH = "/credentials/scripts-service-account.json"
 DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 RUN_ID = "{{ dag_run.run_id }}"
-SOURCE_ENTITIES = ("transactions", "paid_for_others", "transfers", "accounts")
+LOAD_MODE_PARAM = "load_mode"
+LOAD_MODE = f"{{{{ params.{LOAD_MODE_PARAM} }}}}"
+SOURCE_ENTITIES = (
+    "transactions",
+    "pending_transactions",
+    "paid_for_others",
+    "transfers",
+    "accounts",
+)
 
 DAG_RUN_TIMEOUT = timedelta(minutes=30)
 TASK_EXECUTION_TIMEOUT = timedelta(minutes=10)
@@ -127,6 +135,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
+    params={LOAD_MODE_PARAM: "default"},
     tags=["personal_finance", "elt"],
 ) as dag:
     with TaskGroup(group_id="extract"):
@@ -160,6 +169,8 @@ with DAG(
                     entity_name,
                     "--run-id",
                     RUN_ID,
+                    "--load-mode",
+                    LOAD_MODE,
                 ],
                 environment=scripts_environment,
                 mounts=scripts_mounts,
