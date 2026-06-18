@@ -1253,27 +1253,29 @@ chmod 700 "$METADATA_BACKUP_DIR" "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKU
 
 set -a
 . "$PROD_IMAGE_ENV_FILE"
-. "$PROD_ENV_FILE"
 set +a
 
 cd "$PROD_REPO_DIR/airflow"
 DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
   docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" |
+  sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' |
   gzip -9 > "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
 chmod 600 "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
-
-set -a
-. "$PROD_METABASE_ENV_FILE"
-set +a
 
 cd "$PROD_REPO_DIR/metabase"
 DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
   docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-  pg_dump -U "$MB_DB_USER" "$MB_DB_DBNAME" |
+  sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' |
   gzip -9 > "$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
 chmod 600 "$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
 ```
+
+These commands pass env files to Docker Compose instead of sourcing the
+Metabase env file in Bash. Metabase settings such as `MB_SITE_NAME=Data
+Platform` are valid Compose env-file values but are not valid unquoted shell
+assignments. The Metabase backup commands use `POSTGRES_USER` and
+`POSTGRES_DB` inside the Postgres container; those are derived from the
+Metabase `MB_DB_*` Compose values and should not be added to `metabase.env`.
 
 Restore backups only into a fresh or intentionally reset metadata database.
 Never pipe a backup into an active populated database as a routine operation.
@@ -1295,7 +1297,6 @@ set -euo pipefail
 
 set -a
 . "$PROD_IMAGE_ENV_FILE"
-. "$PROD_ENV_FILE"
 set +a
 
 cd "$PROD_REPO_DIR/airflow"
@@ -1306,7 +1307,7 @@ DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
 gunzip -c "$AIRFLOW_BACKUP_FILE" |
   DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
     docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T postgres \
-    psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+    sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
 
 DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
   docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
@@ -1322,10 +1323,6 @@ export METABASE_BACKUP_FILE="$HOME/runtime/data-platform/prod/metadata-backups/m
 
 set -euo pipefail
 
-set -a
-. "$PROD_METABASE_ENV_FILE"
-set +a
-
 cd "$PROD_REPO_DIR/metabase"
 
 DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
@@ -1334,7 +1331,7 @@ DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
 gunzip -c "$METABASE_BACKUP_FILE" |
   DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
     docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml exec -T postgres \
-    psql -U "$MB_DB_USER" "$MB_DB_DBNAME"
+    sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
 
 DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
   docker compose --env-file "$PROD_METABASE_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
