@@ -24,7 +24,8 @@ GOOGLE_API_SCOPES = (
     "https://www.googleapis.com/auth/drive.readonly",
 )
 EXTRACTION_SUCCESS_MARKER = "_SUCCESS"
-TABLES = ("transactions", "paid_for_others", "transfers", "accounts")
+TABLES = ("transactions", "pending_transactions", "paid_for_others", "transfers", "accounts")
+DEFAULT_FULL_REFRESH_TABLES = ("accounts",)
 
 
 def main() -> int:
@@ -33,9 +34,18 @@ def main() -> int:
     parser.add_argument("--entity", choices=TABLES)
     parser.add_argument("--run-id")
     parser.add_argument(
+        "--load-mode",
+        choices=["default", "incremental", "full-refresh"],
+        default="default",
+        help=(
+            "load behavior for selected tables; default uses table-specific behavior, "
+            "where small dimension tables can full refresh"
+        ),
+    )
+    parser.add_argument(
         "--full-refresh",
         action="store_true",
-        help="replace the raw table from the staged run instead of applying an incremental merge",
+        help="force full refresh for selected raw tables instead of table-specific defaults",
     )
     parser.add_argument(
         "--env-file",
@@ -58,7 +68,14 @@ def main() -> int:
         elif args.step == "load":
             if not args.run_id:
                 raise ValueError("--run-id is required for load")
-            load(run_id=args.run_id, entity_name=args.entity, full_refresh=args.full_refresh)
+            if args.full_refresh and args.load_mode == "incremental":
+                raise ValueError("--full-refresh cannot be combined with --load-mode incremental")
+            load(
+                run_id=args.run_id,
+                entity_name=args.entity,
+                load_mode=args.load_mode,
+                force_full_refresh=args.full_refresh,
+            )
         else:
             cleanup(run_id=args.run_id, entity_name=args.entity)
     except Exception as exc:
@@ -126,7 +143,12 @@ def extract(run_id: str, entity_name: str | None = None) -> None:
         print(f"success_marker=gs://{config['bucket_name']}/{success_marker_blob_name}")
 
 
-def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False) -> None:
+def load(
+    run_id: str,
+    entity_name: str | None = None,
+    load_mode: str = "default",
+    force_full_refresh: bool = False,
+) -> None:
     config = load_config()
     credentials = load_google_credentials()
     bq_client = bigquery.Client(project=config["project_id"], credentials=credentials)
@@ -177,6 +199,11 @@ def load(run_id: str, entity_name: str | None = None, full_refresh: bool = False
         bq_client.delete_table(extract_staging_table_id, not_found_ok=True)
         bq_client.delete_table(source_ids_staging_table_id, not_found_ok=True)
         try:
+            full_refresh = should_full_refresh(
+                table,
+                load_mode=load_mode,
+                force_full_refresh=force_full_refresh,
+            )
             loaded_rows = load_extract_files_to_staging(
                 bq_client,
                 extract_uris,
@@ -302,6 +329,20 @@ def select_tables(entity_name: str | None = None) -> tuple[str, ...]:
     if entity_name is None:
         return TABLES
     return (entity_name,)
+
+
+def should_full_refresh(
+    table_name: str,
+    load_mode: str = "default",
+    force_full_refresh: bool = False,
+) -> bool:
+    if force_full_refresh or load_mode == "full-refresh":
+        return True
+    if load_mode == "incremental":
+        return False
+    if load_mode != "default":
+        raise ValueError(f"unsupported load mode: {load_mode}")
+    return table_name in DEFAULT_FULL_REFRESH_TABLES
 
 
 def extract_sheet_chunks_to_gcs(

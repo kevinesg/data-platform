@@ -36,16 +36,19 @@ def set_required_env(monkeypatch, chunk_size="250", retention_days="7"):
 def test_tables_define_expected_google_sheet_contract():
     assert personal_finance.TABLES == (
         "transactions",
+        "pending_transactions",
         "paid_for_others",
         "transfers",
         "accounts",
     )
+    assert personal_finance.DEFAULT_FULL_REFRESH_TABLES == ("accounts",)
     assert [
         path.relative_to(personal_finance.SCHEMA_DIR).as_posix()
         for path in sorted(personal_finance.SCHEMA_DIR.glob("*.json"))
     ] == [
         "accounts.json",
         "paid_for_others.json",
+        "pending_transactions.json",
         "transactions.json",
         "transfers.json",
     ]
@@ -55,6 +58,25 @@ def test_select_tables_can_limit_work_to_one_source_entity():
     selected = personal_finance.select_tables("transfers")
 
     assert selected == ("transfers",)
+
+
+def test_load_mode_uses_table_defaults_unless_overridden():
+    assert personal_finance.should_full_refresh("accounts")
+    assert not personal_finance.should_full_refresh("transactions")
+    assert not personal_finance.should_full_refresh("pending_transactions")
+
+    assert personal_finance.should_full_refresh(
+        "transactions",
+        load_mode="full-refresh",
+    )
+    assert personal_finance.should_full_refresh(
+        "transactions",
+        force_full_refresh=True,
+    )
+    assert not personal_finance.should_full_refresh(
+        "accounts",
+        load_mode="incremental",
+    )
 
 
 def test_source_schemas_reflect_current_sheet_columns():
@@ -68,6 +90,8 @@ def test_source_schemas_reflect_current_sheet_columns():
     }
 
     assert "posted_date" in source_columns["transactions"]
+    assert source_columns["pending_transactions"] == source_columns["transactions"]
+    assert schemas["pending_transactions"]["fields"] == schemas["transactions"]["fields"]
     assert source_columns["paid_for_others"][:2] == ["id", "posted_date"]
     assert "year" not in source_columns["paid_for_others"]
     assert "month" not in source_columns["paid_for_others"]
