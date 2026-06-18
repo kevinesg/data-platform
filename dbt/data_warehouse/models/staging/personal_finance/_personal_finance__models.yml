@@ -42,6 +42,47 @@ models:
                 values: [true, false]
                 quote: false
 
+  - name: stg_personal_finance__pending_transactions
+    description: Cleaned pending personal finance transactions at the same grain as the raw source table. These rows affect account balances but stay out of cashflow marts until moved to transactions.
+    columns:
+      - name: transaction_id
+        description: Stable pending transaction identifier from the source sheet.
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_date
+        description: Future reporting date built from the source year, month, and day fields.
+        data_tests:
+          - not_null
+      - name: posted_date
+        description: Account-balance movement date. Defaults to transaction_date when source posted_date is blank.
+        data_tests:
+          - not_null
+      - name: transaction_type
+        data_tests:
+          - not_null
+      - name: payment_source
+        description: Nullable source account key. Null values remain excluded from account-balance movements.
+      - name: source_created_at_pht
+        data_tests:
+          - not_null
+      - name: source_updated_at_pht
+        data_tests:
+          - not_null
+      - name: extracted_at_pht
+        data_tests:
+          - not_null
+      - name: inserted_at_pht
+        data_tests:
+          - not_null
+      - name: is_deleted
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
   - name: stg_personal_finance__paid_for_others
     description: Cleaned payments made for other people.
     columns:

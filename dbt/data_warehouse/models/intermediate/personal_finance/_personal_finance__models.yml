@@ -69,12 +69,13 @@ models:
           - not_null
 
   - name: int_personal_finance__account_balance_movements
-    description: Signed account-balance movement rows from 2026-06-01 onward, with placeholder PHP conversion applied once for downstream balance marts.
+    description: Signed account-balance movement rows from 2026-06-01 onward, including pending transactions for balances only, with placeholder PHP conversion applied once for downstream balance marts.
     columns:
       - name: movement_id
         data_tests:
           - not_null
       - name: movement_source
+        description: Source surface for the movement, such as TRANSACTION, PENDING_TRANSACTION, PAID_FOR_OTHERS, TRANSFER, INFLOW, OUTFLOW, or OPENING BALANCE.
         data_tests:
           - not_null
       - name: balance_date
