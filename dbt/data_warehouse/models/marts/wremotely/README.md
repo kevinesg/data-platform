@@ -32,6 +32,7 @@ export WREMOTELY_RAW_DATASET="wremotely_raw_dev"
 WREMOTELY_DBT_SELECTOR="path:models/staging/wremotely"
 WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/intermediate/wremotely"
 WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/marts/wremotely"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:tests/wremotely"
 export WREMOTELY_DBT_SELECTOR
 
 uv run dbt build \
