@@ -1,0 +1,49 @@
+version: 2
+
+sources:
+  - name: wremotely
+    database: "{{ env_var('PROJECT_ID') }}"
+    schema: "{{ env_var('WREMOTELY_RAW_DATASET', env_var('RAW_DATASET')) }}"
+    loader: wremotely-etl
+    description: Raw wremotely run artifacts loaded by the private wremotely-etl runtime.
+    tables:
+      - name: discovery_source_responses
+        identifier: wremotely_discovery_source_responses
+        description: Raw source responses staged from completed discovery runs.
+        columns: &wremotely_raw_envelope_columns
+          - name: contract_version
+            description: Raw table envelope contract version.
+          - name: stage_run_id
+            description: Run identifier for the staged warehouse bundle.
+          - name: source_step
+            description: ETL step that produced the source artifact.
+          - name: source_run_id
+            description: Run identifier for the source ETL step.
+          - name: source_artifact
+            description: Source artifact name inside the ETL step output.
+          - name: source_artifact_sha256
+            description: SHA-256 checksum of the source artifact before staging.
+          - name: source_record_index
+            description: One-based record index in the source artifact.
+          - name: payload
+            description: Source artifact row payload as JSON.
+
+      - name: discovery_candidates
+        identifier: wremotely_discovery_candidates
+        description: Raw deduplicated candidate URLs discovered by private ingestion.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: extraction_page_results
+        identifier: wremotely_extraction_page_results
+        description: Raw page retrieval, parser, robots, and artifact-path outcomes.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: classification_classifications
+        identifier: wremotely_classification_classifications
+        description: Raw classification results with evidence and serving decisions.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: recheck_lifecycle_results
+        identifier: wremotely_recheck_lifecycle_results
+        description: Raw explicit lifecycle recheck outcomes for caller-selected candidates.
+        columns: *wremotely_raw_envelope_columns
