@@ -1,0 +1,166 @@
+version: 2
+
+models:
+  - name: stg_wremotely__discovery_source_responses
+    description: Source responses unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: discovery_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: provider
+        data_tests:
+          - not_null
+      - name: search_query
+        data_tests:
+          - not_null
+      - name: requested_at
+        data_tests:
+          - not_null
+
+  - name: stg_wremotely__discovery_candidates
+    description: Deduplicated discovered candidate URLs unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: discovery_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+
+  - name: stg_wremotely__extraction_page_results
+    description: Page retrieval outcomes unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: extraction_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: page_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['succeeded', 'failed']
+      - name: retrieved_at
+        data_tests:
+          - not_null
+      - name: robots_txt_allowed
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: stg_wremotely__classification_classifications
+    description: Job classification outcomes unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: classification_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: classified_at
+        data_tests:
+          - not_null
+      - name: classification_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['classified', 'needs_review', 'quarantined']
+      - name: job_posting_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['job', 'non_job', 'unknown']
+      - name: remote_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['remote', 'hybrid', 'onsite', 'unknown']
+      - name: country_eligibility_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['global', 'target_country', 'restricted', 'unknown']
+      - name: serving_decision
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['publishable', 'not_publishable', 'needs_review', 'quarantine']
+
+  - name: stg_wremotely__recheck_lifecycle_results
+    description: Explicit lifecycle recheck outcomes unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: recheck_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: checked_at
+        data_tests:
+          - not_null
+      - name: page_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['succeeded', 'failed']
+      - name: lifecycle_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['closed', 'reachable', 'terminal', 'unknown']
+      - name: lifecycle_signal
+        data_tests:
+          - not_null
