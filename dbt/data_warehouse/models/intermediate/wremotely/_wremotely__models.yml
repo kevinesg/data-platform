@@ -1,0 +1,155 @@
+version: 2
+
+models:
+  - name: int_wremotely__latest_discovery_candidates
+    description: Latest discovered candidate row for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_discovery_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_discovery_run_id
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__latest_extraction_page_results
+    description: Latest page retrieval and parser result for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_page_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['succeeded', 'failed']
+      - name: latest_extraction_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_extraction_run_id
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__latest_classifications
+    description: Latest classification result for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_classification_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['classified', 'needs_review', 'quarantined']
+      - name: latest_job_posting_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['job', 'non_job', 'unknown']
+      - name: latest_remote_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['remote', 'hybrid', 'onsite', 'unknown']
+      - name: latest_country_eligibility_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['global', 'target_country', 'restricted', 'unknown']
+      - name: latest_serving_decision
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['publishable', 'not_publishable', 'needs_review', 'quarantine']
+      - name: latest_classification_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_classification_run_id
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__latest_lifecycle_rechecks
+    description: Latest explicit lifecycle recheck result for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_lifecycle_page_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['succeeded', 'failed']
+      - name: latest_lifecycle_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['closed', 'reachable', 'terminal', 'unknown']
+      - name: latest_lifecycle_signal
+        data_tests:
+          - not_null
+      - name: latest_lifecycle_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_lifecycle_recheck_run_id
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__current_candidate_facts
+    description: >
+      Current joined candidate facts from the latest discovery, extraction,
+      classification, and lifecycle rows.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: has_extraction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: has_classification
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: has_lifecycle_recheck
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
