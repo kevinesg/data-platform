@@ -1,0 +1,76 @@
+version: 2
+
+models:
+  - name: wremotely__serving_jobs
+    description: Public-safe publishable wremotely job rows for the serving store.
+    columns:
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+      - name: canonical_url
+        data_tests:
+          - not_null
+      - name: source_url
+        data_tests:
+          - not_null
+      - name: title
+        data_tests:
+          - not_null
+      - name: company_name
+        description: >
+          Nullable source company name. The public API/frontend should display
+          a fallback when absent.
+      - name: remote_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['remote']
+      - name: country_eligibility_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['global', 'target_country']
+      - name: has_lifecycle_recheck
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: serving_row_sha256
+        data_tests:
+          - unique
+          - not_null
+
+  - name: wremotely__publication_manifest
+    description: Deterministic manifest for the current wremotely serving snapshot.
+    columns:
+      - name: publication_id
+        data_tests:
+          - unique
+          - not_null
+      - name: publication_contract_version
+        data_tests:
+          - not_null
+      - name: serving_snapshot_contract
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['wremotely_serving_jobs_v1']
+      - name: serving_job_count
+        data_tests:
+          - not_null
+      - name: serving_snapshot_sha256
+        data_tests:
+          - unique
+          - not_null
+      - name: publication_state
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dbt_modeled_not_signaled']

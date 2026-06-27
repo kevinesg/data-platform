@@ -44,3 +44,6 @@ models:
       personal_finance:
         +materialized: table
         +schema: mart_personal_finance
+      wremotely:
+        +materialized: table
+        +schema: mart_wremotely
