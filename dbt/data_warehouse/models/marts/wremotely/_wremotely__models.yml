@@ -21,6 +21,11 @@ models:
         description: >
           Nullable source company name. The public API/frontend should display
           a fallback when absent.
+      - name: company_id
+        description: >
+          Nullable stable company identifier for linking to wremotely__companies.
+          It stays null when the warehouse lacks enough source evidence for a
+          conservative company identity.
       - name: remote_scope
         data_tests:
           - not_null
@@ -45,6 +50,36 @@ models:
           - unique
           - not_null
 
+  - name: wremotely__companies
+    description: >
+      Conservative company dimension for public company pages. It includes only
+      companies with currently publishable jobs and enough source evidence for a
+      stable company_id.
+    columns:
+      - name: company_id
+        data_tests:
+          - unique
+          - not_null
+      - name: company_name
+        data_tests:
+          - not_null
+      - name: company_identity_basis
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['company_source_domain_v1']
+      - name: source_domain
+        data_tests:
+          - not_null
+      - name: open_job_count
+        data_tests:
+          - not_null
+      - name: company_row_sha256
+        data_tests:
+          - unique
+          - not_null
+
   - name: wremotely__publication_manifest
     description: Deterministic manifest for the current wremotely serving snapshot.
     columns:
@@ -60,9 +95,20 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['wremotely_serving_jobs_v1']
+                values: ['wremotely_serving_snapshot_v2']
       - name: serving_job_count
         data_tests:
+          - not_null
+      - name: serving_company_count
+        data_tests:
+          - not_null
+      - name: serving_job_snapshot_sha256
+        data_tests:
+          - unique
+          - not_null
+      - name: serving_company_snapshot_sha256
+        data_tests:
+          - unique
           - not_null
       - name: serving_snapshot_sha256
         data_tests:

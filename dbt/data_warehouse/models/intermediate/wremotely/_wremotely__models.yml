@@ -153,3 +153,53 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+
+  - name: int_wremotely__publishable_job_facts
+    description: >
+      Current public-eligible job facts prepared for serving marts, including
+      conservative company identity fields when source evidence is sufficient.
+    columns:
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+      - name: canonical_url
+        data_tests:
+          - not_null
+      - name: source_url
+        data_tests:
+          - not_null
+      - name: title
+        data_tests:
+          - not_null
+      - name: company_id
+        description: >
+          Nullable stable company identifier. It is populated only when both a
+          non-empty source company name and source domain are available.
+      - name: company_identity_basis
+        description: Nullable identity version used to derive company_id.
+      - name: company_identity_key
+        description: Internal deterministic identity key hashed into company_id.
+      - name: normalized_company_name
+        description: Internal normalized company name used only for identity derivation.
+      - name: company_identity_source_domain
+        description: Internal normalized source domain used only for identity derivation.
+      - name: remote_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['remote']
+      - name: country_eligibility_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['global', 'target_country']
+      - name: has_lifecycle_recheck
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
