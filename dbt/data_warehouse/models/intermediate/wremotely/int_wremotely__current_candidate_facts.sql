@@ -18,6 +18,11 @@ lifecycle_rechecks AS (
     FROM {{ ref('int_wremotely__latest_lifecycle_rechecks') }}
 ),
 
+country_eligibility AS (
+    SELECT *
+    FROM {{ ref('int_wremotely__candidate_country_eligibility') }}
+),
+
 final AS (
     SELECT
         c.candidate_id
@@ -112,9 +117,20 @@ final AS (
         , lr.latest_lifecycle_recheck_run_id
         , lr.latest_lifecycle_source_record_index
         , lr.latest_lifecycle_artifact_sha256
+        , ce.validated_country_eligibility_scope
+        , ce.eligible_country_codes
+        , ce.excluded_country_codes
+        , ce.included_country_group_codes
+        , ce.excluded_country_group_codes
+        , ce.has_global_evidence
+        , ce.has_unknown_evidence
+        , ce.country_eligibility_evidence_count
+        , ce.matched_country_evidence_count
+        , ce.matched_country_group_evidence_count
         , e.candidate_id IS NOT NULL AS has_extraction
         , cl.candidate_id IS NOT NULL AS has_classification
         , lr.candidate_id IS NOT NULL AS has_lifecycle_recheck
+        , ce.candidate_id IS NOT NULL AS has_country_eligibility_evidence
         , (
             SELECT MAX(observed_at)
             FROM UNNEST([
@@ -131,6 +147,8 @@ final AS (
         ON c.candidate_id = cl.candidate_id
     LEFT JOIN lifecycle_rechecks AS lr
         ON c.candidate_id = lr.candidate_id
+    LEFT JOIN country_eligibility AS ce
+        ON c.candidate_id = ce.candidate_id
 )
 
 SELECT *

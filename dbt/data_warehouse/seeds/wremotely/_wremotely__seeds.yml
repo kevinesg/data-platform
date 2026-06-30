@@ -1,0 +1,90 @@
+version: 2
+
+seeds:
+  - name: wremotely__countries
+    description: >
+      Static ISO 3166-1 alpha-2 country taxonomy used to validate wremotely
+      country eligibility evidence. Initial rows were generated from the local
+      iso-codes package JSON file `/usr/share/iso-codes/json/iso_3166-1.json`.
+    columns:
+      - name: country_code
+        data_tests:
+          - unique
+          - not_null
+      - name: country_name
+        data_tests:
+          - not_null
+      - name: alpha_3_code
+        data_tests:
+          - unique
+          - not_null
+      - name: numeric_code
+        data_tests:
+          - unique
+          - not_null
+
+  - name: wremotely__country_aliases
+    description: >
+      Reviewed aliases for country-name matching in raw eligibility evidence.
+      Ambiguous two-letter words such as lower-case `us` are intentionally not
+      aliases; uppercase ISO codes are handled by exact code matching.
+    columns:
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: alias
+        data_tests:
+          - not_null
+      - name: match_kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exact_code', 'phrase']
+
+  - name: wremotely__country_groups
+    description: Reviewed country groups used to expand broad hiring-region evidence.
+    columns:
+      - name: country_group_code
+        data_tests:
+          - unique
+          - not_null
+      - name: country_group_name
+        data_tests:
+          - not_null
+
+  - name: wremotely__country_group_aliases
+    description: Reviewed aliases for broad country-group evidence emitted by source fields or the local model.
+    columns:
+      - name: country_group_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__country_groups')
+                field: country_group_code
+      - name: alias
+        data_tests:
+          - not_null
+
+  - name: wremotely__country_group_memberships
+    description: Reviewed expansion of broad country groups into ISO alpha-2 countries.
+    columns:
+      - name: country_group_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__country_groups')
+                field: country_group_code
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code

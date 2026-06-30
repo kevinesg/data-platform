@@ -8,7 +8,7 @@ sources:
     description: Raw wremotely run artifacts loaded by the private wremotely-etl runtime.
     tables:
       - name: discovery_source_responses
-        identifier: wremotely_discovery_source_responses
+        identifier: wremotely__discovery_source_responses
         description: Raw source responses staged from completed discovery runs.
         columns: &wremotely_raw_envelope_columns
           - name: contract_version
@@ -29,21 +29,26 @@ sources:
             description: Source artifact row payload as JSON.
 
       - name: discovery_candidates
-        identifier: wremotely_discovery_candidates
+        identifier: wremotely__discovery_candidates
         description: Raw deduplicated candidate URLs discovered by private ingestion.
         columns: *wremotely_raw_envelope_columns
 
       - name: extraction_page_results
-        identifier: wremotely_extraction_page_results
+        identifier: wremotely__extraction_page_results
         description: Raw page retrieval, parser, robots, and artifact-path outcomes.
         columns: *wremotely_raw_envelope_columns
 
       - name: classification_classifications
-        identifier: wremotely_classification_classifications
+        identifier: wremotely__classification_classifications
         description: Raw classification results with evidence and serving decisions.
         columns: *wremotely_raw_envelope_columns
 
+      - name: country_eligibility_extractions
+        identifier: wremotely__country_eligibility_extractions
+        description: Raw country and region eligibility evidence extracted from completed classification runs.
+        columns: *wremotely_raw_envelope_columns
+
       - name: recheck_lifecycle_results
-        identifier: wremotely_recheck_lifecycle_results
+        identifier: wremotely__recheck_lifecycle_results
         description: Raw explicit lifecycle recheck outcomes for caller-selected candidates.
         columns: *wremotely_raw_envelope_columns

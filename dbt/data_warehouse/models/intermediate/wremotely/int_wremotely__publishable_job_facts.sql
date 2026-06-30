@@ -6,11 +6,10 @@ WITH candidate_facts AS (
 publishable_jobs AS (
     SELECT *
     FROM candidate_facts
-    WHERE latest_serving_decision = 'publishable'
-        AND latest_job_posting_type = 'job'
-        AND latest_remote_scope = 'remote'
-        AND latest_country_eligibility_scope IN ('global', 'target_country')
-        AND COALESCE(latest_lifecycle_status, 'reachable') NOT IN ('closed', 'terminal')
+    WHERE latest_job_posting_type = 'JOB'
+        AND latest_remote_scope = 'REMOTE'
+        AND validated_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
+        AND COALESCE(latest_lifecycle_status, 'REACHABLE') NOT IN ('CLOSED', 'TERMINAL')
 ),
 
 prepared AS (
@@ -32,10 +31,12 @@ prepared AS (
         , attribution_name AS source_attribution_name
         , attribution_url AS source_attribution_url
         , latest_remote_scope AS remote_scope
-        , latest_country_eligibility_scope AS country_eligibility_scope
-        , latest_target_country AS target_country
-        , latest_target_country_code AS target_country_code
-        , latest_target_country_eligibility AS target_country_eligibility
+        , validated_country_eligibility_scope AS country_eligibility_scope
+        , eligible_country_codes
+        , excluded_country_codes
+        , included_country_group_codes
+        , excluded_country_group_codes
+        , country_eligibility_evidence_count
         , latest_job_status AS source_job_status
         , latest_lifecycle_status AS lifecycle_status
         , latest_lifecycle_checked_at AS lifecycle_checked_at
@@ -90,9 +91,11 @@ final AS (
         , source_attribution_url
         , remote_scope
         , country_eligibility_scope
-        , target_country
-        , target_country_code
-        , target_country_eligibility
+        , eligible_country_codes
+        , excluded_country_codes
+        , included_country_group_codes
+        , excluded_country_group_codes
+        , country_eligibility_evidence_count
         , source_job_status
         , lifecycle_status
         , lifecycle_checked_at

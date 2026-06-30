@@ -59,11 +59,12 @@ Verify the raw tables are visible without printing row payloads:
 
 ```bash
 for TABLE in \
-  wremotely_discovery_source_responses \
-  wremotely_discovery_candidates \
-  wremotely_extraction_page_results \
-  wremotely_classification_classifications \
-  wremotely_recheck_lifecycle_results; do
+  wremotely__discovery_source_responses \
+  wremotely__discovery_candidates \
+  wremotely__extraction_page_results \
+  wremotely__classification_classifications \
+  wremotely__country_eligibility_extractions \
+  wremotely__recheck_lifecycle_results; do
   bq query \
     --project_id="$PROJECT_ID" \
     --location="$BIGQUERY_LOCATION" \

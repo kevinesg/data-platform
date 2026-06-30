@@ -21,9 +21,11 @@ prepared AS (
         , source_attribution_url
         , remote_scope
         , country_eligibility_scope
-        , target_country
-        , target_country_code
-        , target_country_eligibility
+        , eligible_country_codes
+        , excluded_country_codes
+        , included_country_group_codes
+        , excluded_country_group_codes
+        , country_eligibility_evidence_count
         , source_job_status
         , lifecycle_status
         , lifecycle_checked_at
@@ -50,9 +52,11 @@ final AS (
             , source_attribution_url
             , remote_scope
             , country_eligibility_scope
-            , target_country
-            , target_country_code
-            , target_country_eligibility
+            , eligible_country_codes
+            , excluded_country_codes
+            , included_country_group_codes
+            , excluded_country_group_codes
+            , country_eligibility_evidence_count
             , source_job_status
             , lifecycle_status
             , lifecycle_checked_at
