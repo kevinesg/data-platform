@@ -1,0 +1,39 @@
+country_code,alias,match_kind
+AU,Australia,phrase
+BR,Brazil,phrase
+CA,Canada,phrase
+CN,China,phrase
+DE,Germany,phrase
+ES,Spain,phrase
+FR,France,phrase
+GB,United Kingdom,phrase
+GB,UK,exact_code
+GB,U.K.,phrase
+HK,Hong Kong,phrase
+ID,Indonesia,phrase
+IE,Ireland,phrase
+IN,India,phrase
+JP,Japan,phrase
+KR,South Korea,phrase
+MX,Mexico,phrase
+MY,Malaysia,phrase
+NL,Netherlands,phrase
+NZ,New Zealand,phrase
+PH,Philippines,phrase
+PH,Philippine,phrase
+PL,Poland,phrase
+PT,Portugal,phrase
+SG,Singapore,phrase
+TH,Thailand,phrase
+TR,Turkey,phrase
+TR,Turkiye,phrase
+TR,Türkiye,phrase
+TW,Taiwan,phrase
+UA,Ukraine,phrase
+US,United States,phrase
+US,United States of America,phrase
+US,U.S.,phrase
+US,U.S.A.,phrase
+US,USA,exact_code
+VN,Vietnam,phrase
+VN,Viet Nam,phrase

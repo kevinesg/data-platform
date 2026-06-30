@@ -31,6 +31,32 @@ seeds:
           transaction_type: STRING
           cashflow_type: STRING
           is_income_deduction: BOOLEAN
+    wremotely:
+      +schema: seed_wremotely
+      wremotely__countries:
+        +column_types:
+          country_code: STRING
+          country_name: STRING
+          alpha_3_code: STRING
+          numeric_code: STRING
+      wremotely__country_aliases:
+        +column_types:
+          country_code: STRING
+          alias: STRING
+          match_kind: STRING
+      wremotely__country_groups:
+        +column_types:
+          country_group_code: STRING
+          country_group_name: STRING
+          scope_note: STRING
+      wremotely__country_group_aliases:
+        +column_types:
+          country_group_code: STRING
+          alias: STRING
+      wremotely__country_group_memberships:
+        +column_types:
+          country_group_code: STRING
+          country_code: STRING
 
 models:
   data_warehouse:

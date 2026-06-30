@@ -31,13 +31,34 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['remote']
+                values: ['REMOTE']
       - name: country_eligibility_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['global', 'target_country']
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC']
+      - name: eligible_country_codes
+        description: >
+          ISO alpha-2 countries explicitly eligible through country evidence or
+          reviewed group expansion. Global jobs may keep this array empty.
+        data_tests:
+          - not_null
+      - name: excluded_country_codes
+        description: ISO alpha-2 countries explicitly excluded from otherwise global eligibility.
+        data_tests:
+          - not_null
+      - name: included_country_group_codes
+        description: Reviewed country groups that contributed eligible countries.
+        data_tests:
+          - not_null
+      - name: excluded_country_group_codes
+        description: Reviewed country groups that contributed excluded countries.
+        data_tests:
+          - not_null
+      - name: country_eligibility_evidence_count
+        data_tests:
+          - not_null
       - name: has_lifecycle_recheck
         data_tests:
           - not_null
@@ -80,6 +101,37 @@ models:
           - unique
           - not_null
 
+  - name: wremotely__job_country_eligibility
+    description: >
+      Compact serving bridge for explicit eligible countries and explicit
+      exclusions. Global jobs are represented by the job-level scope rather than
+      one bridge row per country.
+    columns:
+      - name: job_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__serving_jobs')
+                field: job_id
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: eligibility_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ELIGIBLE', 'EXCLUDED']
+      - name: job_country_eligibility_row_sha256
+        data_tests:
+          - unique
+          - not_null
+
   - name: wremotely__publication_manifest
     description: Deterministic manifest for the current wremotely serving snapshot.
     columns:
@@ -95,11 +147,14 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['wremotely_serving_snapshot_v2']
+                values: ['wremotely_serving_snapshot_v3']
       - name: serving_job_count
         data_tests:
           - not_null
       - name: serving_company_count
+        data_tests:
+          - not_null
+      - name: job_country_eligibility_count
         data_tests:
           - not_null
       - name: serving_job_snapshot_sha256
@@ -107,6 +162,10 @@ models:
           - unique
           - not_null
       - name: serving_company_snapshot_sha256
+        data_tests:
+          - unique
+          - not_null
+      - name: job_country_eligibility_snapshot_sha256
         data_tests:
           - unique
           - not_null

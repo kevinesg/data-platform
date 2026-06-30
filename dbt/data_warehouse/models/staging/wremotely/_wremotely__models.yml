@@ -65,7 +65,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['succeeded', 'failed']
+                values: ['SUCCEEDED', 'FAILED']
       - name: retrieved_at
         data_tests:
           - not_null
@@ -102,31 +102,74 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['classified', 'needs_review', 'quarantined']
+                values: ['CLASSIFIED', 'NEEDS_REVIEW', 'QUARANTINED']
       - name: job_posting_type
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['job', 'non_job', 'unknown']
+                values: ['JOB', 'NON_JOB', 'UNKNOWN']
       - name: remote_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['remote', 'hybrid', 'onsite', 'unknown']
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
       - name: country_eligibility_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['global', 'target_country', 'restricted', 'unknown']
+                values: ['GLOBAL', 'TARGET_COUNTRY', 'RESTRICTED', 'UNKNOWN']
       - name: serving_decision
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['publishable', 'not_publishable', 'needs_review', 'quarantine']
+                values: ['PUBLISHABLE', 'NOT_PUBLISHABLE', 'NEEDS_REVIEW', 'QUARANTINE']
+
+  - name: stg_wremotely__country_eligibility_extractions
+    description: Raw country and region eligibility evidence unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: classification_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: extracted_at
+        data_tests:
+          - not_null
+      - name: country_eligibility_extractor_version
+        data_tests:
+          - not_null
+      - name: country_field_source
+        data_tests:
+          - not_null
+      - name: country_field_role
+        data_tests:
+          - not_null
+      - name: country_field_source_system
+        data_tests:
+          - not_null
+      - name: country_field_source_identifier
+        data_tests:
+          - not_null
+      - name: extraction_method
+        data_tests:
+          - not_null
+      - name: raw_payload
+        data_tests:
+          - not_null
 
   - name: stg_wremotely__recheck_lifecycle_results
     description: Explicit lifecycle recheck outcomes unpacked from the raw staged envelope.
@@ -154,13 +197,13 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['succeeded', 'failed']
+                values: ['SUCCEEDED', 'FAILED']
       - name: lifecycle_status
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['closed', 'reachable', 'terminal', 'unknown']
+                values: ['CLOSED', 'REACHABLE', 'TERMINAL', 'UNKNOWN']
       - name: lifecycle_signal
         data_tests:
           - not_null

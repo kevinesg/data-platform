@@ -14,23 +14,23 @@ renamed AS (
         , JSON_VALUE(payload, '$.candidate_id') AS candidate_id
         , JSON_VALUE(payload, '$.url') AS url
         , JSON_VALUE(payload, '$.source_domain') AS source_domain
-        , JSON_VALUE(payload, '$.status') AS page_status
+        , TRIM(UPPER(JSON_VALUE(payload, '$.status'))) AS page_status
         , SAFE_CAST(JSON_VALUE(payload, '$.retrieved_at') AS TIMESTAMP) AS retrieved_at
         , SAFE_CAST(JSON_VALUE(payload, '$.http_status') AS INT64) AS http_status
         , JSON_VALUE(payload, '$.final_url') AS final_url
         , JSON_QUERY_ARRAY(payload, '$.redirect_chain') AS redirect_chain_json
         , JSON_VALUE(payload, '$.content_type') AS content_type
         , SAFE_CAST(JSON_VALUE(payload, '$.attempt_count') AS INT64) AS attempt_count
-        , JSON_VALUE(payload, '$.extractor') AS extractor
+        , TRIM(UPPER(JSON_VALUE(payload, '$.extractor'))) AS extractor
         , SAFE_CAST(JSON_VALUE(payload, '$.robots_txt_allowed') AS BOOL) AS robots_txt_allowed
-        , JSON_VALUE(payload, '$.robots_txt_status') AS robots_txt_status
+        , TRIM(UPPER(JSON_VALUE(payload, '$.robots_txt_status'))) AS robots_txt_status
         , SAFE_CAST(
             JSON_VALUE(payload, '$.robots_txt_http_status') AS INT64
         ) AS robots_txt_http_status
         , JSON_VALUE(payload, '$.robots_txt_url') AS robots_txt_url
         , JSON_VALUE(payload, '$.robots_txt_error') AS robots_txt_error
         , JSON_QUERY(payload, '$.robots_txt') AS robots_txt_json
-        , JSON_VALUE(payload, '$.error_type') AS error_type
+        , TRIM(UPPER(JSON_VALUE(payload, '$.error_type'))) AS error_type
         , JSON_VALUE(payload, '$.error') AS error
         , JSON_VALUE(payload, '$.content_sha256') AS content_sha256
         , JSON_VALUE(payload, '$.raw_html_path') AS raw_html_path

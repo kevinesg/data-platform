@@ -13,11 +13,16 @@ company pages. It includes only companies with currently publishable jobs and a
 stable `company_id`. Missing or unknown companies remain missing on job rows
 rather than being guessed.
 
+`wremotely__job_country_eligibility` contains the compact country bridge for
+explicit eligible countries and explicit exclusions. Global jobs stay compact on
+`wremotely__serving_jobs.country_eligibility_scope`; they are not exploded to
+one row per country.
+
 `wremotely__publication_manifest` summarizes the current serving snapshot for
-jobs and companies with a deterministic publication ID and checksum. Airflow
-must write the environment publication-control row only after dbt build and
-blocking tests succeed; this manifest is the dbt-modeled input to that later
-control row, not the Pub/Sub signal itself.
+jobs, companies, and country eligibility with a deterministic publication ID and
+checksum. Airflow must write the environment publication-control row only after
+dbt build and blocking tests succeed; this manifest is the dbt-modeled input to
+that later control row, not the Pub/Sub signal itself.
 
 ## Validate
 
@@ -37,7 +42,8 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 export WREMOTELY_RAW_DATASET="${WREMOTELY_RAW_DATASET:-wremotely_raw_dev}"
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
-WREMOTELY_DBT_SELECTOR="path:models/staging/wremotely"
+WREMOTELY_DBT_SELECTOR="path:seeds/wremotely"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/staging/wremotely"
 WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/intermediate/wremotely"
 WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/marts/wremotely"
 WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:tests/wremotely"

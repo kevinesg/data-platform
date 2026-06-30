@@ -7,10 +7,23 @@ The models keep one latest record per `candidate_id` for each fact type:
 - discovery candidate
 - extraction page result
 - classification
+- country eligibility extraction
 - lifecycle recheck
 
 `int_wremotely__current_candidate_facts` joins those latest records together.
 It does not decide what to publish or how to publish it.
+
+`int_wremotely__country_eligibility_evidence` maps raw country and region
+evidence to reviewed country and group taxonomy where possible. It keeps
+unknown, invalid, and unmatched evidence visible for QA/RCA instead of silently
+promoting it to a country.
+
+`int_wremotely__candidate_country_eligibility` keeps the validated eligibility
+contract compact at candidate grain. Global jobs are represented by scope and
+exclusions rather than expanded to every country.
+
+`int_wremotely__job_country_eligibility` is the compact bridge for explicit
+eligible countries and explicit exclusions.
 
 `int_wremotely__publishable_job_facts` applies the current public-serving
 eligibility rules once so downstream serving marts can share the same job grain.
@@ -39,5 +52,5 @@ test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 uv run dbt build \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:models/staging/wremotely path:models/intermediate/wremotely
+  --select path:seeds/wremotely path:models/staging/wremotely path:models/intermediate/wremotely
 ```

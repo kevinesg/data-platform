@@ -33,7 +33,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['succeeded', 'failed']
+                values: ['SUCCEEDED', 'FAILED']
       - name: latest_extraction_stage_run_id
         data_tests:
           - not_null
@@ -56,31 +56,31 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['classified', 'needs_review', 'quarantined']
+                values: ['CLASSIFIED', 'NEEDS_REVIEW', 'QUARANTINED']
       - name: latest_job_posting_type
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['job', 'non_job', 'unknown']
+                values: ['JOB', 'NON_JOB', 'UNKNOWN']
       - name: latest_remote_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['remote', 'hybrid', 'onsite', 'unknown']
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
       - name: latest_country_eligibility_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['global', 'target_country', 'restricted', 'unknown']
+                values: ['GLOBAL', 'TARGET_COUNTRY', 'RESTRICTED', 'UNKNOWN']
       - name: latest_serving_decision
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['publishable', 'not_publishable', 'needs_review', 'quarantine']
+                values: ['PUBLISHABLE', 'NOT_PUBLISHABLE', 'NEEDS_REVIEW', 'QUARANTINE']
       - name: latest_classification_stage_run_id
         data_tests:
           - not_null
@@ -103,13 +103,13 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['succeeded', 'failed']
+                values: ['SUCCEEDED', 'FAILED']
       - name: latest_lifecycle_status
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['closed', 'reachable', 'terminal', 'unknown']
+                values: ['CLOSED', 'REACHABLE', 'TERMINAL', 'UNKNOWN']
       - name: latest_lifecycle_signal
         data_tests:
           - not_null
@@ -153,6 +153,78 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+      - name: has_country_eligibility_evidence
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: int_wremotely__country_eligibility_evidence
+    description: >
+      Raw country eligibility evidence mapped to reviewed country and group
+      taxonomy when possible. Rows with unknown or invalid evidence stay visible
+      for QA/RCA rather than being silently promoted.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: evidence_direction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['INCLUDED', 'EXCLUDED', 'GLOBAL', 'UNKNOWN']
+      - name: match_source
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__candidate_country_eligibility
+    description: Compact validated country eligibility facts at candidate grain.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: validated_country_eligibility_scope
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC', 'UNKNOWN']
+      - name: eligible_country_codes
+        data_tests:
+          - not_null
+      - name: excluded_country_codes
+        data_tests:
+          - not_null
+      - name: country_eligibility_evidence_count
+        data_tests:
+          - not_null
+
+  - name: int_wremotely__job_country_eligibility
+    description: >
+      Compact job-country bridge for explicit eligibility and explicit
+      exclusions. Global jobs are represented by the candidate/job scope instead
+      of one row per country.
+    columns:
+      - name: job_id
+        data_tests:
+          - not_null
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: eligibility_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ELIGIBLE', 'EXCLUDED']
 
   - name: int_wremotely__publishable_job_facts
     description: >
@@ -189,13 +261,28 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['remote']
+                values: ['REMOTE']
       - name: country_eligibility_scope
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['global', 'target_country']
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC']
+      - name: eligible_country_codes
+        data_tests:
+          - not_null
+      - name: excluded_country_codes
+        data_tests:
+          - not_null
+      - name: included_country_group_codes
+        data_tests:
+          - not_null
+      - name: excluded_country_group_codes
+        data_tests:
+          - not_null
+      - name: country_eligibility_evidence_count
+        data_tests:
+          - not_null
       - name: has_lifecycle_recheck
         data_tests:
           - not_null
