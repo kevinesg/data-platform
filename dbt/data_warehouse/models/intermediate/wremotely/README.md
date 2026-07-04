@@ -5,6 +5,7 @@ This directory turns staged wremotely run history into current candidate facts.
 The models keep one latest record per `candidate_id` for each fact type:
 
 - discovery candidate
+- selected job URL
 - extraction page result
 - classification
 - country eligibility extraction

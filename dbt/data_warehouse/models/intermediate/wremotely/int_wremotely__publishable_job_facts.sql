@@ -7,9 +7,14 @@ publishable_jobs AS (
     SELECT *
     FROM candidate_facts
     WHERE latest_job_posting_type = 'JOB'
-        AND latest_remote_scope = 'REMOTE'
+        AND latest_remote_scope IN ('REMOTE', 'HYBRID')
         AND validated_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
+        AND (
+            validated_country_eligibility_scope != 'SPECIFIC'
+            OR ARRAY_LENGTH(IFNULL(eligible_country_codes, ARRAY<STRING>[])) > 0
+        )
         AND COALESCE(latest_lifecycle_status, 'REACHABLE') NOT IN ('CLOSED', 'TERMINAL')
+        AND NULLIF(TRIM(title), '') IS NOT NULL
 ),
 
 prepared AS (

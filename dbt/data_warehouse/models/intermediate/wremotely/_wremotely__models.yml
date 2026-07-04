@@ -18,6 +18,26 @@ models:
         data_tests:
           - not_null
 
+  - name: int_wremotely__latest_selected_job_urls
+    description: Latest selected job URL row for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_selected_at
+        data_tests:
+          - not_null
+      - name: latest_selection_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_selection_run_id
+        data_tests:
+          - not_null
+
   - name: int_wremotely__latest_extraction_page_results
     description: Latest page retrieval and parser result for each candidate_id.
     columns:
@@ -74,7 +94,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['GLOBAL', 'TARGET_COUNTRY', 'RESTRICTED', 'UNKNOWN']
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC', 'UNKNOWN']
       - name: latest_serving_decision
         data_tests:
           - not_null
@@ -133,6 +153,13 @@ models:
         data_tests:
           - not_null
       - name: has_extraction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: has_selection
         data_tests:
           - not_null
           - accepted_values:
@@ -261,7 +288,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['REMOTE']
+                values: ['REMOTE', 'HYBRID']
       - name: country_eligibility_scope
         data_tests:
           - not_null

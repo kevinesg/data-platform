@@ -42,6 +42,145 @@ models:
         data_tests:
           - not_null
 
+  - name: stg_wremotely__source_crawl_pages
+    description: Source/listing page crawl outcomes unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: source_crawl_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: source_candidate_id
+        data_tests:
+          - not_null
+      - name: source_url
+        data_tests:
+          - not_null
+      - name: page_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['SUCCEEDED', 'FAILED']
+      - name: crawled_at
+        data_tests:
+          - not_null
+      - name: crawler_version
+        data_tests:
+          - not_null
+
+  - name: stg_wremotely__source_crawl_job_urls
+    description: Candidate job URLs found from approved source/listing pages.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: source_crawl_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: job_url_id
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: source_candidate_id
+        data_tests:
+          - not_null
+      - name: source_url
+        data_tests:
+          - not_null
+
+  - name: stg_wremotely__job_url_selection_results
+    description: Job URL selection decisions unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: selection_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: job_url_id
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: selection_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 'SELECTED'
+                  - 'SKIPPED_DUPLICATE_URL_IDENTITY'
+                  - 'SKIPPED_KNOWN_URL'
+                  - 'SKIPPED_SELECTION_LIMIT'
+      - name: selection_reason
+        data_tests:
+          - not_null
+      - name: known_url_match
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: duplicate_url_identity
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: stg_wremotely__selected_job_urls
+    description: Selected job URLs unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: selection_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: source_job_url_id
+        data_tests:
+          - not_null
+      - name: source_crawl_run_id
+        data_tests:
+          - not_null
+      - name: selected_at
+        data_tests:
+          - not_null
+      - name: selector_version
+        data_tests:
+          - not_null
+
   - name: stg_wremotely__extraction_page_results
     description: Page retrieval outcomes unpacked from the raw staged envelope.
     columns:
@@ -120,7 +259,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['GLOBAL', 'TARGET_COUNTRY', 'RESTRICTED', 'UNKNOWN']
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC', 'UNKNOWN']
       - name: serving_decision
         data_tests:
           - not_null

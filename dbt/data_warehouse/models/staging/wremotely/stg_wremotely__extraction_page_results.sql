@@ -22,6 +22,8 @@ renamed AS (
         , JSON_VALUE(payload, '$.content_type') AS content_type
         , SAFE_CAST(JSON_VALUE(payload, '$.attempt_count') AS INT64) AS attempt_count
         , TRIM(UPPER(JSON_VALUE(payload, '$.extractor'))) AS extractor
+        , TRIM(UPPER(JSON_VALUE(payload, '$.primary_extractor'))) AS primary_extractor
+        , JSON_QUERY(payload, '$.primary_result') AS primary_result_json
         , SAFE_CAST(JSON_VALUE(payload, '$.robots_txt_allowed') AS BOOL) AS robots_txt_allowed
         , TRIM(UPPER(JSON_VALUE(payload, '$.robots_txt_status'))) AS robots_txt_status
         , SAFE_CAST(
@@ -36,6 +38,9 @@ renamed AS (
         , JSON_VALUE(payload, '$.raw_html_path') AS raw_html_path
         , JSON_VALUE(payload, '$.normalized_text_path') AS normalized_text_path
         , JSON_VALUE(payload, '$.normalized_text_sha256') AS normalized_text_sha256
+        , SAFE_CAST(
+            JSON_VALUE(payload, '$.normalized_text_char_count') AS INT64
+        ) AS normalized_text_char_count
         , JSON_VALUE(payload, '$.jsonld_path') AS jsonld_path
         , JSON_VALUE(payload, '$.jsonld_sha256') AS jsonld_sha256
         , SAFE_CAST(

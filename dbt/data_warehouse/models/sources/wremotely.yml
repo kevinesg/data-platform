@@ -33,6 +33,26 @@ sources:
         description: Raw deduplicated candidate URLs discovered by private ingestion.
         columns: *wremotely_raw_envelope_columns
 
+      - name: source_crawl_pages
+        identifier: wremotely__source_crawl_pages
+        description: Raw source/listing page crawl outcomes staged from completed source crawl runs.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: source_crawl_job_urls
+        identifier: wremotely__source_crawl_job_urls
+        description: Raw candidate job URLs found from approved source/listing pages.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: job_url_selection_results
+        identifier: wremotely__job_url_selection_results
+        description: Raw job URL selection decisions after dedupe and known-URL checks.
+        columns: *wremotely_raw_envelope_columns
+
+      - name: selected_job_urls
+        identifier: wremotely__selected_job_urls
+        description: Raw selected job URLs that downstream extraction should process.
+        columns: *wremotely_raw_envelope_columns
+
       - name: extraction_page_results
         identifier: wremotely__extraction_page_results
         description: Raw page retrieval, parser, robots, and artifact-path outcomes.

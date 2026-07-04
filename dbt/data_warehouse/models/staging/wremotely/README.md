@@ -61,6 +61,10 @@ Verify the raw tables are visible without printing row payloads:
 for TABLE in \
   wremotely__discovery_source_responses \
   wremotely__discovery_candidates \
+  wremotely__source_crawl_pages \
+  wremotely__source_crawl_job_urls \
+  wremotely__job_url_selection_results \
+  wremotely__selected_job_urls \
   wremotely__extraction_page_results \
   wremotely__classification_classifications \
   wremotely__country_eligibility_extractions \
