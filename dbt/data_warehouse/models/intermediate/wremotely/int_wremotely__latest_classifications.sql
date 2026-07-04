@@ -35,9 +35,19 @@ final AS (
         , target_country_code AS latest_target_country_code
         , target_country_eligibility AS latest_target_country_eligibility
         , serving_decision AS latest_serving_decision
+        , source_candidate_id AS latest_classification_source_candidate_id
+        , source_url AS latest_classification_source_url
+        , source_url_identity AS latest_classification_source_url_identity
+        , source_type_guess AS latest_classification_source_type_guess
+        , source_platform_guess AS latest_classification_source_platform_guess
+        , source_review_status AS latest_classification_source_review_status
+        , source_default_work_arrangement AS latest_classification_source_default_work_arrangement
         , source_content_sha256 AS latest_classification_source_content_sha256
         , normalized_text_sha256 AS latest_classification_normalized_text_sha256
         , jsonld_sha256 AS latest_classification_jsonld_sha256
+        , declared_language_raw AS latest_classification_declared_language_raw
+        , declared_language_tag AS latest_classification_declared_language_tag
+        , declared_language_source AS latest_classification_declared_language_source
         , evidence_json AS latest_classification_evidence_json
         , stage_run_id AS latest_classification_stage_run_id
         , classification_run_id AS latest_classification_run_id

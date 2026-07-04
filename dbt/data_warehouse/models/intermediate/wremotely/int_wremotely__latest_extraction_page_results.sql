@@ -32,6 +32,8 @@ final AS (
         , content_type AS latest_content_type
         , attempt_count AS latest_attempt_count
         , extractor AS latest_extractor
+        , primary_extractor AS latest_primary_extractor
+        , primary_result_json AS latest_primary_result_json
         , robots_txt_allowed AS latest_robots_txt_allowed
         , robots_txt_status AS latest_robots_txt_status
         , robots_txt_http_status AS latest_robots_txt_http_status
@@ -44,6 +46,7 @@ final AS (
         , raw_html_path AS latest_raw_html_path
         , normalized_text_path AS latest_normalized_text_path
         , normalized_text_sha256 AS latest_normalized_text_sha256
+        , normalized_text_char_count AS latest_normalized_text_char_count
         , jsonld_path AS latest_jsonld_path
         , jsonld_sha256 AS latest_jsonld_sha256
         , jsonld_document_count AS latest_jsonld_document_count
