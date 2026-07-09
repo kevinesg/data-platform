@@ -32,6 +32,12 @@ models:
           - accepted_values:
               arguments:
                 values: ['REMOTE', 'HYBRID']
+      - name: raw_work_arrangement
+        description: Raw structured or source-derived work arrangement evidence when available.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
       - name: country_eligibility_scope
         data_tests:
           - not_null
@@ -59,6 +65,16 @@ models:
       - name: country_eligibility_evidence_count
         data_tests:
           - not_null
+      - name: job_description
+        description: Full extracted job description when available. This field is not truncated.
+      - name: base_salary_json
+        description: Source base salary payload as JSON when available.
+      - name: estimated_salary_json
+        description: Source estimated salary payload as JSON when available.
+      - name: employment_type
+        description: Source employment type when available.
+      - name: declared_language_tag
+        description: Source-declared language tag when available.
       - name: has_lifecycle_recheck
         data_tests:
           - not_null
@@ -147,7 +163,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['wremotely_serving_snapshot_v3']
+                values: ['wremotely_serving_snapshot_v4']
       - name: serving_job_count
         data_tests:
           - not_null

@@ -60,10 +60,10 @@ prepared AS (
                 , 'LLM_INVALID_OUTPUT'
                 , 'NO_COUNTRY_EVIDENCE'
             ) THEN 'UNKNOWN'
+            WHEN country_field_role = 'JOB_LOCATION' THEN 'UNKNOWN'
             WHEN country_field_role IN (
                 'APPLICANT_LOCATION_REQUIREMENTS'
                 , 'NORMALIZED_TEXT'
-                , 'JOB_LOCATION'
             )
                 AND COALESCE(can_restrict, TRUE)
                 THEN 'INCLUDED'

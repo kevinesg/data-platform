@@ -7,17 +7,22 @@ The models keep one latest record per `candidate_id` for each fact type:
 - discovery candidate
 - selected job URL
 - extraction page result
+- extracted job facts
 - classification
 - country eligibility extraction
 - lifecycle recheck
 
 `int_wremotely__current_candidate_facts` joins those latest records together.
-It does not decide what to publish or how to publish it.
+It prefers extracted job facts for public job title, company, description,
+salary, employment type, source dates, and language metadata when those facts
+are available. It does not decide what to publish or how to publish it.
 
 `int_wremotely__country_eligibility_evidence` maps raw country and region
 evidence to reviewed country and group taxonomy where possible. It keeps
 unknown, invalid, and unmatched evidence visible for QA/RCA instead of silently
-promoting it to a country.
+promoting it to a country. Physical job-location evidence stays non-restrictive;
+applicant eligibility must come from applicant-location or role-level
+eligibility evidence.
 
 `int_wremotely__candidate_country_eligibility` keeps the validated eligibility
 contract compact at candidate grain. Global jobs are represented by scope and
@@ -29,8 +34,11 @@ eligible countries and explicit exclusions.
 `int_wremotely__publishable_job_facts` applies the current public-serving
 eligibility rules once so downstream serving marts can share the same job grain.
 It also derives nullable conservative company identity fields from source
-company name plus source domain. Publication-control contracts still belong in
-marts after current facts are stable.
+company name plus source domain. Known non-English rows are excluded from the
+serving set for MVP, while unknown-language rows remain eligible. Full job
+descriptions are passed through when available and are not truncated.
+Publication-control contracts still belong in marts after current facts are
+stable.
 
 ## Validate
 

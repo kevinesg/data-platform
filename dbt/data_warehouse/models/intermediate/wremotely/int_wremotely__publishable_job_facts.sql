@@ -15,6 +15,10 @@ publishable_jobs AS (
         )
         AND COALESCE(latest_lifecycle_status, 'REACHABLE') NOT IN ('CLOSED', 'TERMINAL')
         AND NULLIF(TRIM(title), '') IS NOT NULL
+        AND (
+            latest_job_fact_declared_language_tag IS NULL
+            OR STARTS_WITH(latest_job_fact_declared_language_tag, 'en')
+        )
 ),
 
 prepared AS (
@@ -31,11 +35,13 @@ prepared AS (
         , NULLIF(LOWER(TRIM(source_domain)), '') AS normalized_source_domain
         , candidate_required_location AS location_text
         , publication_at AS source_publication_at
+        , latest_job_fact_raw_valid_through_at AS source_valid_through_at
         , latest_observed_at
         , source_domain
         , attribution_name AS source_attribution_name
         , attribution_url AS source_attribution_url
         , latest_remote_scope AS remote_scope
+        , latest_job_fact_raw_work_arrangement AS raw_work_arrangement
         , validated_country_eligibility_scope AS country_eligibility_scope
         , eligible_country_codes
         , excluded_country_codes
@@ -43,6 +49,11 @@ prepared AS (
         , excluded_country_group_codes
         , country_eligibility_evidence_count
         , latest_job_status AS source_job_status
+        , job_description
+        , latest_job_fact_raw_base_salary_json AS base_salary_json
+        , latest_job_fact_raw_estimated_salary_json AS estimated_salary_json
+        , latest_job_fact_raw_employment_type AS employment_type
+        , latest_job_fact_declared_language_tag AS declared_language_tag
         , latest_lifecycle_status AS lifecycle_status
         , latest_lifecycle_checked_at AS lifecycle_checked_at
         , has_lifecycle_recheck
@@ -90,11 +101,13 @@ final AS (
         , normalized_source_domain AS company_identity_source_domain
         , location_text
         , source_publication_at
+        , source_valid_through_at
         , latest_observed_at
         , source_domain
         , source_attribution_name
         , source_attribution_url
         , remote_scope
+        , raw_work_arrangement
         , country_eligibility_scope
         , eligible_country_codes
         , excluded_country_codes
@@ -102,6 +115,11 @@ final AS (
         , excluded_country_group_codes
         , country_eligibility_evidence_count
         , source_job_status
+        , job_description
+        , base_salary_json
+        , estimated_salary_json
+        , employment_type
+        , declared_language_tag
         , lifecycle_status
         , lifecycle_checked_at
         , has_lifecycle_recheck

@@ -8,6 +8,11 @@ selected_job_urls AS (
     FROM {{ ref('int_wremotely__latest_selected_job_urls') }}
 ),
 
+job_facts AS (
+    SELECT *
+    FROM {{ ref('int_wremotely__latest_job_facts') }}
+),
+
 candidate_keys AS (
     SELECT candidate_id
     FROM discovery_candidates
@@ -16,16 +21,31 @@ candidate_keys AS (
 
     SELECT candidate_id
     FROM selected_job_urls
+
+    UNION DISTINCT
+
+    SELECT candidate_id
+    FROM job_facts
 ),
 
 candidate_base AS (
     SELECT
         k.candidate_id
-        , COALESCE(s.url, c.url) AS url
-        , COALESCE(NULLIF(TRIM(c.title), ''), NULLIF(TRIM(s.source_link_text), '')) AS title
-        , c.company_name
-        , c.candidate_required_location
-        , c.publication_at
+        , COALESCE(jf.url, s.url, c.url) AS url
+        , COALESCE(
+            NULLIF(TRIM(jf.latest_job_fact_raw_title), '')
+            , NULLIF(TRIM(c.title), '')
+            , NULLIF(TRIM(s.source_link_text), '')
+        ) AS title
+        , COALESCE(
+            NULLIF(TRIM(jf.latest_job_fact_raw_company_name), '')
+            , NULLIF(TRIM(c.company_name), '')
+        ) AS company_name
+        , COALESCE(
+            NULLIF(TRIM(c.candidate_required_location), '')
+            , NULLIF(TRIM(jf.latest_job_fact_raw_job_location_text), '')
+        ) AS candidate_required_location
+        , COALESCE(jf.latest_job_fact_raw_date_posted_at, c.publication_at) AS publication_at
         , c.attribution_name
         , c.attribution_url
         , c.snippet
@@ -58,11 +78,74 @@ candidate_base AS (
         , s.latest_selection_run_id
         , s.latest_selection_source_record_index
         , s.latest_selection_artifact_sha256
+        , jf.latest_job_fact_final_url
+        , jf.latest_job_fact_source_domain
+        , jf.latest_job_fact_source_candidate_id
+        , jf.latest_job_fact_source_url
+        , jf.latest_job_fact_source_url_identity
+        , jf.latest_job_fact_source_type_guess
+        , jf.latest_job_fact_source_platform_guess
+        , jf.latest_job_fact_source_review_status
+        , jf.latest_job_fact_status
+        , jf.latest_job_fact_page_status
+        , jf.latest_job_fact_retrieved_at
+        , jf.latest_job_fact_extracted_at
+        , jf.latest_job_fact_extractor_version
+        , jf.latest_job_fact_http_status
+        , jf.latest_job_fact_content_type
+        , jf.latest_job_fact_source_content_sha256
+        , jf.latest_job_fact_raw_html_path
+        , jf.latest_job_fact_normalized_text_path
+        , jf.latest_job_fact_normalized_text_sha256
+        , jf.latest_job_fact_jsonld_path
+        , jf.latest_job_fact_jsonld_sha256
+        , jf.latest_job_fact_job_posting_count
+        , jf.latest_job_fact_jsonld_document_count
+        , jf.latest_job_fact_jsonld_parse_error_count
+        , jf.latest_job_fact_declared_language_raw
+        , jf.latest_job_fact_declared_language_tag
+        , jf.latest_job_fact_declared_language_source
+        , jf.latest_job_fact_raw_title_values
+        , jf.latest_job_fact_raw_title
+        , jf.latest_job_fact_raw_company_name_values
+        , jf.latest_job_fact_raw_company_name
+        , jf.latest_job_fact_raw_description_values
+        , jf.latest_job_fact_raw_description AS job_description
+        , jf.latest_job_fact_raw_base_salary_values
+        , jf.latest_job_fact_raw_base_salary_json
+        , jf.latest_job_fact_raw_estimated_salary_values
+        , jf.latest_job_fact_raw_estimated_salary_json
+        , jf.latest_job_fact_raw_employment_type_values
+        , jf.latest_job_fact_raw_employment_type
+        , jf.latest_job_fact_raw_date_posted_values
+        , jf.latest_job_fact_raw_date_posted_at
+        , jf.latest_job_fact_raw_valid_through_values
+        , jf.latest_job_fact_raw_valid_through_at
+        , jf.latest_job_fact_raw_job_location_type_values
+        , jf.latest_job_fact_raw_job_location_type
+        , jf.latest_job_fact_raw_job_location_values
+        , jf.latest_job_fact_raw_job_location_text
+        , jf.latest_job_fact_raw_applicant_location_requirement_values
+        , jf.latest_job_fact_raw_applicant_location_requirement_text
+        , jf.latest_job_fact_raw_work_arrangement
+        , jf.latest_job_fact_raw_work_arrangement_evidence
+        , jf.latest_job_fact_source_default_work_arrangement
+        , jf.latest_job_fact_source_default_country_eligibility_scope
+        , jf.latest_job_fact_source_default_country_eligibility_values
+        , jf.latest_job_fact_source_default_country_eligibility_evidence
+        , jf.latest_job_fact_record_updated_at
+        , jf.latest_job_fact_record_updated_by_step
+        , jf.latest_job_fact_stage_run_id
+        , jf.latest_job_facts_run_id
+        , jf.latest_job_fact_source_record_index
+        , jf.latest_job_fact_artifact_sha256
     FROM candidate_keys AS k
     LEFT JOIN discovery_candidates AS c
         ON k.candidate_id = c.candidate_id
     LEFT JOIN selected_job_urls AS s
         ON k.candidate_id = s.candidate_id
+    LEFT JOIN job_facts AS jf
+        ON k.candidate_id = jf.candidate_id
 ),
 
 extractions AS (
@@ -125,11 +208,73 @@ final AS (
         , c.latest_selection_run_id
         , c.latest_selection_source_record_index
         , c.latest_selection_artifact_sha256
-        , COALESCE(e.source_domain, c.selected_source_domain) AS source_domain
+        , c.latest_job_fact_final_url
+        , c.latest_job_fact_source_domain
+        , c.latest_job_fact_source_candidate_id
+        , c.latest_job_fact_source_url
+        , c.latest_job_fact_source_url_identity
+        , c.latest_job_fact_source_type_guess
+        , c.latest_job_fact_source_platform_guess
+        , c.latest_job_fact_source_review_status
+        , c.latest_job_fact_status
+        , c.latest_job_fact_page_status
+        , c.latest_job_fact_retrieved_at
+        , c.latest_job_fact_extracted_at
+        , c.latest_job_fact_extractor_version
+        , c.latest_job_fact_http_status
+        , c.latest_job_fact_content_type
+        , c.latest_job_fact_source_content_sha256
+        , c.latest_job_fact_raw_html_path
+        , c.latest_job_fact_normalized_text_path
+        , c.latest_job_fact_normalized_text_sha256
+        , c.latest_job_fact_jsonld_path
+        , c.latest_job_fact_jsonld_sha256
+        , c.latest_job_fact_job_posting_count
+        , c.latest_job_fact_jsonld_document_count
+        , c.latest_job_fact_jsonld_parse_error_count
+        , c.latest_job_fact_declared_language_raw
+        , c.latest_job_fact_declared_language_tag
+        , c.latest_job_fact_declared_language_source
+        , c.latest_job_fact_raw_title_values
+        , c.latest_job_fact_raw_title
+        , c.latest_job_fact_raw_company_name_values
+        , c.latest_job_fact_raw_company_name
+        , c.latest_job_fact_raw_description_values
+        , c.job_description
+        , c.latest_job_fact_raw_base_salary_values
+        , c.latest_job_fact_raw_base_salary_json
+        , c.latest_job_fact_raw_estimated_salary_values
+        , c.latest_job_fact_raw_estimated_salary_json
+        , c.latest_job_fact_raw_employment_type_values
+        , c.latest_job_fact_raw_employment_type
+        , c.latest_job_fact_raw_date_posted_values
+        , c.latest_job_fact_raw_date_posted_at
+        , c.latest_job_fact_raw_valid_through_values
+        , c.latest_job_fact_raw_valid_through_at
+        , c.latest_job_fact_raw_job_location_type_values
+        , c.latest_job_fact_raw_job_location_type
+        , c.latest_job_fact_raw_job_location_values
+        , c.latest_job_fact_raw_job_location_text
+        , c.latest_job_fact_raw_applicant_location_requirement_values
+        , c.latest_job_fact_raw_applicant_location_requirement_text
+        , c.latest_job_fact_raw_work_arrangement
+        , c.latest_job_fact_raw_work_arrangement_evidence
+        , c.latest_job_fact_source_default_work_arrangement
+        , c.latest_job_fact_source_default_country_eligibility_scope
+        , c.latest_job_fact_source_default_country_eligibility_values
+        , c.latest_job_fact_source_default_country_eligibility_evidence
+        , c.latest_job_fact_record_updated_at
+        , c.latest_job_fact_record_updated_by_step
+        , c.latest_job_fact_stage_run_id
+        , c.latest_job_facts_run_id
+        , c.latest_job_fact_source_record_index
+        , c.latest_job_fact_artifact_sha256
+        , COALESCE(e.source_domain, c.latest_job_fact_source_domain, c.selected_source_domain)
+            AS source_domain
         , e.latest_page_status
         , e.latest_retrieved_at
         , e.latest_http_status
-        , e.latest_final_url
+        , COALESCE(e.latest_final_url, c.latest_job_fact_final_url) AS latest_final_url
         , e.latest_redirect_chain_json
         , e.latest_content_type
         , e.latest_attempt_count
@@ -228,6 +373,7 @@ final AS (
         , ce.matched_country_group_evidence_count
         , c.latest_selection_run_id IS NOT NULL AS has_selection
         , e.candidate_id IS NOT NULL AS has_extraction
+        , c.latest_job_facts_run_id IS NOT NULL AS has_job_facts
         , cl.candidate_id IS NOT NULL AS has_classification
         , lr.candidate_id IS NOT NULL AS has_lifecycle_recheck
         , ce.candidate_id IS NOT NULL AS has_country_eligibility_evidence
@@ -236,6 +382,9 @@ final AS (
             FROM UNNEST([
                 c.publication_at
                 , c.latest_selected_at
+                , c.latest_job_fact_retrieved_at
+                , c.latest_job_fact_extracted_at
+                , c.latest_job_fact_record_updated_at
                 , e.latest_retrieved_at
                 , cl.latest_classified_at
                 , lr.latest_lifecycle_checked_at

@@ -66,6 +66,7 @@ for TABLE in \
   wremotely__job_url_selection_results \
   wremotely__selected_job_urls \
   wremotely__extraction_page_results \
+  wremotely__job_facts \
   wremotely__classification_classifications \
   wremotely__country_eligibility_extractions \
   wremotely__recheck_lifecycle_results; do
