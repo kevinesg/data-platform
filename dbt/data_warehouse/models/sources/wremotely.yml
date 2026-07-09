@@ -73,6 +73,11 @@ sources:
         description: Raw country and region eligibility evidence extracted from completed classification runs.
         columns: *wremotely_raw_envelope_columns
 
+      - name: publication_holds
+        identifier: wremotely__publication_holds
+        description: Raw pre-publication hold decisions applied before serving publication.
+        columns: *wremotely_raw_envelope_columns
+
       - name: recheck_lifecycle_results
         identifier: wremotely__recheck_lifecycle_results
         description: Raw explicit lifecycle recheck outcomes for caller-selected candidates.

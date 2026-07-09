@@ -19,6 +19,9 @@ publishable_jobs AS (
             latest_job_fact_declared_language_tag IS NULL
             OR STARTS_WITH(latest_job_fact_declared_language_tag, 'en')
         )
+        AND has_publication_hold
+        AND publication_hold_matches_current_content
+        AND latest_publication_hold_status = 'RELEASED'
 ),
 
 prepared AS (
@@ -57,6 +60,10 @@ prepared AS (
         , latest_lifecycle_status AS lifecycle_status
         , latest_lifecycle_checked_at AS lifecycle_checked_at
         , has_lifecycle_recheck
+        , latest_publication_hold_status AS publication_hold_status
+        , latest_publication_hold_reason_code AS publication_hold_reason_code
+        , latest_publication_hold_evaluated_at AS publication_hold_evaluated_at
+        , publication_hold_matches_current_content
         , LEFT(snippet, 1000) AS public_snippet
     FROM publishable_jobs
 ),
@@ -123,6 +130,10 @@ final AS (
         , lifecycle_status
         , lifecycle_checked_at
         , has_lifecycle_recheck
+        , publication_hold_status
+        , publication_hold_reason_code
+        , publication_hold_evaluated_at
+        , publication_hold_matches_current_content
         , public_snippet
     FROM company_keyed
 )

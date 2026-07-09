@@ -8,7 +8,8 @@ page paths, evidence blobs, provider values, and classifier implementation
 details. Company links are nullable and appear only when dbt can derive a stable
 company identity from conservative source evidence. The serving contract includes
 full extracted job descriptions when available, salary payloads when available,
-employment type, declared language, and source validity timestamps.
+employment type, declared language, and source validity timestamps. Jobs without
+a current matching pre-publication release decision are not included.
 
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a

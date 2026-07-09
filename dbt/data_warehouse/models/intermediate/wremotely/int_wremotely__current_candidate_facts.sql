@@ -13,6 +13,11 @@ job_facts AS (
     FROM {{ ref('int_wremotely__latest_job_facts') }}
 ),
 
+publication_holds AS (
+    SELECT *
+    FROM {{ ref('int_wremotely__latest_publication_holds') }}
+),
+
 candidate_keys AS (
     SELECT candidate_id
     FROM discovery_candidates
@@ -332,6 +337,35 @@ final AS (
         , cl.latest_classification_run_id
         , cl.latest_classification_source_record_index
         , cl.latest_classification_artifact_sha256
+        , ph.latest_publication_hold_evaluated_at
+        , ph.latest_publication_hold_status
+        , ph.latest_publication_hold_reason_code
+        , ph.latest_publication_hold_guardrail_reason
+        , ph.latest_publication_hold_evidence_quote
+        , ph.latest_publication_hold_classification_remote_scope
+        , ph.latest_publication_hold_classification_country_eligibility_scope
+        , ph.latest_publication_hold_classification_serving_decision
+        , ph.latest_publication_hold_declared_language_raw
+        , ph.latest_publication_hold_declared_language_tag
+        , ph.latest_publication_hold_declared_language_source
+        , ph.latest_publication_hold_source_candidate_id
+        , ph.latest_publication_hold_source_url
+        , ph.latest_publication_hold_source_url_identity
+        , ph.latest_publication_hold_source_type_guess
+        , ph.latest_publication_hold_source_platform_guess
+        , ph.latest_publication_hold_source_review_status
+        , ph.latest_publication_hold_source_default_work_arrangement
+        , ph.latest_publication_hold_source_content_sha256
+        , ph.latest_publication_hold_normalized_text_sha256
+        , ph.latest_publication_hold_jsonld_sha256
+        , ph.latest_publication_hold_policy_sha256
+        , ph.latest_publication_hold_evaluator_version
+        , ph.latest_publication_hold_llm_response_sha256
+        , ph.latest_publication_hold_llm_skipped_reason
+        , ph.latest_publication_hold_stage_run_id
+        , ph.latest_publication_hold_run_id
+        , ph.latest_publication_hold_source_record_index
+        , ph.latest_publication_hold_artifact_sha256
         , lr.latest_lifecycle_checked_at
         , lr.latest_lifecycle_checker_version
         , lr.latest_lifecycle_page_status
@@ -375,6 +409,36 @@ final AS (
         , e.candidate_id IS NOT NULL AS has_extraction
         , c.latest_job_facts_run_id IS NOT NULL AS has_job_facts
         , cl.candidate_id IS NOT NULL AS has_classification
+        , ph.candidate_id IS NOT NULL AS has_publication_hold
+        , (
+            ph.candidate_id IS NOT NULL
+            AND (
+                (
+                    ph.latest_publication_hold_normalized_text_sha256 IS NOT NULL
+                    AND ph.latest_publication_hold_normalized_text_sha256 = COALESCE(
+                        c.latest_job_fact_normalized_text_sha256
+                        , cl.latest_classification_normalized_text_sha256
+                        , e.latest_normalized_text_sha256
+                    )
+                )
+                OR (
+                    ph.latest_publication_hold_source_content_sha256 IS NOT NULL
+                    AND ph.latest_publication_hold_source_content_sha256 = COALESCE(
+                        c.latest_job_fact_source_content_sha256
+                        , cl.latest_classification_source_content_sha256
+                        , e.latest_content_sha256
+                    )
+                )
+                OR (
+                    ph.latest_publication_hold_jsonld_sha256 IS NOT NULL
+                    AND ph.latest_publication_hold_jsonld_sha256 = COALESCE(
+                        c.latest_job_fact_jsonld_sha256
+                        , cl.latest_classification_jsonld_sha256
+                        , e.latest_jsonld_sha256
+                    )
+                )
+            )
+        ) AS publication_hold_matches_current_content
         , lr.candidate_id IS NOT NULL AS has_lifecycle_recheck
         , ce.candidate_id IS NOT NULL AS has_country_eligibility_evidence
         , (
@@ -387,6 +451,7 @@ final AS (
                 , c.latest_job_fact_record_updated_at
                 , e.latest_retrieved_at
                 , cl.latest_classified_at
+                , ph.latest_publication_hold_evaluated_at
                 , lr.latest_lifecycle_checked_at
             ]) AS observed_at
         ) AS latest_observed_at
@@ -395,6 +460,8 @@ final AS (
         ON c.candidate_id = e.candidate_id
     LEFT JOIN classifications AS cl
         ON c.candidate_id = cl.candidate_id
+    LEFT JOIN publication_holds AS ph
+        ON c.candidate_id = ph.candidate_id
     LEFT JOIN lifecycle_rechecks AS lr
         ON c.candidate_id = lr.candidate_id
     LEFT JOIN country_eligibility AS ce

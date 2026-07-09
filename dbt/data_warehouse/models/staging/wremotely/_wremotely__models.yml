@@ -270,6 +270,69 @@ models:
         data_tests:
           - not_null
 
+  - name: stg_wremotely__publication_holds
+    description: Pre-publication hold decisions unpacked from the raw staged envelope.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: publication_hold_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: evaluated_at
+        data_tests:
+          - not_null
+      - name: hold_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HELD', 'REVIEW_HOLD', 'RELEASED']
+      - name: hold_reason_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['POLICY_MATCH', 'POLICY_NON_MATCH', 'POLICY_UNCERTAIN']
+      - name: classification_remote_scope
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
+      - name: classification_country_eligibility_scope
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC', 'UNKNOWN', 'RESTRICTED']
+      - name: classification_serving_decision
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['PUBLISHABLE', 'NOT_PUBLISHABLE', 'NEEDS_REVIEW', 'QUARANTINE']
+      - name: source_default_work_arrangement
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
+      - name: policy_sha256
+        data_tests:
+          - not_null
+      - name: publication_hold_evaluator_version
+        data_tests:
+          - not_null
+      - name: raw_payload
+        data_tests:
+          - not_null
+
   - name: stg_wremotely__classification_classifications
     description: Job classification outcomes unpacked from the raw staged envelope.
     columns:

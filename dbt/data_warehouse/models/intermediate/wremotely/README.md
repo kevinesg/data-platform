@@ -10,6 +10,7 @@ The models keep one latest record per `candidate_id` for each fact type:
 - extracted job facts
 - classification
 - country eligibility extraction
+- pre-publication hold decision
 - lifecycle recheck
 
 `int_wremotely__current_candidate_facts` joins those latest records together.
@@ -37,8 +38,9 @@ It also derives nullable conservative company identity fields from source
 company name plus source domain. Known non-English rows are excluded from the
 serving set for MVP, while unknown-language rows remain eligible. Full job
 descriptions are passed through when available and are not truncated.
-Publication-control contracts still belong in marts after current facts are
-stable.
+Jobs must also have a current matching pre-publication release decision before
+they can enter this serving-prepared set. Held and review-held jobs stay visible
+in intermediate QA models but are excluded from serving marts.
 
 ## Validate
 

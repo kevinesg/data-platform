@@ -203,6 +203,7 @@ a new DAG run when source data changed and a fresh extract is required.
 Do not add a README for every DAG. Add a DAG-specific runbook only when the DAG
 has operational behavior that is not already covered by the component README or
 the owning source/dbt documentation.
+When such a runbook exists, keep it beside the DAG under `airflow/dags/`.
 
 ## Failure Alerts
 

@@ -69,6 +69,7 @@ for TABLE in \
   wremotely__job_facts \
   wremotely__classification_classifications \
   wremotely__country_eligibility_extractions \
+  wremotely__publication_holds \
   wremotely__recheck_lifecycle_results; do
   bq query \
     --project_id="$PROJECT_ID" \

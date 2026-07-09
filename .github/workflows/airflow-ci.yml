@@ -69,6 +69,7 @@ jobs:
             -e RAW_DATASET=raw_ci \
             -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
             -e DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:ci \
+            -e DATA_PLATFORM_WREMOTELY_ETL_IMAGE=wremotely-etl:ci \
             -e SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/tmp/scripts-ci-service-account.json \
             -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/tmp/dbt-ci-service-account.json \
             -e PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/ci/edit \
@@ -80,6 +81,19 @@ jobs:
             -e DBT_DATASET=dbt_ci \
             -e DBT_THREADS=4 \
             -e BIGQUERY_LOCATION=US \
+            -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
+            -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \
+            -e WREMOTELY_APPROVED_SOURCES_FILE=/tmp/wremotely-approved-sources.jsonl \
+            -e WREMOTELY_APPROVED_SOURCES_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
+            -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
+            -e WREMOTELY_GCS_BUCKET=ci-bucket \
+            -e WREMOTELY_GCS_PREFIX=remote_jobs \
+            -e WREMOTELY_RAW_DATASET=wremotely_raw_ci \
+            -e WREMOTELY_BIGQUERY_LOCATION=US \
+            -e WREMOTELY_LOCAL_LLM_RUNTIME=ollama \
+            -e WREMOTELY_LOCAL_LLM_MODEL=ci-model \
+            -e WREMOTELY_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434 \
+            -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=120 \
             data-platform-airflow:ci - <<'PY'
           import importlib.util
           import sys

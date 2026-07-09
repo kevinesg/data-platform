@@ -90,6 +90,44 @@ models:
         data_tests:
           - not_null
 
+  - name: int_wremotely__latest_publication_holds
+    description: Latest pre-publication hold decision for each candidate_id.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: latest_publication_hold_evaluated_at
+        data_tests:
+          - not_null
+      - name: latest_publication_hold_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['HELD', 'REVIEW_HOLD', 'RELEASED']
+      - name: latest_publication_hold_reason_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['POLICY_MATCH', 'POLICY_NON_MATCH', 'POLICY_UNCERTAIN']
+      - name: latest_publication_hold_policy_sha256
+        data_tests:
+          - not_null
+      - name: latest_publication_hold_evaluator_version
+        data_tests:
+          - not_null
+      - name: latest_publication_hold_stage_run_id
+        data_tests:
+          - not_null
+      - name: latest_publication_hold_run_id
+        data_tests:
+          - not_null
+
   - name: int_wremotely__latest_classifications
     description: Latest classification result for each candidate_id.
     columns:
@@ -203,6 +241,20 @@ models:
                 values: [true, false]
                 quote: false
       - name: has_classification
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: has_publication_hold
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: publication_hold_matches_current_content
         data_tests:
           - not_null
           - accepted_values:
@@ -368,4 +420,17 @@ models:
           - accepted_values:
               arguments:
                 values: [true, false]
+                quote: false
+      - name: publication_hold_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['RELEASED']
+      - name: publication_hold_matches_current_content
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true]
                 quote: false
