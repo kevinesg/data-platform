@@ -215,6 +215,61 @@ models:
                 values: [true, false]
                 quote: false
 
+  - name: stg_wremotely__job_facts
+    description: Job facts unpacked from retrieved job pages.
+    columns:
+      - name: stage_run_id
+        data_tests:
+          - not_null
+      - name: job_facts_run_id
+        data_tests:
+          - not_null
+      - name: source_record_index
+        data_tests:
+          - not_null
+      - name: candidate_id
+        data_tests:
+          - not_null
+      - name: url
+        data_tests:
+          - not_null
+      - name: job_fact_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EXTRACTED', 'SKIPPED_EXTRACTION_FAILED']
+      - name: job_fact_extracted_at
+        data_tests:
+          - not_null
+      - name: job_fact_extractor_version
+        data_tests:
+          - not_null
+      - name: raw_work_arrangement
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
+      - name: source_default_work_arrangement
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['REMOTE', 'HYBRID', 'ONSITE', 'UNKNOWN']
+      - name: source_default_country_eligibility_scope
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC', 'UNKNOWN']
+      - name: record_updated_at
+        data_tests:
+          - not_null
+      - name: record_updated_by_step
+        data_tests:
+          - not_null
+      - name: raw_payload
+        data_tests:
+          - not_null
+
   - name: stg_wremotely__classification_classifications
     description: Job classification outcomes unpacked from the raw staged envelope.
     columns:

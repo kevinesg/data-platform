@@ -49,8 +49,8 @@ job_country_snapshot AS (
 
 snapshot AS (
     SELECT
-        3 AS publication_contract_version
-        , 'wremotely_serving_snapshot_v3' AS serving_snapshot_contract
+        4 AS publication_contract_version
+        , 'wremotely_serving_snapshot_v4' AS serving_snapshot_contract
         , j.serving_job_count
         , c.serving_company_count
         , jc.job_country_eligibility_count

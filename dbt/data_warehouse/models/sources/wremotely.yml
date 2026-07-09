@@ -58,6 +58,11 @@ sources:
         description: Raw page retrieval, parser, robots, and artifact-path outcomes.
         columns: *wremotely_raw_envelope_columns
 
+      - name: job_facts
+        identifier: wremotely__job_facts
+        description: Raw job facts extracted from retrieved job pages.
+        columns: *wremotely_raw_envelope_columns
+
       - name: classification_classifications
         identifier: wremotely__classification_classifications
         description: Raw classification results with evidence and serving decisions.
