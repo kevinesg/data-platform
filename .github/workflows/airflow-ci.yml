@@ -87,8 +87,7 @@ jobs:
             -e WREMOTELY_APPROVED_SOURCES_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
             -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
             -e WREMOTELY_GCS_BUCKET=ci-bucket \
-            -e WREMOTELY_GCS_PREFIX=remote_jobs \
-            -e WREMOTELY_RAW_DATASET=wremotely_raw_ci \
+            -e WREMOTELY_GCS_PREFIX=wremotely \
             -e WREMOTELY_BIGQUERY_LOCATION=US \
             -e WREMOTELY_LOCAL_LLM_RUNTIME=ollama \
             -e WREMOTELY_LOCAL_LLM_MODEL=ci-model \

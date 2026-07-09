@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: wremotely
     database: "{{ env_var('PROJECT_ID') }}"
-    schema: "{{ env_var('WREMOTELY_RAW_DATASET', env_var('RAW_DATASET')) }}"
+    schema: "{{ env_var('RAW_DATASET') }}"
     loader: wremotely-etl
     description: Raw wremotely run artifacts loaded by the private wremotely-etl runtime.
     tables:
