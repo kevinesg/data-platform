@@ -82,17 +82,25 @@ export WREMOTELY_BASE_RUN_ID="<logical-date-as-YYYYMMDDTHHMMSSZ>-wremotely"
 export COMPLETED_PUBLICATION_HOLD_RUN_DIR="$WREMOTELY_ETL_ARTIFACTS_DIR/$WREMOTELY_BASE_RUN_ID-publication-hold"
 export COMPLETED_PUBLICATION_HOLD_DIR="$COMPLETED_PUBLICATION_HOLD_RUN_DIR/publication_hold"
 export COMPLETED_PUBLICATION_HOLD_BACKUP="${COMPLETED_PUBLICATION_HOLD_DIR}.pre-final-verdict-migration"
+export COMPLETED_SERVING_SNAPSHOT_RUN_DIR="$WREMOTELY_ETL_ARTIFACTS_DIR/$WREMOTELY_BASE_RUN_ID-serving-snapshot"
+export COMPLETED_SERVING_SNAPSHOT_DIR="$COMPLETED_SERVING_SNAPSHOT_RUN_DIR/publish_serving_snapshot"
+export COMPLETED_SERVING_SNAPSHOT_BACKUP="${COMPLETED_SERVING_SNAPSHOT_DIR}.pre-current-state-migration"
 
 test -d "$COMPLETED_PUBLICATION_HOLD_DIR"
 test ! -e "$COMPLETED_PUBLICATION_HOLD_BACKUP"
+test -d "$COMPLETED_SERVING_SNAPSHOT_DIR"
+test ! -e "$COMPLETED_SERVING_SNAPSHOT_BACKUP"
 sudo mv -- "$COMPLETED_PUBLICATION_HOLD_DIR" "$COMPLETED_PUBLICATION_HOLD_BACKUP"
+sudo mv -- "$COMPLETED_SERVING_SNAPSHOT_DIR" "$COMPLETED_SERVING_SNAPSHOT_BACKUP"
 ```
 
 Use the Airflow run's logical date for `WREMOTELY_BASE_RUN_ID`, not the current
 wall-clock time. Airflow's rootless Docker container can create the run
 directory under a remapped host owner, so the host-side rename requires
 administrator permission even when the artifacts root belongs to the operator.
-Keep the backup until end-to-end worker validation succeeds.
+Keep both backups until end-to-end worker validation succeeds. The serving
+snapshot artifact is contract-versioned so a normal replay cannot silently
+accept completion evidence from an incompatible publication contract.
 Then clear only `publication_hold`, `publish_serving_snapshot`, and
 `signal_publication` in that run, with upstream tasks unselected. The durable
 legacy BigQuery verdicts exclude all previously evaluated jobs, so the task
