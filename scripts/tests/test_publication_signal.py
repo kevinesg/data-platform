@@ -94,7 +94,7 @@ def test_publish_ready_publication_verifies_control_row_and_sends_only_id(
     result = publish_ready_publication(
         project_id="kevinesg-dev",
         handoff_dataset="handoff_kevinesg",
-        publication_table="wremotely__serving_publications",
+        publication_table="wremotely__serving_publication",
         publication_topic="wremotely-serving-publications-kevinesg",
         publication_artifact=artifact,
         location="US",
@@ -129,7 +129,7 @@ def test_publish_ready_publication_allows_duplicate_delivery_on_retry(tmp_path: 
     kwargs: dict[str, Any] = {
         "project_id": "kevinesg-dev",
         "handoff_dataset": "handoff_kevinesg",
-        "publication_table": "wremotely__serving_publications",
+        "publication_table": "wremotely__serving_publication",
         "publication_topic": "wremotely-serving-publications-kevinesg",
         "publication_artifact": artifact,
         "location": "US",
@@ -155,7 +155,7 @@ def test_publish_ready_publication_rejects_non_ready_control_row(tmp_path: Path)
         publish_ready_publication(
             project_id="kevinesg-dev",
             handoff_dataset="handoff_kevinesg",
-            publication_table="wremotely__serving_publications",
+            publication_table="wremotely__serving_publication",
             publication_topic="wremotely-serving-publications-kevinesg",
             publication_artifact=artifact,
             location="US",
