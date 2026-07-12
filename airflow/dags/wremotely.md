@@ -74,11 +74,28 @@ after `crawl` has published a complete canonical crawl artifact.
 
 This migration does not require rerunning crawl, select, extract, job facts,
 classification, lifecycle recheck, or dbt. Deploy the corrected private ETL
-image and DAG first, then clear only `publication_hold`,
-`publish_serving_snapshot`, and `signal_publication` in the latest successful
-run. The completed hold artifact initializes `wremotely__publication_holds`
-without calling the model again, and the existing dbt marts initialize the
-unversioned serving tables.
+image and DAG first. The latest run's completed publication-hold artifact uses
+the former candidate checksum contract, so back it up before clearing tasks:
+
+```bash
+export WREMOTELY_BASE_RUN_ID="<logical-date-as-YYYYMMDDTHHMMSSZ>-wremotely"
+export COMPLETED_PUBLICATION_HOLD_RUN_DIR="$WREMOTELY_ETL_ARTIFACTS_DIR/$WREMOTELY_BASE_RUN_ID-publication-hold"
+export COMPLETED_PUBLICATION_HOLD_DIR="$COMPLETED_PUBLICATION_HOLD_RUN_DIR/publication_hold"
+export COMPLETED_PUBLICATION_HOLD_BACKUP="${COMPLETED_PUBLICATION_HOLD_DIR}.pre-final-verdict-migration"
+
+test -d "$COMPLETED_PUBLICATION_HOLD_DIR"
+test ! -e "$COMPLETED_PUBLICATION_HOLD_BACKUP"
+mv -- "$COMPLETED_PUBLICATION_HOLD_DIR" "$COMPLETED_PUBLICATION_HOLD_BACKUP"
+```
+
+Use the Airflow run's logical date for `WREMOTELY_BASE_RUN_ID`, not the current
+wall-clock time. Keep the backup until end-to-end worker validation succeeds.
+Then clear only `publication_hold`, `publish_serving_snapshot`, and
+`signal_publication` in that run, with upstream tasks unselected. The durable
+legacy BigQuery verdicts exclude all previously evaluated jobs, so the task
+does not call the model; it writes a new zero-candidate run artifact and
+initializes `wremotely__publication_holds`. The existing dbt marts initialize
+the unversioned serving tables.
 
 After `publish_serving_snapshot` succeeds, verify the new tables before
 granting the serving worker access:
