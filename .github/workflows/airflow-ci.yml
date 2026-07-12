@@ -87,6 +87,7 @@ jobs:
             -e WREMOTELY_APPROVED_SOURCES_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
             -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
             -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
+            -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \
             -e WREMOTELY_GCS_BUCKET=ci-bucket \
             -e WREMOTELY_GCS_PREFIX=wremotely \
             -e WREMOTELY_BIGQUERY_LOCATION=US \

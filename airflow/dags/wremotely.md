@@ -19,6 +19,10 @@ running Docker:
 - `WREMOTELY_HANDOFF_DATASET`: private BigQuery dataset for replaceable
   current-state handoff tables and immutable versioned serving snapshots, for
   example `handoff_<developer>` in dev and `handoff` in QA/prod.
+- `WREMOTELY_PUBLICATION_TOPIC`: private Pub/Sub topic that receives only a
+  committed `READY` publication ID, for example
+  `wremotely-serving-publications-<developer>` in shared dev and
+  `wremotely-serving-publications` in environment-isolated QA/prod projects.
 - `WREMOTELY_APPROVED_SOURCES_FILE`: approved source snapshot JSONL file.
 - `WREMOTELY_APPROVED_SOURCES_SHA256`: SHA-256 checksum of the approved source
   snapshot. Scheduled runs should pin this so a source-file edit cannot
@@ -29,7 +33,7 @@ running Docker:
 The private runtime image is configured with `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`.
 Use an immutable image tag in QA and prod.
 
-## Handoff and publication dataset
+## Handoff dataset and publication topic
 
 The wremotely DAG uses a private BigQuery handoff dataset for current-state
 handoff tables and versioned publication snapshots. This dataset is not raw
@@ -103,6 +107,14 @@ if test -z "${WREMOTELY_HANDOFF_DATASET:-}"; then
   fi
 fi
 
+if test -z "${WREMOTELY_PUBLICATION_TOPIC:-}"; then
+  if test "$ENVIRONMENT" = dev; then
+    export WREMOTELY_PUBLICATION_TOPIC="wremotely-serving-publications-${DEVELOPER_ID}"
+  else
+    export WREMOTELY_PUBLICATION_TOPIC="wremotely-serving-publications"
+  fi
+fi
+
 export WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL="$(
   python -c 'import json, os; print(json.load(open(os.environ["WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"]))["client_email"])'
 )"
@@ -116,6 +128,29 @@ fi
 gcloud config configurations activate "$PLATFORM_BOOTSTRAP_CONFIGURATION"
 gcloud config set project "$PROJECT_ID"
 gcloud config list
+
+if gcloud services list \
+  --enabled \
+  --project="$PROJECT_ID" \
+  --filter='config.name=pubsub.googleapis.com' \
+  --format='value(config.name)' | grep -Fxq pubsub.googleapis.com; then
+  echo "Pub/Sub API is enabled."
+else
+  gcloud services enable pubsub.googleapis.com --project="$PROJECT_ID"
+fi
+
+if gcloud pubsub topics describe "$WREMOTELY_PUBLICATION_TOPIC" \
+  --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "Publication topic already exists: $WREMOTELY_PUBLICATION_TOPIC"
+else
+  gcloud pubsub topics create "$WREMOTELY_PUBLICATION_TOPIC" \
+    --project="$PROJECT_ID"
+fi
+
+gcloud pubsub topics add-iam-policy-binding "$WREMOTELY_PUBLICATION_TOPIC" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:$WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/pubsub.publisher"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL" \
@@ -178,12 +213,22 @@ bq show \
 bq show \
   --project_id="$PROJECT_ID" \
   "$PROJECT_ID:$WREMOTELY_DBT_MART_DATASET"
+
+gcloud pubsub topics describe "$WREMOTELY_PUBLICATION_TOPIC" \
+  --project="$PROJECT_ID"
+
+gcloud pubsub topics get-iam-policy "$WREMOTELY_PUBLICATION_TOPIC" \
+  --project="$PROJECT_ID" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role=roles/pubsub.publisher AND bindings.members=serviceAccount:$WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL" \
+  --format='table(bindings.role,bindings.members)'
 ```
 
-After creating or verifying the dataset, add or update
-`WREMOTELY_HANDOFF_DATASET` in the external Airflow environment file. Use
-`handoff_<developer>` in dev and `handoff` in QA/prod unless a
-component-specific runbook documents a different name.
+After creating or verifying the dataset and topic, add or update both values in
+the external Airflow environment file. Use `handoff_<developer>` and
+`wremotely-serving-publications-<developer>` in shared dev; QA/prod use
+`handoff` and `wremotely-serving-publications` because their projects already
+isolate the environments.
 
 ```bash
 python -c 'import os
@@ -193,6 +238,7 @@ env_file = Path(os.environ["DATA_PLATFORM_ENV_FILE"])
 lines = env_file.read_text().splitlines()
 required_values = {
     "WREMOTELY_HANDOFF_DATASET": os.environ["WREMOTELY_HANDOFF_DATASET"],
+    "WREMOTELY_PUBLICATION_TOPIC": os.environ["WREMOTELY_PUBLICATION_TOPIC"],
     "WREMOTELY_PLATFORM_WORKER_COUNT": "2",
     "WREMOTELY_RECHECK_LIMIT": "100",
     "WREMOTELY_RECHECK_MIN_AGE_HOURS": "72",
@@ -201,7 +247,7 @@ for name, value in required_values.items():
     updated = False
     for index, line in enumerate(lines):
         if line.startswith(f"{name}="):
-            if name == "WREMOTELY_HANDOFF_DATASET":
+            if name in {"WREMOTELY_HANDOFF_DATASET", "WREMOTELY_PUBLICATION_TOPIC"}:
                 lines[index] = f"{name}={value}"
             updated = True
             break
@@ -235,6 +281,7 @@ crawl
   -> dbt_build
   -> publication_hold
   -> publish_serving_snapshot
+  -> signal_publication
 ```
 
 The normal scheduled path does not acquire new sources. It starts from the
@@ -247,9 +294,9 @@ This DAG includes every implemented step required to create and refresh the
 BigQuery serving publication. It intentionally does not run search-provider
 `discover`, offline crawl merging, classifier benchmarks, or destructive local
 artifact cleanup. Those are source-acquisition, evaluation, or maintenance
-workflows with different budgets and cadences. Pub/Sub signaling and the VPS
-publication worker are not implemented in this DAG yet and remain the next
-serving-delivery boundary after the BigQuery `READY` publication.
+workflows with different budgets and cadences. The DAG now publishes the exact
+committed `READY` publication ID to Pub/Sub. The VPS subscriber remains the next
+serving-delivery boundary.
 
 `evaluate` and `stage` consume the completed selection, extraction, job-facts,
 and classification artifacts. They do not require the same DAG run's crawl
@@ -325,6 +372,61 @@ The handoff dataset tables are
 `wremotely__serving_companies_versions`,
 `wremotely__serving_job_country_eligibility_versions`, and
 `wremotely__serving_publications`.
+
+`signal_publication` reads the completed local snapshot artifact, verifies that
+its exact publication ID still has one `READY` control row in BigQuery, and
+publishes only that UTF-8 publication ID as the Pub/Sub message data. It runs in
+the scripts image with read-only mounts for the ETL credential and artifact
+directory. Airflow retries or manual task clears may publish a duplicate; this
+is intentional, and the serving worker must use its PostgreSQL publication
+ledger to make duplicate IDs no-ops. If signaling fails, clear only
+`signal_publication`; do not rebuild the snapshot.
+
+The topic has no subscription in this PR. The VPS worker PR creates one
+environment-specific pull subscription with its own least-privilege subscriber
+identity. Pub/Sub does not retain topic messages for a future subscription, so
+after that subscription is created, clear `signal_publication` once to send the
+latest ready publication ID.
+
+## Successful task clear and replay behavior
+
+Idempotency is defined against the same declared run ID, configuration, and
+input artifacts. It does not mean an old DAG run can safely replace newer
+current-state handoff tables, nor does it provide disaster recovery after
+someone manually deletes verified external data.
+
+- `crawl`, `select`, `extract`, `job_facts`, `classify`, `evaluate`,
+  `prepare_recheck`, `recheck`, `stage`, and `stage_recheck` verify their
+  completed local artifacts and return without repeating successful work.
+  Incomplete crawl/extract/recheck work resumes from committed checkpoints;
+  only uncommitted external reads may repeat.
+- `upload` and `upload_recheck` verify immutable GCS object names, sizes, and
+  checksums. A missing object after a completed upload is an error rather than
+  an implicit recreation.
+- `load` and `load_recheck` use run/source checksums to verify append-only raw
+  rows and reject conflicting rows. A completed local load artifact returns
+  without submitting another load job.
+- `publish_handoff` and `publication_hold` reapply the same completed rows to
+  replaceable current-state tables. Repeating the current run has the same
+  result, but clearing one of these tasks in an older DAG run after a newer run
+  can roll current state backward. Do not clear historical current-state
+  publisher tasks unless that rollback is intentional.
+- `dbt_build` rebuilds deterministic tables from warehouse state visible when
+  it runs. It is repeatable while raw inputs are unchanged, but an old task
+  cleared after newer raw loads consumes the newer warehouse state. It is not a
+  run-pinned historical reconstruction.
+- `publish_serving_snapshot` is content-addressed. Replaying the same completed
+  run returns its recorded publication ID; recreating the same snapshot through
+  a new run also resolves to the same immutable publication ID.
+- `signal_publication` is intentionally at-least-once. Every successful clear
+  may receive a new Pub/Sub message ID for the same publication ID. The serving
+  worker must acknowledge only after its PostgreSQL transaction commits and
+  use the publication ledger to make duplicate publication IDs no-ops.
+
+For a current run, clear only the failed task and the downstream tasks that
+need to continue. For a historical run, prefer a new manual DAG run or an
+explicit recovery procedure instead of clearing `publish_handoff`,
+`publication_hold`, or `dbt_build`.
 
 Replacing the host policy file creates a new inode and can remove its container
 ACL. After every replacement, reset ordinary permissions, grant only read
@@ -427,12 +529,52 @@ the selected-URL table alone does not suppress a URL.
 - `WREMOTELY_RECHECK_MIN_AGE_HOURS` controls when an active row becomes due
   after its latest selection or lifecycle check. The default is `72`; use `0`
   only for an intentional dev integration run.
+- `WREMOTELY_PUBLICATION_TOPIC` selects the private environment-specific topic.
+  The publisher service account receives `roles/pubsub.publisher` on this topic
+  only; it does not need project-wide Pub/Sub administration or subscriber
+  permissions.
 - `WREMOTELY_DOCKER_NETWORK_MODE=host` lets a container reach a local
   host-bound inference endpoint on Linux. Use another Docker network mode only
   if the configured endpoint is reachable from child containers.
 - `WREMOTELY_LOCAL_LLM_*` configures the local inference endpoint used by the
   pre-publication hold step. Keep the selected model/runtime value in the
   external environment file, not in this repository.
+
+## Publication signal recovery and revocation
+
+The Pub/Sub publish call returns a server-assigned message ID before the Airflow
+task succeeds. Inspect the `signal_publication` log for `publication_id`,
+`pubsub_topic`, and `pubsub_message_id`. A retry can produce another message ID
+for the same publication ID and is safe by contract.
+
+Verify the control row independently when diagnosing a signal failure:
+
+```bash
+bq query \
+  --project_id="$PROJECT_ID" \
+  --location="$BIGQUERY_LOCATION" \
+  --use_legacy_sql=false \
+  --parameter="publication_id:STRING:<publication-id>" \
+  "SELECT publication_id, publication_state, published_at
+   FROM \`$PROJECT_ID.$WREMOTELY_HANDOFF_DATASET.wremotely__serving_publications\`
+   WHERE publication_id = @publication_id"
+```
+
+To revoke the pipeline publisher without deleting the topic or existing
+publications:
+
+```bash
+gcloud pubsub topics remove-iam-policy-binding "$WREMOTELY_PUBLICATION_TOPIC" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:$WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/pubsub.publisher"
+```
+
+Restore publishing by rerunning the topic-level
+`add-iam-policy-binding` command in the setup section, then clear only the
+failed `signal_publication` task. Credential key rotation continues to use the
+external ETL credential path; recreate Airflow containers after replacing that
+file so subsequent Docker tasks use the intended key.
 
 ## Recover a timed-out crawl container
 

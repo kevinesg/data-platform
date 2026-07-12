@@ -11,6 +11,7 @@ PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
 FERNET_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}=$")
 SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
 BIGQUERY_DATASET_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
+PUBSUB_TOPIC_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
 
 
 def main() -> int:
@@ -107,6 +108,13 @@ def validate_values(values: dict[str, str]) -> str | None:
     for name in ("RAW_DATASET", "WREMOTELY_HANDOFF_DATASET", "DBT_DATASET"):
         if not BIGQUERY_DATASET_ID_PATTERN.fullmatch(values[name]):
             return f"{name} must be a valid BigQuery dataset ID"
+
+    publication_topic = values["WREMOTELY_PUBLICATION_TOPIC"]
+    if (
+        not PUBSUB_TOPIC_ID_PATTERN.fullmatch(publication_topic)
+        or publication_topic.lower().startswith("goog")
+    ):
+        return "WREMOTELY_PUBLICATION_TOPIC must be a valid Pub/Sub topic ID"
 
     for name in (
         "DBT_GOOGLE_APPLICATION_CREDENTIALS",

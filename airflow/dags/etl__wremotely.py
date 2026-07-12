@@ -38,6 +38,7 @@ RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
+SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publications"
 
 
 def required_env(name: str) -> str:
@@ -83,6 +84,7 @@ def docker_task(
     mounts: list[Mount],
     execution_timeout: timedelta = DEFAULT_TASK_EXECUTION_TIMEOUT,
     network_mode: str | None = None,
+    entrypoint: list[str] | None = None,
 ) -> DockerOperator:
     return DockerOperator(
         task_id=task_id,
@@ -98,6 +100,7 @@ def docker_task(
         retries=TASK_RETRIES,
         retry_delay=TASK_RETRY_DELAY,
         network_mode=network_mode,
+        entrypoint=entrypoint,
         on_failure_callback=send_failure_alert,
     )
 
@@ -108,6 +111,7 @@ def etl_command(*args: str) -> list[str]:
 
 ENVIRONMENT = optional_env("ENVIRONMENT", "dev")
 WREMOTELY_ETL_IMAGE = required_env("DATA_PLATFORM_WREMOTELY_ETL_IMAGE")
+SCRIPTS_IMAGE = required_env("DATA_PLATFORM_SCRIPTS_IMAGE")
 DBT_IMAGE = required_env("DATA_PLATFORM_DBT_IMAGE")
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
 WREMOTELY_DBT_MART_DATASET = dbt_schema_name(
@@ -133,6 +137,10 @@ wremotely_environment = {
     "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS": required_env(
         "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"
     ),
+}
+
+publication_signal_environment = {
+    "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
 }
 
 dbt_environment = {
@@ -166,6 +174,21 @@ wremotely_mounts = [
     Mount(
         source=required_host_path_env("WREMOTELY_APPROVED_SOURCES_FILE"),
         target=APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+]
+
+publication_signal_mounts = [
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
+        target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
+        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
         type="bind",
         read_only=True,
     ),
@@ -657,6 +680,32 @@ with DAG(
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
     )
 
+    signal_publication = docker_task(
+        task_id="signal_publication",
+        image=SCRIPTS_IMAGE,
+        entrypoint=["python", "src/publication_signal.py"],
+        command=[
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--handoff-dataset",
+            required_env("WREMOTELY_HANDOFF_DATASET"),
+            "--publication-table",
+            SERVING_PUBLICATIONS_TABLE,
+            "--publication-topic",
+            required_env("WREMOTELY_PUBLICATION_TOPIC"),
+            "--publication-artifact",
+            (
+                f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/{SERVING_SNAPSHOT_RUN_ID}/"
+                "publish_serving_snapshot/publish_serving_snapshot.json"
+            ),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
+        ],
+        environment=publication_signal_environment,
+        mounts=publication_signal_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
     core_load_chain = (
         crawl
         >> publish_handoff
@@ -682,4 +731,5 @@ with DAG(
         >> dbt_build
         >> publication_hold
         >> publish_serving_snapshot
+        >> signal_publication
     )
