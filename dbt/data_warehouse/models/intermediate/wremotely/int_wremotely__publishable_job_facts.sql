@@ -51,7 +51,8 @@ prepared AS (
         , job_description
         , latest_job_fact_raw_base_salary_json AS base_salary_json
         , latest_job_fact_raw_estimated_salary_json AS estimated_salary_json
-        , latest_job_fact_raw_employment_type AS employment_type
+        , latest_job_fact_raw_employment_type_values AS raw_employment_type_values
+        , latest_job_fact_raw_employment_type AS raw_employment_type
         , latest_job_fact_declared_language_tag AS declared_language_tag
         , latest_lifecycle_status AS lifecycle_status
         , latest_lifecycle_checked_at AS lifecycle_checked_at
@@ -65,6 +66,7 @@ prepared AS (
             , FALSE
         ) AS is_deleted
         , latest_observed_at AS _updated_at
+        , latest_observed_at AS source_updated_at
         , LEFT(snippet, 1000) AS public_snippet
     FROM publishable_jobs
 ),
@@ -126,13 +128,15 @@ final AS (
         , job_description
         , base_salary_json
         , estimated_salary_json
-        , employment_type
+        , raw_employment_type_values
+        , raw_employment_type
         , declared_language_tag
         , lifecycle_status
         , lifecycle_checked_at
         , has_lifecycle_recheck
         , is_deleted
         , _updated_at
+        , source_updated_at
         , public_snippet
     FROM company_keyed
 )

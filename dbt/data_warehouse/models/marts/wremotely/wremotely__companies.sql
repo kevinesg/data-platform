@@ -2,7 +2,7 @@
 
 WITH publishable_job_facts AS (
     SELECT *
-    FROM {{ ref('int_wremotely__publishable_job_facts') }}
+    FROM {{ ref('wremotely__serving_jobs') }}
 ),
 
 company_job_facts AS (
@@ -34,6 +34,8 @@ aggregated AS (
         , MIN(source_publication_at) AS first_source_publication_at
         , MIN(latest_observed_at) AS first_observed_at
         , MAX(latest_observed_at) AS latest_observed_at
+        , MAX(source_updated_at) AS source_updated_at
+        , MAX(dbt_updated_at) AS dbt_updated_at
     FROM company_job_facts
     GROUP BY company_id
 ),
@@ -50,6 +52,8 @@ final AS (
             , first_source_publication_at
             , first_observed_at
             , latest_observed_at
+            , source_updated_at
+            , dbt_updated_at
         )))) AS company_row_sha256
     FROM aggregated
 )

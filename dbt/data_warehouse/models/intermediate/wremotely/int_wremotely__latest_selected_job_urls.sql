@@ -1,3 +1,11 @@
+{{
+    config(
+        materialized="incremental",
+        incremental_strategy="merge",
+        unique_key="candidate_id"
+    )
+}}
+
 WITH selected_job_urls AS (
     SELECT *
     FROM {{ ref('stg_wremotely__selected_job_urls') }}
@@ -6,6 +14,25 @@ WITH selected_job_urls AS (
 selection_results AS (
     SELECT *
     FROM {{ ref('stg_wremotely__job_url_selection_results') }}
+),
+
+changed_candidates AS (
+    SELECT DISTINCT source.candidate_id
+    FROM selected_job_urls AS source
+    WHERE source.candidate_id IS NOT NULL
+    {% if is_incremental() %}
+        AND (
+            source.selected_at > (
+                SELECT COALESCE(MAX(latest_selected_at), TIMESTAMP '1970-01-01 00:00:00+00')
+                FROM {{ this }}
+            )
+            OR NOT EXISTS (
+                SELECT 1
+                FROM {{ this }} AS current_candidate
+                WHERE current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
 ),
 
 selected_with_result_context AS (
@@ -19,6 +46,8 @@ selected_with_result_context AS (
         , r.known_url_match
         , r.duplicate_url_identity
     FROM selected_job_urls AS s
+    INNER JOIN changed_candidates AS changed
+        USING (candidate_id)
     LEFT JOIN selection_results AS r
         ON s.selection_run_id = r.selection_run_id
             AND s.source_job_url_id = r.job_url_id
@@ -68,6 +97,8 @@ final AS (
         , selection_run_id AS latest_selection_run_id
         , source_record_index AS latest_selection_source_record_index
         , source_artifact_sha256 AS latest_selection_artifact_sha256
+        , selected_at AS source_updated_at
+        , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
     FROM ranked
     WHERE selected_job_url_rank = 1
 )

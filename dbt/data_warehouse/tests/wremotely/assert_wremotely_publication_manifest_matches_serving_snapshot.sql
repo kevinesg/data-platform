@@ -16,7 +16,7 @@ job_country_eligibility AS (
 expected_job_snapshot AS (
     SELECT
         COUNT(*) AS serving_job_count
-        , MAX(latest_observed_at) AS job_publication_watermark_at
+        , MAX(dbt_updated_at) AS job_publication_watermark_at
         , TO_HEX(SHA256(COALESCE(
             STRING_AGG(serving_row_sha256, '' ORDER BY job_id)
             , ''
@@ -27,7 +27,7 @@ expected_job_snapshot AS (
 expected_company_snapshot AS (
     SELECT
         COUNT(*) AS serving_company_count
-        , MAX(latest_observed_at) AS company_publication_watermark_at
+        , MAX(dbt_updated_at) AS company_publication_watermark_at
         , TO_HEX(SHA256(COALESCE(
             STRING_AGG(company_row_sha256, '' ORDER BY company_id)
             , ''

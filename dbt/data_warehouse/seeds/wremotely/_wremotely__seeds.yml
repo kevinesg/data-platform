@@ -1,6 +1,22 @@
 version: 2
 
 seeds:
+  - name: wremotely__search_tags
+    description: Reviewed public search-tag taxonomy and bounded BigQuery RE2 match patterns.
+    columns:
+      - name: tag_code
+        data_tests:
+          - unique
+          - not_null
+      - name: tag_label
+        data_tests:
+          - unique
+          - not_null
+      - name: match_pattern
+        data_tests:
+          - unique
+          - not_null
+
   - name: wremotely__countries
     description: >
       Static ISO 3166-1 alpha-2 country taxonomy used to validate wremotely

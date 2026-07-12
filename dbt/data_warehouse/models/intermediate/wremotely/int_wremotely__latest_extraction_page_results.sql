@@ -1,6 +1,33 @@
+{{
+    config(
+        materialized="incremental",
+        incremental_strategy="merge",
+        unique_key="candidate_id"
+    )
+}}
+
 WITH source_page_results AS (
     SELECT *
     FROM {{ ref('stg_wremotely__extraction_page_results') }}
+),
+
+changed_candidates AS (
+    SELECT DISTINCT source.candidate_id
+    FROM source_page_results AS source
+    WHERE source.candidate_id IS NOT NULL
+    {% if is_incremental() %}
+        AND (
+            source.retrieved_at > (
+                SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
+                FROM {{ this }}
+            )
+            OR NOT EXISTS (
+                SELECT 1
+                FROM {{ this }} AS current_candidate
+                WHERE current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
 ),
 
 ranked AS (
@@ -16,7 +43,8 @@ ranked AS (
                 , source_record_index DESC
         ) AS page_result_rank
     FROM source_page_results
-    WHERE candidate_id IS NOT NULL
+    INNER JOIN changed_candidates
+        USING (candidate_id)
 ),
 
 final AS (
@@ -55,6 +83,8 @@ final AS (
         , extraction_run_id AS latest_extraction_run_id
         , source_record_index AS latest_extraction_source_record_index
         , source_artifact_sha256 AS latest_extraction_artifact_sha256
+        , retrieved_at AS source_updated_at
+        , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
     FROM ranked
     WHERE page_result_rank = 1
 )

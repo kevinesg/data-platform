@@ -1,3 +1,12 @@
+{{
+    config(
+        materialized="incremental",
+        incremental_strategy="merge",
+        unique_key="candidate_id",
+        on_schema_change="append_new_columns"
+    )
+}}
+
 WITH selected_job_urls AS (
     SELECT *
     FROM {{ ref('int_wremotely__latest_selected_job_urls') }}
@@ -374,5 +383,19 @@ final AS (
         ON c.candidate_id = ce.candidate_id
 )
 
-SELECT *
+SELECT
+    *
+    , latest_observed_at AS source_updated_at
+    , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
 FROM final
+{% if is_incremental() %}
+WHERE latest_observed_at > (
+    SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
+    FROM {{ this }}
+)
+    OR NOT EXISTS (
+        SELECT 1
+        FROM {{ this }} AS current_candidate
+        WHERE current_candidate.candidate_id = final.candidate_id
+    )
+{% endif %}

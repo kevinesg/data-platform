@@ -12,12 +12,23 @@ employment type, declared language, and source validity timestamps. The private
 publication gate applies current hold decisions after dbt tests this relation.
 Closed jobs remain in the relation as `is_deleted = true` tombstones so a
 publisher can update an existing serving row instead of inferring deletion from
-absence. `_updated_at` is the latest pipeline observation timestamp. Explicit
+absence. `source_updated_at` is the latest relevant pipeline event.
+`dbt_updated_at` is one stable dbt run timestamp assigned to rows selected by
+the incremental merge, and `_updated_at` remains its current-publication
+compatibility alias. Explicit
 closed-page evidence deletes immediately; terminal HTTP evidence requires two
 consecutive lifecycle checks.
 `publication_hold_content_sha256` hashes policy-relevant job content separately
 from `serving_row_sha256`, so lifecycle-only `_updated_at` changes do not force
 private model reevaluation.
+
+`wremotely__serving_jobs` is incremental by `job_id`. The first deployment of
+this contract must use `--full-refresh` because the existing table does not have
+the new source/timestamp/facet columns. A full refresh assigns the current dbt
+run timestamp to every row, deliberately making the complete state eligible for
+PostgreSQL reingestion. Later normal builds merge only new jobs or jobs whose
+`source_updated_at` advanced. Taxonomy or transformation changes that must
+reprocess unchanged source rows also require an explicit full refresh.
 
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a
@@ -63,3 +74,17 @@ uv run dbt build \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select $WREMOTELY_DBT_SELECTOR
 ```
+
+For the one-time migration to the incremental search-facet contract, use the
+same selector with `--full-refresh` before allowing a normal Airflow dbt build:
+
+```bash
+uv run dbt build \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --full-refresh \
+  --select $WREMOTELY_DBT_SELECTOR
+```
+
+Run the ordinary build once afterward. With no newer source rows, the existing
+serving-job `dbt_updated_at` values must remain unchanged.
