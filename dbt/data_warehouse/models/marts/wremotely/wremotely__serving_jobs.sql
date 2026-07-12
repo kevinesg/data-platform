@@ -13,6 +13,8 @@ prepared AS (
         , title
         , company_name
         , company_id
+        , company_identity_basis
+        , company_identity_source_domain
         , location_text
         , source_publication_at
         , source_valid_through_at
@@ -37,8 +39,32 @@ prepared AS (
         , lifecycle_status
         , lifecycle_checked_at
         , has_lifecycle_recheck
+        , is_deleted
+        , _updated_at
         , public_snippet
     FROM publishable_job_facts
+),
+
+content_hashed AS (
+    SELECT
+        *
+        , TO_HEX(SHA256(TO_JSON_STRING(STRUCT(
+            title
+            , location_text
+            , remote_scope
+            , raw_work_arrangement
+            , country_eligibility_scope
+            , eligible_country_codes
+            , excluded_country_codes
+            , included_country_group_codes
+            , excluded_country_group_codes
+            , job_description
+            , base_salary_json
+            , estimated_salary_json
+            , employment_type
+            , declared_language_tag
+        )))) AS publication_hold_content_sha256
+    FROM prepared
 ),
 
 final AS (
@@ -51,6 +77,8 @@ final AS (
             , title
             , company_name
             , company_id
+            , company_identity_basis
+            , company_identity_source_domain
             , location_text
             , source_publication_at
             , source_valid_through_at
@@ -75,9 +103,12 @@ final AS (
             , lifecycle_status
             , lifecycle_checked_at
             , has_lifecycle_recheck
+            , is_deleted
+            , _updated_at
             , public_snippet
+            , publication_hold_content_sha256
         )))) AS serving_row_sha256
-    FROM prepared
+    FROM content_hashed
 )
 
 SELECT *

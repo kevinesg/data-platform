@@ -1,9 +1,4 @@
-WITH discovery_candidates AS (
-    SELECT *
-    FROM {{ ref('int_wremotely__latest_discovery_candidates') }}
-),
-
-selected_job_urls AS (
+WITH selected_job_urls AS (
     SELECT *
     FROM {{ ref('int_wremotely__latest_selected_job_urls') }}
 ),
@@ -14,11 +9,6 @@ job_facts AS (
 ),
 
 candidate_keys AS (
-    SELECT candidate_id
-    FROM discovery_candidates
-
-    UNION DISTINCT
-
     SELECT candidate_id
     FROM selected_job_urls
 
@@ -31,29 +21,18 @@ candidate_keys AS (
 candidate_base AS (
     SELECT
         k.candidate_id
-        , COALESCE(jf.url, s.url, c.url) AS url
+        , COALESCE(jf.url, s.url) AS url
         , COALESCE(
             NULLIF(TRIM(jf.latest_job_fact_raw_title), '')
-            , NULLIF(TRIM(c.title), '')
             , NULLIF(TRIM(s.source_link_text), '')
         ) AS title
-        , COALESCE(
-            NULLIF(TRIM(jf.latest_job_fact_raw_company_name), '')
-            , NULLIF(TRIM(c.company_name), '')
-        ) AS company_name
-        , COALESCE(
-            NULLIF(TRIM(c.candidate_required_location), '')
-            , NULLIF(TRIM(jf.latest_job_fact_raw_job_location_text), '')
-        ) AS candidate_required_location
-        , COALESCE(jf.latest_job_fact_raw_date_posted_at, c.publication_at) AS publication_at
-        , c.attribution_name
-        , c.attribution_url
-        , c.snippet
-        , c.discoveries_json
-        , c.latest_discovery_stage_run_id
-        , c.latest_discovery_run_id
-        , c.latest_discovery_source_record_index
-        , c.latest_discovery_artifact_sha256
+        , NULLIF(TRIM(jf.latest_job_fact_raw_company_name), '') AS company_name
+        , NULLIF(TRIM(jf.latest_job_fact_raw_job_location_text), '')
+            AS candidate_required_location
+        , jf.latest_job_fact_raw_date_posted_at AS publication_at
+        , s.source_domain AS attribution_name
+        , s.source_url AS attribution_url
+        , s.source_link_text AS snippet
         , s.normalized_url AS selected_normalized_url
         , s.source_job_url_id AS selected_source_job_url_id
         , s.source_candidate_id AS selected_source_candidate_id
@@ -140,8 +119,6 @@ candidate_base AS (
         , jf.latest_job_fact_source_record_index
         , jf.latest_job_fact_artifact_sha256
     FROM candidate_keys AS k
-    LEFT JOIN discovery_candidates AS c
-        ON k.candidate_id = c.candidate_id
     LEFT JOIN selected_job_urls AS s
         ON k.candidate_id = s.candidate_id
     LEFT JOIN job_facts AS jf
@@ -179,11 +156,6 @@ final AS (
         , c.attribution_name
         , c.attribution_url
         , c.snippet
-        , c.discoveries_json
-        , c.latest_discovery_stage_run_id
-        , c.latest_discovery_run_id
-        , c.latest_discovery_source_record_index
-        , c.latest_discovery_artifact_sha256
         , c.selected_normalized_url
         , c.selected_source_job_url_id
         , c.selected_source_candidate_id
@@ -336,6 +308,7 @@ final AS (
         , lr.latest_lifecycle_checker_version
         , lr.latest_lifecycle_page_status
         , lr.latest_lifecycle_status
+        , lr.previous_lifecycle_status
         , lr.latest_lifecycle_signal
         , lr.latest_lifecycle_http_status
         , lr.latest_lifecycle_final_url

@@ -1,23 +1,6 @@
 version: 2
 
 models:
-  - name: int_wremotely__latest_discovery_candidates
-    description: Latest discovered candidate row for each candidate_id.
-    columns:
-      - name: candidate_id
-        data_tests:
-          - unique
-          - not_null
-      - name: url
-        data_tests:
-          - not_null
-      - name: latest_discovery_stage_run_id
-        data_tests:
-          - not_null
-      - name: latest_discovery_run_id
-        data_tests:
-          - not_null
-
   - name: int_wremotely__latest_selected_job_urls
     description: Latest selected job URL row for each candidate_id.
     columns:
@@ -159,6 +142,8 @@ models:
           - accepted_values:
               arguments:
                 values: ['CLOSED', 'REACHABLE', 'TERMINAL', 'UNKNOWN']
+      - name: previous_lifecycle_status
+        description: Prior lifecycle result used to require repeated terminal evidence.
       - name: latest_lifecycle_signal
         data_tests:
           - not_null
@@ -291,8 +276,8 @@ models:
 
   - name: int_wremotely__publishable_job_facts
     description: >
-      Current public-eligible job facts prepared for serving marts, including
-      conservative company identity fields when source evidence is sufficient.
+      Current job facts eligible for the tested pre-publication candidate set.
+      Private publication holds are applied only after dbt finishes.
     columns:
       - name: job_id
         data_tests:

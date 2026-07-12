@@ -9,6 +9,9 @@ from pathlib import Path
 ENV_EXAMPLE_FILE = Path(__file__).resolve().with_name(".env.example")
 PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
 FERNET_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}=$")
+SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
+BIGQUERY_DATASET_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
+PUBSUB_TOPIC_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
 
 
 def main() -> int:
@@ -82,9 +85,16 @@ def read_env_file(env_file: Path) -> dict[str, str]:
 
 
 def validate_values(values: dict[str, str]) -> str | None:
-    for name in ("AIRFLOW_UID", "DOCKER_GID", "AIRFLOW_API_PORT"):
+    for name in ("AIRFLOW_UID", "AIRFLOW_API_PORT"):
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
+
+    if not is_non_negative_integer(values["DOCKER_GID"]):
+        return "DOCKER_GID must be a non-negative integer"
+
+    for name, value in values.items():
+        if value.startswith("change-me") or "<" in value or ">" in value:
+            return f"{name} must be replaced"
 
     for name in ("POSTGRES_PASSWORD", "AIRFLOW_SECRET_KEY", "AIRFLOW_JWT_SECRET"):
         if values[name].startswith("change-me"):
@@ -94,6 +104,73 @@ def validate_values(values: dict[str, str]) -> str | None:
         return "AIRFLOW_FERNET_KEY must be replaced"
     if not FERNET_KEY_PATTERN.fullmatch(values["AIRFLOW_FERNET_KEY"]):
         return "AIRFLOW_FERNET_KEY must be a Fernet-formatted 32-byte urlsafe base64 key"
+
+    for name in ("RAW_DATASET", "WREMOTELY_HANDOFF_DATASET", "DBT_DATASET"):
+        if not BIGQUERY_DATASET_ID_PATTERN.fullmatch(values[name]):
+            return f"{name} must be a valid BigQuery dataset ID"
+
+    publication_topic = values["WREMOTELY_PUBLICATION_TOPIC"]
+    if (
+        not PUBSUB_TOPIC_ID_PATTERN.fullmatch(publication_topic)
+        or publication_topic.lower().startswith("goog")
+    ):
+        return "WREMOTELY_PUBLICATION_TOPIC must be a valid Pub/Sub topic ID"
+
+    for name in (
+        "DBT_GOOGLE_APPLICATION_CREDENTIALS",
+        "WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS",
+        "WREMOTELY_APPROVED_SOURCES_FILE",
+        "WREMOTELY_PUBLICATION_HOLD_POLICY",
+    ):
+        error = validate_existing_file_path(name, values[name])
+        if error:
+            return error
+
+    error = validate_directory_path(
+        "WREMOTELY_ETL_ARTIFACTS_DIR",
+        values["WREMOTELY_ETL_ARTIFACTS_DIR"],
+    )
+    if error:
+        return error
+
+    for name in (
+        "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT",
+        "WREMOTELY_EXTRACT_WORKER_COUNT",
+        "WREMOTELY_PLATFORM_WORKER_COUNT",
+        "WREMOTELY_RECHECK_LIMIT",
+        "WREMOTELY_PAGE_MAX_BYTES",
+        "WREMOTELY_DOMAIN_FAILURE_LIMIT",
+        "WREMOTELY_CRAWL4AI_MIN_TEXT_CHARS",
+        "WREMOTELY_STAGE_CHUNK_ROW_COUNT",
+        "WREMOTELY_KNOWN_URL_LOOKBACK_DAYS",
+    ):
+        if not is_positive_integer(values[name]):
+            return f"{name} must be a positive integer"
+
+    if not is_non_negative_integer(values["WREMOTELY_RECHECK_MIN_AGE_HOURS"]):
+        return "WREMOTELY_RECHECK_MIN_AGE_HOURS must be a non-negative integer"
+
+    if int(values["WREMOTELY_SOURCE_CRAWL_WORKER_COUNT"]) > 32:
+        return "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT must be no greater than 32"
+    if int(values["WREMOTELY_PLATFORM_WORKER_COUNT"]) > 8:
+        return "WREMOTELY_PLATFORM_WORKER_COUNT must be no greater than 8"
+    if int(values["WREMOTELY_RECHECK_LIMIT"]) > 1000:
+        return "WREMOTELY_RECHECK_LIMIT must be no greater than 1000"
+
+    for name in ("WREMOTELY_DOMAIN_DELAY_SECONDS", "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"):
+        if not is_non_negative_number(values[name]):
+            return f"{name} must be a non-negative number"
+
+    if values["WREMOTELY_CRAWL4AI_FALLBACK"] not in {"auto", "disabled"}:
+        return "WREMOTELY_CRAWL4AI_FALLBACK must be auto or disabled"
+    if values["WREMOTELY_LOCAL_LLM_RUNTIME"] not in {"disabled", "ollama"}:
+        return "WREMOTELY_LOCAL_LLM_RUNTIME must be disabled or ollama"
+    if values["WREMOTELY_LOCAL_LLM_RUNTIME"] == "ollama" and not values[
+        "WREMOTELY_LOCAL_LLM_ENDPOINT"
+    ].startswith(("http://", "https://")):
+        return "WREMOTELY_LOCAL_LLM_ENDPOINT must be an HTTP URL"
+    if not SHA256_PATTERN.fullmatch(values["WREMOTELY_APPROVED_SOURCES_SHA256"]):
+        return "WREMOTELY_APPROVED_SOURCES_SHA256 must be a 64-character SHA-256 hex digest"
 
     return None
 
@@ -115,6 +192,38 @@ def is_positive_integer(value: str) -> bool:
         return int(value) > 0
     except ValueError:
         return False
+
+
+def is_non_negative_integer(value: str) -> bool:
+    try:
+        return int(value) >= 0
+    except ValueError:
+        return False
+
+
+def is_non_negative_number(value: str) -> bool:
+    try:
+        return float(value) >= 0
+    except ValueError:
+        return False
+
+
+def validate_existing_file_path(name: str, value: str) -> str | None:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return f"{name} must be an absolute path"
+    if not path.is_file():
+        return f"{name} must point to an existing file"
+    return None
+
+
+def validate_directory_path(name: str, value: str) -> str | None:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return f"{name} must be an absolute path"
+    if not path.is_dir():
+        return f"{name} must point to an existing directory"
+    return None
 
 
 if __name__ == "__main__":

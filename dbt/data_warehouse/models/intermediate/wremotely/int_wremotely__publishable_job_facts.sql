@@ -13,7 +13,6 @@ publishable_jobs AS (
             validated_country_eligibility_scope != 'SPECIFIC'
             OR ARRAY_LENGTH(IFNULL(eligible_country_codes, ARRAY<STRING>[])) > 0
         )
-        AND COALESCE(latest_lifecycle_status, 'REACHABLE') NOT IN ('CLOSED', 'TERMINAL')
         AND NULLIF(TRIM(title), '') IS NOT NULL
         AND (
             latest_job_fact_declared_language_tag IS NULL
@@ -57,6 +56,15 @@ prepared AS (
         , latest_lifecycle_status AS lifecycle_status
         , latest_lifecycle_checked_at AS lifecycle_checked_at
         , has_lifecycle_recheck
+        , COALESCE(
+            latest_lifecycle_status = 'CLOSED'
+            OR (
+                latest_lifecycle_status = 'TERMINAL'
+                AND previous_lifecycle_status = 'TERMINAL'
+            )
+            , FALSE
+        ) AS is_deleted
+        , latest_observed_at AS _updated_at
         , LEFT(snippet, 1000) AS public_snippet
     FROM publishable_jobs
 ),
@@ -123,6 +131,8 @@ final AS (
         , lifecycle_status
         , lifecycle_checked_at
         , has_lifecycle_recheck
+        , is_deleted
+        , _updated_at
         , public_snippet
     FROM company_keyed
 )

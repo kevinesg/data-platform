@@ -23,27 +23,18 @@ the raw facts are parseable.
 
 ## Environment variables
 
-Use the normal dbt environment from `dbt/README.md`, plus the wremotely raw
-dataset:
-
-```bash
-export WREMOTELY_RAW_DATASET="wremotely_raw_dev"
-```
-
-For QA and prod, use the environment-specific raw dataset created for
-`wremotely-etl`, for example `wremotely_raw_qa` or `wremotely_raw_prod`.
-
-If `WREMOTELY_RAW_DATASET` is unset, dbt falls back to `RAW_DATASET` so CI can
-parse the project without a live wremotely warehouse.
+Use the normal dbt environment from `dbt/README.md`. wremotely raw tables live
+in the same environment raw dataset as the other raw tables, configured through
+`RAW_DATASET`.
 
 ## Grant dbt read access to the raw tables
 
-Run this as a platform maintainer after the `wremotely-etl` raw dataset exists.
+Run this as a platform maintainer after the raw dataset exists.
 It is a mutating warehouse permission change.
 
 ```bash
 test -n "$PROJECT_ID"
-test -n "$WREMOTELY_RAW_DATASET"
+test -n "$RAW_DATASET"
 test -n "$DBT_SERVICE_ACCOUNT_EMAIL"
 
 bq query \
@@ -51,7 +42,7 @@ bq query \
   --location="$BIGQUERY_LOCATION" \
   --use_legacy_sql=false \
   "GRANT \`roles/bigquery.dataViewer\`
-   ON SCHEMA \`$PROJECT_ID\`.$WREMOTELY_RAW_DATASET
+   ON SCHEMA \`$PROJECT_ID\`.$RAW_DATASET
    TO \"serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL\""
 ```
 
@@ -59,10 +50,6 @@ Verify the raw tables are visible without printing row payloads:
 
 ```bash
 for TABLE in \
-  wremotely__discovery_source_responses \
-  wremotely__discovery_candidates \
-  wremotely__source_crawl_pages \
-  wremotely__source_crawl_job_urls \
   wremotely__job_url_selection_results \
   wremotely__selected_job_urls \
   wremotely__extraction_page_results \
@@ -75,7 +62,7 @@ for TABLE in \
     --location="$BIGQUERY_LOCATION" \
     --use_legacy_sql=false \
     "SELECT '$TABLE' AS table_name, COUNT(*) AS row_count
-     FROM \`$PROJECT_ID.$WREMOTELY_RAW_DATASET.$TABLE\`"
+     FROM \`$PROJECT_ID.$RAW_DATASET.$TABLE\`"
 done
 ```
 
@@ -94,7 +81,6 @@ set +a
 
 export DATA_PLATFORM_DBT_PROFILES_DIR="${DATA_PLATFORM_DBT_PROFILES_DIR:-$DATA_PLATFORM_SECRETS_DIR/dbt}"
 export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
-export WREMOTELY_RAW_DATASET="${WREMOTELY_RAW_DATASET:-wremotely_raw_dev}"
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
 uv run dbt parse \
