@@ -21,14 +21,20 @@ SELECTION_RUN_ID = BASE_RUN_ID
 EXTRACTION_RUN_ID = f"{BASE_RUN_ID}-extract"
 JOB_FACTS_RUN_ID = f"{BASE_RUN_ID}-job-facts"
 CLASSIFICATION_RUN_ID = f"{BASE_RUN_ID}-classify"
+PREPARE_RECHECK_RUN_ID = f"{BASE_RUN_ID}-lifecycle-prepare"
+RECHECK_RUN_ID = f"{BASE_RUN_ID}-lifecycle-recheck"
+RECHECK_STAGE_RUN_ID = f"{BASE_RUN_ID}-lifecycle-stage"
 PUBLICATION_HOLD_RUN_ID = f"{BASE_RUN_ID}-publication-hold"
+SERVING_SNAPSHOT_RUN_ID = f"{BASE_RUN_ID}-serving-snapshot"
 EVALUATION_RUN_ID = f"{BASE_RUN_ID}-evaluate"
 STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
 
 DAG_RUN_TIMEOUT = timedelta(hours=24)
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
+CRAWL_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
+RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
@@ -63,6 +69,12 @@ def dag_schedule(environment: str, schedule_env_name: str) -> str | None:
     return value
 
 
+def dbt_schema_name(default_schema: str, custom_schema: str, environment: str) -> str:
+    if environment in {"qa", "prod"}:
+        return custom_schema
+    return f"{default_schema}_{custom_schema}"
+
+
 def docker_task(
     task_id: str,
     image: str,
@@ -80,7 +92,7 @@ def docker_task(
         mounts=mounts,
         docker_url="unix://var/run/docker.sock",
         mount_tmp_dir=False,
-        auto_remove="success",
+        auto_remove="force",
         force_pull=False,
         execution_timeout=execution_timeout,
         retries=TASK_RETRIES,
@@ -98,12 +110,19 @@ ENVIRONMENT = optional_env("ENVIRONMENT", "dev")
 WREMOTELY_ETL_IMAGE = required_env("DATA_PLATFORM_WREMOTELY_ETL_IMAGE")
 DBT_IMAGE = required_env("DATA_PLATFORM_DBT_IMAGE")
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
+WREMOTELY_DBT_MART_DATASET = dbt_schema_name(
+    required_env("DBT_DATASET"),
+    "mart_wremotely",
+    ENVIRONMENT,
+)
 
 wremotely_environment = {
     "ENVIRONMENT": ENVIRONMENT,
     "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
     "GOOGLE_CLOUD_PROJECT": required_env("PROJECT_ID"),
     "RAW_DATASET": required_env("RAW_DATASET"),
+    "DBT_DATASET": required_env("DBT_DATASET"),
+    "WREMOTELY_HANDOFF_DATASET": required_env("WREMOTELY_HANDOFF_DATASET"),
     "WREMOTELY_GCS_BUCKET": required_env("WREMOTELY_GCS_BUCKET"),
     "WREMOTELY_GCS_PREFIX": required_env("WREMOTELY_GCS_PREFIX"),
     "WREMOTELY_BIGQUERY_LOCATION": required_env("WREMOTELY_BIGQUERY_LOCATION"),
@@ -189,16 +208,41 @@ with DAG(
             "0",
             "--source-crawl-max-job-urls",
             "0",
-            "--source-crawl-shard-count",
-            optional_env("WREMOTELY_SOURCE_CRAWL_SHARD_COUNT", "1"),
-            "--source-crawl-shard-index",
-            optional_env("WREMOTELY_SOURCE_CRAWL_SHARD_INDEX", "0"),
+            "--source-crawl-worker-count",
+            optional_env("WREMOTELY_SOURCE_CRAWL_WORKER_COUNT", "6"),
+            "--platform-worker-count",
+            optional_env("WREMOTELY_PLATFORM_WORKER_COUNT", "2"),
+            "--candidate-sample-seed",
+            SOURCE_CRAWL_RUN_ID,
             "--page-max-bytes",
             optional_env("WREMOTELY_PAGE_MAX_BYTES", "2097152"),
             "--domain-delay-seconds",
             optional_env("WREMOTELY_DOMAIN_DELAY_SECONDS", "1"),
             "--domain-failure-limit",
             optional_env("WREMOTELY_DOMAIN_FAILURE_LIMIT", "5"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        execution_timeout=CRAWL_TASK_EXECUTION_TIMEOUT,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    publish_handoff = docker_task(
+        task_id="publish_handoff",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "publish-handoff",
+            "--run-id",
+            SOURCE_CRAWL_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--handoff-dataset",
+            required_env("WREMOTELY_HANDOFF_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
         ),
         environment=wremotely_environment,
         mounts=wremotely_mounts,
@@ -215,8 +259,14 @@ with DAG(
             SELECTION_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--source-crawl-run-id",
-            SOURCE_CRAWL_RUN_ID,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--raw-dataset",
+            required_env("RAW_DATASET"),
+            "--handoff-dataset",
+            required_env("WREMOTELY_HANDOFF_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
             "--select-limit",
             "0",
             "--known-url-lookback-days",
@@ -243,6 +293,8 @@ with DAG(
             "0",
             "--extract-worker-count",
             optional_env("WREMOTELY_EXTRACT_WORKER_COUNT", "4"),
+            "--platform-worker-count",
+            optional_env("WREMOTELY_PLATFORM_WORKER_COUNT", "2"),
             "--candidate-selection",
             "domain-balanced",
             "--candidate-sample-seed",
@@ -306,6 +358,129 @@ with DAG(
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
     )
 
+    prepare_recheck = docker_task(
+        task_id="prepare_recheck",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "prepare-recheck-from-warehouse",
+            "--run-id",
+            PREPARE_RECHECK_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--raw-dataset",
+            required_env("RAW_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
+            "--recheck-limit",
+            optional_env("WREMOTELY_RECHECK_LIMIT", "100"),
+            "--recheck-min-age-hours",
+            optional_env("WREMOTELY_RECHECK_MIN_AGE_HOURS", "72"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    recheck = docker_task(
+        task_id="recheck",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "recheck",
+            "--run-id",
+            RECHECK_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--recheck-input",
+            (
+                f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/{PREPARE_RECHECK_RUN_ID}/"
+                "prepare_recheck/recheck_candidates.jsonl"
+            ),
+            "--recheck-limit",
+            optional_env("WREMOTELY_RECHECK_LIMIT", "100"),
+            "--allow-empty-recheck-input",
+            "--page-max-bytes",
+            optional_env("WREMOTELY_PAGE_MAX_BYTES", "2097152"),
+            "--domain-delay-seconds",
+            optional_env("WREMOTELY_DOMAIN_DELAY_SECONDS", "1"),
+            "--domain-failure-limit",
+            optional_env("WREMOTELY_DOMAIN_FAILURE_LIMIT", "5"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        execution_timeout=RECHECK_TASK_EXECUTION_TIMEOUT,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    stage_recheck = docker_task(
+        task_id="stage_recheck",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "stage",
+            "--stage-kind",
+            "recheck",
+            "--run-id",
+            RECHECK_STAGE_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--recheck-run-id",
+            RECHECK_RUN_ID,
+            "--stage-chunk-row-count",
+            optional_env("WREMOTELY_STAGE_CHUNK_ROW_COUNT", "5000"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    upload_recheck = docker_task(
+        task_id="upload_recheck",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "upload",
+            "--run-id",
+            RECHECK_STAGE_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--gcs-bucket",
+            required_env("WREMOTELY_GCS_BUCKET"),
+            "--gcs-prefix",
+            required_env("WREMOTELY_GCS_PREFIX"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    load_recheck = docker_task(
+        task_id="load_recheck",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "load",
+            "--run-id",
+            RECHECK_STAGE_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--raw-dataset",
+            required_env("RAW_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
     publication_hold = docker_task(
         task_id="publication_hold",
         image=WREMOTELY_ETL_IMAGE,
@@ -316,10 +491,14 @@ with DAG(
             PUBLICATION_HOLD_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--classification-run-id",
-            CLASSIFICATION_RUN_ID,
-            "--extraction-run-id",
-            EXTRACTION_RUN_ID,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--dbt-dataset",
+            WREMOTELY_DBT_MART_DATASET,
+            "--handoff-dataset",
+            required_env("WREMOTELY_HANDOFF_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
             "--publication-hold-policy",
             PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
             "--local-llm-runtime",
@@ -347,8 +526,6 @@ with DAG(
             EVALUATION_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--source-crawl-run-id",
-            SOURCE_CRAWL_RUN_ID,
             "--selection-run-id",
             SELECTION_RUN_ID,
             "--extraction-run-id",
@@ -357,8 +534,6 @@ with DAG(
             JOB_FACTS_RUN_ID,
             "--classification-run-id",
             CLASSIFICATION_RUN_ID,
-            "--publication-hold-run-id",
-            PUBLICATION_HOLD_RUN_ID,
         ),
         environment=wremotely_environment,
         mounts=wremotely_mounts,
@@ -375,8 +550,6 @@ with DAG(
             STAGE_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--source-crawl-run-id",
-            SOURCE_CRAWL_RUN_ID,
             "--selection-run-id",
             SELECTION_RUN_ID,
             "--extraction-run-id",
@@ -385,8 +558,6 @@ with DAG(
             JOB_FACTS_RUN_ID,
             "--classification-run-id",
             CLASSIFICATION_RUN_ID,
-            "--publication-hold-run-id",
-            PUBLICATION_HOLD_RUN_ID,
             "--stage-kind",
             "core",
             "--stage-chunk-row-count",
@@ -462,16 +633,53 @@ with DAG(
         execution_timeout=DBT_TASK_EXECUTION_TIMEOUT,
     )
 
-    (
+    publish_serving_snapshot = docker_task(
+        task_id="publish_serving_snapshot",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "publish-serving-snapshot",
+            "--run-id",
+            SERVING_SNAPSHOT_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--dbt-dataset",
+            WREMOTELY_DBT_MART_DATASET,
+            "--handoff-dataset",
+            required_env("WREMOTELY_HANDOFF_DATASET"),
+            "--bigquery-location",
+            required_env("WREMOTELY_BIGQUERY_LOCATION"),
+        ),
+        environment=wremotely_environment,
+        mounts=wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+    )
+
+    core_load_chain = (
         crawl
+        >> publish_handoff
         >> select
         >> extract
         >> job_facts
         >> classify
-        >> publication_hold
         >> evaluate
         >> stage
         >> upload
         >> load
+    )
+    lifecycle_load_chain = (
+        core_load_chain
+        >> prepare_recheck
+        >> recheck
+        >> stage_recheck
+        >> upload_recheck
+        >> load_recheck
+    )
+    (
+        lifecycle_load_chain
         >> dbt_build
+        >> publication_hold
+        >> publish_serving_snapshot
     )

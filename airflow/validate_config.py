@@ -10,6 +10,7 @@ ENV_EXAMPLE_FILE = Path(__file__).resolve().with_name(".env.example")
 PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
 FERNET_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}=$")
 SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
+BIGQUERY_DATASET_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
 
 
 def main() -> int:
@@ -103,6 +104,10 @@ def validate_values(values: dict[str, str]) -> str | None:
     if not FERNET_KEY_PATTERN.fullmatch(values["AIRFLOW_FERNET_KEY"]):
         return "AIRFLOW_FERNET_KEY must be a Fernet-formatted 32-byte urlsafe base64 key"
 
+    for name in ("RAW_DATASET", "WREMOTELY_HANDOFF_DATASET", "DBT_DATASET"):
+        if not BIGQUERY_DATASET_ID_PATTERN.fullmatch(values[name]):
+            return f"{name} must be a valid BigQuery dataset ID"
+
     for name in (
         "DBT_GOOGLE_APPLICATION_CREDENTIALS",
         "WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS",
@@ -121,23 +126,28 @@ def validate_values(values: dict[str, str]) -> str | None:
         return error
 
     for name in (
+        "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT",
         "WREMOTELY_EXTRACT_WORKER_COUNT",
+        "WREMOTELY_PLATFORM_WORKER_COUNT",
+        "WREMOTELY_RECHECK_LIMIT",
         "WREMOTELY_PAGE_MAX_BYTES",
         "WREMOTELY_DOMAIN_FAILURE_LIMIT",
         "WREMOTELY_CRAWL4AI_MIN_TEXT_CHARS",
         "WREMOTELY_STAGE_CHUNK_ROW_COUNT",
         "WREMOTELY_KNOWN_URL_LOOKBACK_DAYS",
-        "WREMOTELY_SOURCE_CRAWL_SHARD_COUNT",
     ):
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
 
-    if not is_non_negative_integer(values["WREMOTELY_SOURCE_CRAWL_SHARD_INDEX"]):
-        return "WREMOTELY_SOURCE_CRAWL_SHARD_INDEX must be a non-negative integer"
-    if int(values["WREMOTELY_SOURCE_CRAWL_SHARD_INDEX"]) >= int(
-        values["WREMOTELY_SOURCE_CRAWL_SHARD_COUNT"]
-    ):
-        return "WREMOTELY_SOURCE_CRAWL_SHARD_INDEX must be less than WREMOTELY_SOURCE_CRAWL_SHARD_COUNT"
+    if not is_non_negative_integer(values["WREMOTELY_RECHECK_MIN_AGE_HOURS"]):
+        return "WREMOTELY_RECHECK_MIN_AGE_HOURS must be a non-negative integer"
+
+    if int(values["WREMOTELY_SOURCE_CRAWL_WORKER_COUNT"]) > 32:
+        return "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT must be no greater than 32"
+    if int(values["WREMOTELY_PLATFORM_WORKER_COUNT"]) > 8:
+        return "WREMOTELY_PLATFORM_WORKER_COUNT must be no greater than 8"
+    if int(values["WREMOTELY_RECHECK_LIMIT"]) > 1000:
+        return "WREMOTELY_RECHECK_LIMIT must be no greater than 1000"
 
     for name in ("WREMOTELY_DOMAIN_DELAY_SECONDS", "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"):
         if not is_non_negative_number(values[name]):
