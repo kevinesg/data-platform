@@ -15,6 +15,15 @@ ranked AS (
                 , recheck_run_id DESC
                 , source_record_index DESC
         ) AS lifecycle_recheck_rank
+        , LAG(lifecycle_status) OVER (
+            PARTITION BY candidate_id
+            ORDER BY
+                CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END DESC
+                , checked_at
+                , stage_run_id
+                , recheck_run_id
+                , source_record_index
+        ) AS previous_lifecycle_status
     FROM source_lifecycle_results
     WHERE candidate_id IS NOT NULL
 ),
@@ -28,6 +37,7 @@ final AS (
         , checker_version AS latest_lifecycle_checker_version
         , page_status AS latest_lifecycle_page_status
         , lifecycle_status AS latest_lifecycle_status
+        , previous_lifecycle_status AS previous_lifecycle_status
         , lifecycle_signal AS latest_lifecycle_signal
         , http_status AS latest_lifecycle_http_status
         , final_url AS latest_lifecycle_final_url

@@ -50,17 +50,12 @@ Verify the raw tables are visible without printing row payloads:
 
 ```bash
 for TABLE in \
-  wremotely__discovery_source_responses \
-  wremotely__discovery_candidates \
-  wremotely__source_crawl_pages \
-  wremotely__source_crawl_job_urls \
   wremotely__job_url_selection_results \
   wremotely__selected_job_urls \
   wremotely__extraction_page_results \
   wremotely__job_facts \
   wremotely__classification_classifications \
   wremotely__country_eligibility_extractions \
-  wremotely__publication_holds \
   wremotely__recheck_lifecycle_results; do
   bq query \
     --project_id="$PROJECT_ID" \

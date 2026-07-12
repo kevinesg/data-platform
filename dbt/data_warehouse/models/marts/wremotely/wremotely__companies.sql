@@ -9,6 +9,7 @@ company_job_facts AS (
     SELECT *
     FROM publishable_job_facts
     WHERE company_id IS NOT NULL
+        AND NOT is_deleted
 ),
 
 aggregated AS (

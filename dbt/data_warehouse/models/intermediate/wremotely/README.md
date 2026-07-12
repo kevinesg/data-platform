@@ -4,13 +4,11 @@ This directory turns staged wremotely run history into current candidate facts.
 
 The models keep one latest record per `candidate_id` for each fact type:
 
-- discovery candidate
 - selected job URL
 - extraction page result
 - extracted job facts
 - classification
 - country eligibility extraction
-- pre-publication hold decision
 - lifecycle recheck
 
 `int_wremotely__current_candidate_facts` joins those latest records together.
@@ -32,15 +30,15 @@ exclusions rather than expanded to every country.
 `int_wremotely__job_country_eligibility` is the compact bridge for explicit
 eligible countries and explicit exclusions.
 
-`int_wremotely__publishable_job_facts` applies the current public-serving
-eligibility rules once so downstream serving marts can share the same job grain.
+`int_wremotely__publishable_job_facts` applies the warehouse eligibility rules
+once so downstream candidate marts can share the same job grain.
+It retains lifecycle-closed rows with `is_deleted` and `_updated_at` metadata;
+it does not drop them from the current-state contract.
 It also derives nullable conservative company identity fields from source
 company name plus source domain. Known non-English rows are excluded from the
 serving set for MVP, while unknown-language rows remain eligible. Full job
-descriptions are passed through when available and are not truncated.
-Jobs must also have a current matching pre-publication release decision before
-they can enter this serving-prepared set. Held and review-held jobs stay visible
-in intermediate QA models but are excluded from serving marts.
+descriptions are passed through when available and are not truncated. Private
+publication holds are evaluated after this dbt graph passes its blocking tests.
 
 ## Validate
 

@@ -2,14 +2,22 @@
 
 This directory owns publication-oriented wremotely marts.
 
-`wremotely__serving_jobs` contains the bounded public-safe job rows that a
-publisher can copy into the serving store. It excludes raw artifacts, internal
+`wremotely__serving_jobs` contains the tested pre-publication job candidates.
+It excludes raw artifacts, internal
 page paths, evidence blobs, provider values, and classifier implementation
 details. Company links are nullable and appear only when dbt can derive a stable
 company identity from conservative source evidence. The serving contract includes
 full extracted job descriptions when available, salary payloads when available,
-employment type, declared language, and source validity timestamps. Jobs without
-a current matching pre-publication release decision are not included.
+employment type, declared language, and source validity timestamps. The private
+publication gate applies current hold decisions after dbt tests this relation.
+Closed jobs remain in the relation as `is_deleted = true` tombstones so a
+publisher can update an existing serving row instead of inferring deletion from
+absence. `_updated_at` is the latest pipeline observation timestamp. Explicit
+closed-page evidence deletes immediately; terminal HTTP evidence requires two
+consecutive lifecycle checks.
+`publication_hold_content_sha256` hashes policy-relevant job content separately
+from `serving_row_sha256`, so lifecycle-only `_updated_at` changes do not force
+private model reevaluation.
 
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a
@@ -21,11 +29,10 @@ explicit eligible countries and explicit exclusions. Global jobs stay compact on
 `wremotely__serving_jobs.country_eligibility_scope`; they are not exploded to
 one row per country.
 
-`wremotely__publication_manifest` summarizes the current serving snapshot for
+`wremotely__publication_manifest` summarizes the current candidate snapshot for
 jobs, companies, and country eligibility with a deterministic publication ID and
-checksum. Airflow must write the environment publication-control row only after
-dbt build and blocking tests succeed; this manifest is the dbt-modeled input to
-that later control row, not the Pub/Sub signal itself.
+checksum. Airflow writes the final versioned serving snapshot and ready control
+row only after dbt, publication hold, and their blocking checks succeed.
 
 ## Validate
 

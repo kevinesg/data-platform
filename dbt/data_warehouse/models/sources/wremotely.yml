@@ -7,9 +7,9 @@ sources:
     loader: wremotely-etl
     description: Raw wremotely run artifacts loaded by the private wremotely-etl runtime.
     tables:
-      - name: discovery_source_responses
-        identifier: wremotely__discovery_source_responses
-        description: Raw source responses staged from completed discovery runs.
+      - name: job_url_selection_results
+        identifier: wremotely__job_url_selection_results
+        description: Raw job URL selection decisions after dedupe and known-URL checks.
         columns: &wremotely_raw_envelope_columns
           - name: contract_version
             description: Raw table envelope contract version.
@@ -27,26 +27,6 @@ sources:
             description: One-based record index in the source artifact.
           - name: payload
             description: Source artifact row payload as JSON.
-
-      - name: discovery_candidates
-        identifier: wremotely__discovery_candidates
-        description: Raw deduplicated candidate URLs discovered by private ingestion.
-        columns: *wremotely_raw_envelope_columns
-
-      - name: source_crawl_pages
-        identifier: wremotely__source_crawl_pages
-        description: Raw source/listing page crawl outcomes staged from completed source crawl runs.
-        columns: *wremotely_raw_envelope_columns
-
-      - name: source_crawl_job_urls
-        identifier: wremotely__source_crawl_job_urls
-        description: Raw candidate job URLs found from approved source/listing pages.
-        columns: *wremotely_raw_envelope_columns
-
-      - name: job_url_selection_results
-        identifier: wremotely__job_url_selection_results
-        description: Raw job URL selection decisions after dedupe and known-URL checks.
-        columns: *wremotely_raw_envelope_columns
 
       - name: selected_job_urls
         identifier: wremotely__selected_job_urls
@@ -71,11 +51,6 @@ sources:
       - name: country_eligibility_extractions
         identifier: wremotely__country_eligibility_extractions
         description: Raw country and region eligibility evidence extracted from completed classification runs.
-        columns: *wremotely_raw_envelope_columns
-
-      - name: publication_holds
-        identifier: wremotely__publication_holds
-        description: Raw pre-publication hold decisions applied before serving publication.
         columns: *wremotely_raw_envelope_columns
 
       - name: recheck_lifecycle_results

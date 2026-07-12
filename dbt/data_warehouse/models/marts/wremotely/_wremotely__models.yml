@@ -2,7 +2,9 @@ version: 2
 
 models:
   - name: wremotely__serving_jobs
-    description: Public-safe publishable wremotely job rows for the serving store.
+    description: >
+      Tested pre-publication job candidate rows. The private publication gate
+      creates the versioned final serving snapshot after dbt finishes.
     columns:
       - name: job_id
         data_tests:
@@ -82,6 +84,22 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+      - name: is_deleted
+        description: True when explicit lifecycle evidence marks the retained job closed or terminal.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+      - name: _updated_at
+        description: Latest pipeline observation timestamp used for current-row propagation.
+        data_tests:
+          - not_null
+      - name: publication_hold_content_sha256
+        description: Hash of only policy-relevant content used to reuse private hold decisions.
+        data_tests:
+          - not_null
       - name: serving_row_sha256
         data_tests:
           - unique
@@ -149,7 +167,7 @@ models:
           - not_null
 
   - name: wremotely__publication_manifest
-    description: Deterministic manifest for the current wremotely serving snapshot.
+    description: Deterministic manifest for the tested pre-publication candidate snapshot.
     columns:
       - name: publication_id
         data_tests:
