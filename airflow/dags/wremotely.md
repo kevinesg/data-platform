@@ -85,11 +85,14 @@ export COMPLETED_PUBLICATION_HOLD_BACKUP="${COMPLETED_PUBLICATION_HOLD_DIR}.pre-
 
 test -d "$COMPLETED_PUBLICATION_HOLD_DIR"
 test ! -e "$COMPLETED_PUBLICATION_HOLD_BACKUP"
-mv -- "$COMPLETED_PUBLICATION_HOLD_DIR" "$COMPLETED_PUBLICATION_HOLD_BACKUP"
+sudo mv -- "$COMPLETED_PUBLICATION_HOLD_DIR" "$COMPLETED_PUBLICATION_HOLD_BACKUP"
 ```
 
 Use the Airflow run's logical date for `WREMOTELY_BASE_RUN_ID`, not the current
-wall-clock time. Keep the backup until end-to-end worker validation succeeds.
+wall-clock time. Airflow's rootless Docker container can create the run
+directory under a remapped host owner, so the host-side rename requires
+administrator permission even when the artifacts root belongs to the operator.
+Keep the backup until end-to-end worker validation succeeds.
 Then clear only `publication_hold`, `publish_serving_snapshot`, and
 `signal_publication` in that run, with upstream tasks unselected. The durable
 legacy BigQuery verdicts exclude all previously evaluated jobs, so the task
