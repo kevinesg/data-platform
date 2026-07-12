@@ -4,6 +4,8 @@ WITH publishable_jobs AS (
     SELECT
         job_id
         , country_eligibility_scope
+        , source_updated_at
+        , dbt_updated_at
     FROM {{ ref('wremotely__serving_jobs') }}
 ),
 
@@ -18,6 +20,8 @@ prepared AS (
         , jce.country_code
         , jce.eligibility_status
         , pj.country_eligibility_scope
+        , pj.source_updated_at
+        , pj.dbt_updated_at
     FROM job_country_eligibility AS jce
     INNER JOIN publishable_jobs AS pj
         ON jce.job_id = pj.job_id
@@ -31,6 +35,8 @@ final AS (
             , country_code
             , eligibility_status
             , country_eligibility_scope
+            , source_updated_at
+            , dbt_updated_at
         )))) AS job_country_eligibility_row_sha256
     FROM prepared
 )

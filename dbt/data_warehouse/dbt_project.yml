@@ -33,6 +33,11 @@ seeds:
           is_income_deduction: BOOLEAN
     wremotely:
       +schema: seed_wremotely
+      wremotely__search_tags:
+        +column_types:
+          tag_code: STRING
+          tag_label: STRING
+          match_pattern: STRING
       wremotely__countries:
         +column_types:
           country_code: STRING

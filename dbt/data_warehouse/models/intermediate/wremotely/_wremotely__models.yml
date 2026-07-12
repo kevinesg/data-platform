@@ -20,6 +20,12 @@ models:
       - name: latest_selection_run_id
         data_tests:
           - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        data_tests:
+          - not_null
 
   - name: int_wremotely__latest_extraction_page_results
     description: Latest page retrieval and parser result for each candidate_id.
@@ -41,6 +47,12 @@ models:
         data_tests:
           - not_null
       - name: latest_extraction_run_id
+        data_tests:
+          - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
         data_tests:
           - not_null
 
@@ -70,6 +82,12 @@ models:
         data_tests:
           - not_null
       - name: latest_job_facts_run_id
+        data_tests:
+          - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
         data_tests:
           - not_null
 
@@ -119,6 +137,12 @@ models:
       - name: latest_classification_run_id
         data_tests:
           - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        data_tests:
+          - not_null
 
   - name: int_wremotely__latest_lifecycle_rechecks
     description: Latest explicit lifecycle recheck result for each candidate_id.
@@ -151,6 +175,12 @@ models:
         data_tests:
           - not_null
       - name: latest_lifecycle_recheck_run_id
+        data_tests:
+          - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
         data_tests:
           - not_null
 
@@ -208,6 +238,12 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        data_tests:
+          - not_null
 
   - name: int_wremotely__country_eligibility_evidence
     description: >
@@ -354,3 +390,19 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+
+  - name: int_wremotely__job_search_facets
+    description: >
+      Candidate-grain normalized employment arrays and reviewed search tags.
+      Raw employment values remain available in upstream current facts.
+    columns:
+      - name: job_id
+        data_tests:
+          - unique
+          - not_null
+      - name: employment_types
+        data_tests:
+          - not_null
+      - name: search_tags
+        data_tests:
+          - not_null

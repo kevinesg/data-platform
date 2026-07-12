@@ -1,6 +1,37 @@
+{{
+    config(
+        materialized="incremental",
+        incremental_strategy="merge",
+        unique_key="candidate_id"
+    )
+}}
+
 WITH job_facts AS (
     SELECT *
     FROM {{ ref('stg_wremotely__job_facts') }}
+),
+
+changed_candidates AS (
+    SELECT DISTINCT source.candidate_id
+    FROM job_facts AS source
+    WHERE source.candidate_id IS NOT NULL
+    {% if is_incremental() %}
+        AND (
+            COALESCE(
+                source.record_updated_at
+                , source.job_fact_extracted_at
+                , source.retrieved_at
+            ) > (
+                SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
+                FROM {{ this }}
+            )
+            OR NOT EXISTS (
+                SELECT 1
+                FROM {{ this }} AS current_candidate
+                WHERE current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
 ),
 
 ranked AS (
@@ -18,7 +49,8 @@ ranked AS (
                 , source_record_index DESC
         ) AS job_fact_rank
     FROM job_facts
-    WHERE candidate_id IS NOT NULL
+    INNER JOIN changed_candidates
+        USING (candidate_id)
 ),
 
 final AS (
@@ -91,6 +123,9 @@ final AS (
         , job_facts_run_id AS latest_job_facts_run_id
         , source_record_index AS latest_job_fact_source_record_index
         , source_artifact_sha256 AS latest_job_fact_artifact_sha256
+        , COALESCE(record_updated_at, job_fact_extracted_at, retrieved_at)
+            AS source_updated_at
+        , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
     FROM ranked
     WHERE job_fact_rank = 1
 )

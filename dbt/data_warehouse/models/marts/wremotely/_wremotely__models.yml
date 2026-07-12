@@ -74,7 +74,17 @@ models:
       - name: estimated_salary_json
         description: Source estimated salary payload as JSON when available.
       - name: employment_type
-        description: Source employment type when available.
+        description: >
+          Temporary scalar compatibility field containing the first normalized
+          employment type when available.
+      - name: employment_types
+        description: Sorted distinct normalized employment types for public filtering.
+        data_tests:
+          - not_null
+      - name: search_tags
+        description: Sorted distinct reviewed taxonomy tags for public search and filtering.
+        data_tests:
+          - not_null
       - name: declared_language_tag
         description: Source-declared language tag when available.
       - name: has_lifecycle_recheck
@@ -93,7 +103,21 @@ models:
                 values: [true, false]
                 quote: false
       - name: _updated_at
-        description: Latest pipeline observation timestamp used for current-row propagation.
+        description: Compatibility alias of dbt_updated_at used by current publication.
+        data_tests:
+          - not_null
+      - name: source_updated_at
+        description: Latest relevant upstream pipeline event for incremental source selection.
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        description: >
+          Stable dbt run timestamp assigned to selected rows. A full refresh
+          assigns the current run timestamp to every rebuilt row.
+        data_tests:
+          - not_null
+      - name: serving_content_sha256
+        description: Hash of public serving content excluding propagation timestamps.
         data_tests:
           - not_null
       - name: publication_hold_content_sha256
@@ -134,6 +158,12 @@ models:
         data_tests:
           - unique
           - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        data_tests:
+          - not_null
 
   - name: wremotely__job_country_eligibility
     description: >
@@ -164,6 +194,12 @@ models:
       - name: job_country_eligibility_row_sha256
         data_tests:
           - unique
+          - not_null
+      - name: source_updated_at
+        data_tests:
+          - not_null
+      - name: dbt_updated_at
+        data_tests:
           - not_null
 
   - name: wremotely__publication_manifest

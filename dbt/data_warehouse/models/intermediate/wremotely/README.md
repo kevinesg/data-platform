@@ -11,7 +11,15 @@ The models keep one latest record per `candidate_id` for each fact type:
 - country eligibility extraction
 - lifecycle recheck
 
-`int_wremotely__current_candidate_facts` joins those latest records together.
+Those five latest-record models are incremental merges keyed by `candidate_id`.
+An incremental run first identifies candidates with a newer source event, then
+rereads each changed candidate's complete source history before ranking. This
+preserves lifecycle predecessor checks and deterministic tie-breaking. New
+candidates are included even when their source timestamp predates the current
+global watermark.
+
+`int_wremotely__current_candidate_facts` joins those latest records together
+and incrementally merges changed candidates.
 It prefers extracted job facts for public job title, company, description,
 salary, employment type, source dates, and language metadata when those facts
 are available. It does not decide what to publish or how to publish it.
@@ -39,6 +47,17 @@ company name plus source domain. Known non-English rows are excluded from the
 serving set for MVP, while unknown-language rows remain eligible. Full job
 descriptions are passed through when available and are not truncated. Private
 publication holds are evaluated after this dbt graph passes its blocking tests.
+
+`int_wremotely__job_search_facets` normalizes all available source employment
+values into a sorted array and matches title/company/description text against a
+reviewed tag taxonomy. Unmappable employment values remain available upstream
+and produce no public category rather than a vague `OTHER` value.
+
+Country-evidence rollups, publishable filtering, companies, country bridges,
+and publication manifests remain complete table calculations because taxonomy,
+aggregate, and removal semantics require complete-set reconciliation. The
+latest-record, current-candidate, and final serving-job entities are the safe
+keyed incremental boundaries in this slice.
 
 ## Validate
 
