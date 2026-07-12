@@ -38,7 +38,7 @@ RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
-SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publications"
+SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publication"
 
 
 def required_env(name: str) -> str:

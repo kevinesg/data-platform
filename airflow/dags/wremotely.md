@@ -16,8 +16,8 @@ running Docker:
 - `WREMOTELY_ETL_ARTIFACTS_DIR`: durable local artifact directory mounted into
   private runtime containers. It must be writable by the private runtime
   container user.
-- `WREMOTELY_HANDOFF_DATASET`: private BigQuery dataset for replaceable
-  current-state handoff tables and immutable versioned serving snapshots, for
+- `WREMOTELY_HANDOFF_DATASET`: private BigQuery dataset for durable
+  current-state handoff and serving tables, for
   example `handoff_<developer>` in dev and `handoff` in QA/prod.
 - `WREMOTELY_PUBLICATION_TOPIC`: private Pub/Sub topic that receives only a
   committed `READY` publication ID, for example
@@ -36,7 +36,7 @@ Use an immutable image tag in QA and prod.
 ## Handoff dataset and publication topic
 
 The wremotely DAG uses a private BigQuery handoff dataset for current-state
-handoff tables and versioned publication snapshots. This dataset is not raw
+handoff and serving publication tables. This dataset is not raw
 warehouse history or a dbt target. It is the private exchange boundary between
 pipeline steps and the future serving publication worker; no table is public.
 
@@ -58,10 +58,10 @@ The intended table behavior is:
   `WRITE_TRUNCATE`;
 - downstream steps may start from the current handoff table instead of an exact
   upstream artifact run ID;
-- publication hold replaces one current decision table only after its local
+- publication hold merges final per-job decisions only after its local
   checkpoint completes;
-- final serving snapshot tables are immutable by publication ID so the serving
-  worker can replay a specific ready version;
+- final serving tables retain current job state and advance `_updated_at` only
+  for newly ingested jobs or lifecycle changes;
 - durable raw tables that dbt reads remain separate and are updated only by the
   core load step.
 
@@ -69,6 +69,57 @@ This keeps long-running discovery and crawl work from blocking manual runs that
 only need the latest already-published handoff table. It also keeps handoff
 replacement single-writer: only `publish_handoff` replaces the handoff table
 after `crawl` has published a complete canonical crawl artifact.
+
+### Migrate serving publication tables to current state
+
+This migration does not require rerunning crawl, select, extract, job facts,
+classification, lifecycle recheck, or dbt. Deploy the corrected private ETL
+image and DAG first, then clear only `publication_hold`,
+`publish_serving_snapshot`, and `signal_publication` in the latest successful
+run. The completed hold artifact initializes `wremotely__publication_holds`
+without calling the model again, and the existing dbt marts initialize the
+unversioned serving tables.
+
+After `publish_serving_snapshot` succeeds, verify the new tables before
+granting the serving worker access:
+
+```bash
+for TABLE_NAME in \
+  wremotely__publication_holds \
+  wremotely__serving_jobs \
+  wremotely__serving_companies \
+  wremotely__serving_job_country_eligibility \
+  wremotely__serving_publication; do
+  bq show \
+    --project_id="$PROJECT_ID" \
+    --format=prettyjson \
+    "$PROJECT_ID:$WREMOTELY_HANDOFF_DATASET.$TABLE_NAME" >/dev/null
+done
+```
+
+Apply the PostgreSQL migration and validate the worker against the current
+publication before removing legacy BigQuery tables. Once that validation
+succeeds, remove the old snapshot/history tables; they are not runtime inputs:
+
+```bash
+for TABLE_NAME in \
+  wremotely__publication_holds_current \
+  wremotely__serving_jobs_versions \
+  wremotely__serving_jobs_versions_v5 \
+  wremotely__serving_companies_versions \
+  wremotely__serving_job_country_eligibility_versions \
+  wremotely__serving_publications; do
+  if bq show \
+    --project_id="$PROJECT_ID" \
+    "$PROJECT_ID:$WREMOTELY_HANDOFF_DATASET.$TABLE_NAME" >/dev/null 2>&1; then
+    bq rm \
+      --project_id="$PROJECT_ID" \
+      --force \
+      --table \
+      "$PROJECT_ID:$WREMOTELY_HANDOFF_DATASET.$TABLE_NAME"
+  fi
+done
+```
 
 The approved source registry remains file-based and reviewed in the private
 source repository. Do not upload the approved registry to BigQuery as the source
@@ -344,7 +395,7 @@ The lifecycle branch reads raw selected-job and prior lifecycle history, chooses
 the oldest due active rows, and is bounded by `WREMOTELY_RECHECK_LIMIT`. It
 completes successfully with an empty batch. Explicit closed-page evidence sets
 `is_deleted`; terminal HTTP outcomes require two consecutive rechecks. The
-branch loads lifecycle events before dbt, and dbt retains tombstone rows with
+branch loads lifecycle events before dbt, and dbt retains rows with
 `is_deleted = true` and advances `_updated_at` instead of removing them.
 `prepare_recheck` depends on the core `load` task so its BigQuery query sees a
 deterministic current-run raw boundary rather than racing a concurrent load.
@@ -361,17 +412,15 @@ warnings, and deterministic decision justification/factors. The private
 handoff row keeps those audit fields without storing raw model responses or
 chain-of-thought.
 
-After the local artifact completes, the task atomically replaces
-`wremotely__publication_holds_current` in the handoff dataset. Each decision is
-bound to the dbt candidate row hash. `publish_serving_snapshot` anti-joins only
-matching `held` and `review_hold` decisions, then transactionally appends
-immutable versioned jobs, companies, and country-eligibility rows plus a
-`READY` publication-control row. Candidates without a hold decision pass.
-The handoff dataset tables are
-`wremotely__serving_jobs_versions`,
-`wremotely__serving_companies_versions`,
-`wremotely__serving_job_country_eligibility_versions`, and
-`wremotely__serving_publications`.
+Publication hold evaluates only matching jobs without an existing verdict.
+Verdicts are final by job ID and remain in `wremotely__publication_holds`;
+later policy, prompt, model, or content changes do not reprocess them.
+`publish_serving_snapshot` anti-joins `held` and `review_hold` decisions, then
+transactionally merges newer `_updated_at` rows into
+`wremotely__serving_jobs`, `wremotely__serving_companies`, and
+`wremotely__serving_job_country_eligibility`. It updates the singleton `READY`
+control row in `wremotely__serving_publication`. The pipeline performs no
+physical serving-row deletes; lifecycle removal is represented by `is_deleted`.
 
 `signal_publication` reads the completed local snapshot artifact, verifies that
 its exact publication ID still has one `READY` control row in BigQuery, and
@@ -556,7 +605,7 @@ bq query \
   --use_legacy_sql=false \
   --parameter="publication_id:STRING:<publication-id>" \
   "SELECT publication_id, publication_state, published_at
-   FROM \`$PROJECT_ID.$WREMOTELY_HANDOFF_DATASET.wremotely__serving_publications\`
+   FROM \`$PROJECT_ID.$WREMOTELY_HANDOFF_DATASET.wremotely__serving_publication\`
    WHERE publication_id = @publication_id"
 ```
 
@@ -692,9 +741,9 @@ the lifecycle branch was added, do not clear crawl, select, extract, or the core
 load chain. After rebuilding both images and recreating Airflow, run/clear only
 `prepare_recheck` through `load_recheck`. Once `load_recheck` succeeds, clear
 `dbt_build` with downstream tasks selected and upstream tasks unselected. This
-rebuilds the mart with lifecycle tombstones, reruns publication hold against the
-correct generated mart dataset, and publishes the serving snapshot without
-repeating the expensive core EL work.
+rebuilds the mart with retained `is_deleted` rows, runs publication hold for
+new jobs in the correct generated mart dataset, and publishes serving state
+without repeating the expensive core EL work.
 
 For one intentional dev integration check, set
 `WREMOTELY_RECHECK_MIN_AGE_HOURS=0` before recreating Airflow so the selector
