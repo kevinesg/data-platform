@@ -8,6 +8,9 @@
     )
 }}
 
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+
 WITH publishable_job_facts AS (
     SELECT *
     FROM {{ ref('int_wremotely__publishable_job_facts') }}
@@ -26,7 +29,7 @@ incremental_source AS (
     FROM publishable_job_facts AS job
     INNER JOIN search_facets AS facets
         USING (job_id)
-    {% if is_incremental() %}
+    {% if incremental_watermark_ready %}
     WHERE job.source_updated_at > (
         SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
         FROM {{ this }}

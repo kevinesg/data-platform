@@ -7,6 +7,9 @@
     )
 }}
 
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+
 WITH selected_job_urls AS (
     SELECT *
     FROM {{ ref('int_wremotely__latest_selected_job_urls') }}
@@ -388,7 +391,7 @@ SELECT
     , latest_observed_at AS source_updated_at
     , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
 FROM final
-{% if is_incremental() %}
+{% if incremental_watermark_ready %}
 WHERE latest_observed_at > (
     SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
     FROM {{ this }}

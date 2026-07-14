@@ -7,6 +7,7 @@ SELECT
     , eligible_country_codes
     , excluded_country_codes
     , lifecycle_status
+    , is_deleted
 FROM {{ ref('wremotely__serving_jobs') }}
 WHERE canonical_url IS NULL
     OR source_url IS NULL
@@ -17,4 +18,3 @@ WHERE canonical_url IS NULL
         country_eligibility_scope = 'SPECIFIC'
         AND ARRAY_LENGTH(eligible_country_codes) = 0
     )
-    OR COALESCE(lifecycle_status, 'REACHABLE') IN ('CLOSED', 'TERMINAL')

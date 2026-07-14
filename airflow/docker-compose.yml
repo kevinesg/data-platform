@@ -55,7 +55,13 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    command: ["bash", "-c", "airflow db migrate"]
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate &&
+        airflow pools set wremotely_network 1 "Serialize wremotely network fetch tasks across DAGs" &&
+        airflow pools set wremotely_warehouse 1 "Serialize wremotely warehouse publication mutations"
     restart: "no"
 
   api-server:

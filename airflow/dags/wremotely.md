@@ -1,9 +1,13 @@
-# wremotely Airflow DAG
+# wremotely Airflow DAGs
 
-`etl__wremotely` orchestrates the private wremotely extract/load runtime and
-then builds the wremotely dbt serving graph. Airflow owns dependency order,
-retries, and timeouts only; the private runtime owns extract/load behavior and
-dbt owns transformation and blocking tests.
+`etl__wremotely` ingests newly crawled jobs,
+`maintenance__wremotely_lifecycle` rechecks one stable active-job bucket, and
+`repair__wremotely_job_urls` performs bounded exact-URL repairs. Each producer
+loads raw data and triggers `publish__wremotely_serving`, which serializes the
+tested dbt build, publication hold, current serving snapshot, and publication
+signal. Airflow owns dependency order, retries, and timeouts only; the private
+runtime owns extract/load behavior and dbt owns transformation and blocking
+tests.
 
 ## Runtime inputs
 
@@ -29,6 +33,9 @@ running Docker:
   silently change a run.
 - `WREMOTELY_PUBLICATION_HOLD_POLICY`: private policy file for the
   pre-publication hold step. Keep the file outside Git.
+- `WREMOTELY_LIFECYCLE_SCHEDULE`: required only when `ENVIRONMENT=prod`;
+  configure `15 */12 * * *` so seven half-day runs cover the active catalog in
+  3.5 days. Keep dev/QA lifecycle runs manual.
 
 The private runtime image is configured with `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`.
 Use an immutable image tag in QA and prod.
@@ -319,8 +326,7 @@ required_values = {
     "WREMOTELY_HANDOFF_DATASET": os.environ["WREMOTELY_HANDOFF_DATASET"],
     "WREMOTELY_PUBLICATION_TOPIC": os.environ["WREMOTELY_PUBLICATION_TOPIC"],
     "WREMOTELY_PLATFORM_WORKER_COUNT": "2",
-    "WREMOTELY_RECHECK_LIMIT": "100",
-    "WREMOTELY_RECHECK_MIN_AGE_HOURS": "72",
+    "WREMOTELY_RECHECK_WORKER_COUNT": "16",
 }
 for name, value in required_values.items():
     updated = False
@@ -338,8 +344,8 @@ env_file.write_text("\n".join(lines) + "\n")
 
 ## Task order
 
-The DAG loads new-job data, then selects lifecycle work from that stable raw
-boundary before one dbt build:
+The ingestion DAG loads new-job data before triggering the serialized
+publication DAG:
 
 ```text
 crawl
@@ -352,30 +358,53 @@ crawl
   -> stage
   -> upload
   -> load
-  -> prepare_recheck
+  -> trigger_publication
+```
+
+The independent lifecycle DAG runs:
+
+```text
+prepare_recheck
   -> recheck
   -> stage_recheck
   -> upload_recheck
   -> load_recheck
-  -> dbt_build
+  -> trigger_publication
+```
+
+The trigger-only publication DAG runs at most one active DAG run:
+
+```text
+dbt_build
   -> publication_hold
   -> publish_serving_snapshot
   -> signal_publication
 ```
 
+The manual repair DAG starts from the current source-crawl handoff table and
+runs `select -> extract -> job_facts -> classify -> evaluate -> stage -> upload
+-> load -> trigger_publication`. Its trigger form requires 1-100 unique absolute
+job URLs. Each URL must exist in the current source-crawl handoff table; the
+selector fails rather than broadening the repair when a requested URL is absent.
+
 The normal scheduled path does not acquire new sources. It starts from the
 approved source snapshot, selects unseen job URLs, loads raw BigQuery tables,
 and only then builds the dbt serving snapshot.
-The intended production cadence is every 12 hours (`0 */12 * * *`); dev and QA
-remain manually triggered unless their environment policy explicitly differs.
+The intended production ingestion cadence is every 12 hours (`0 */12 * * *`).
+Lifecycle runs every 12 hours at minute 15 (`15 */12 * * *`) with seven stable
+buckets and 16 internal workers. Each scheduled run owns one complete bucket,
+so seven successful runs cover the active catalog in 3.5 days. Bucket size grows
+with the active catalog; monitor actual run duration, network-pool queue delay,
+retries, and completion before the next lifecycle interval. Dev and QA remain
+manually triggered; repair and publication are unscheduled in every environment.
 
-This DAG includes every implemented step required to create and refresh the
-BigQuery serving publication. It intentionally does not run search-provider
+These DAGs include every implemented step required to create and refresh the
+BigQuery serving publication. They intentionally do not run search-provider
 `discover`, offline crawl merging, classifier benchmarks, or destructive local
 artifact cleanup. Those are source-acquisition, evaluation, or maintenance
-workflows with different budgets and cadences. The DAG now publishes the exact
-committed `READY` publication ID to Pub/Sub. The VPS subscriber remains the next
-serving-delivery boundary.
+workflows with different budgets and cadences. The DAG publishes the exact
+committed `READY` publication ID to Pub/Sub. The VPS publication worker consumes
+that signal and applies the bounded serving snapshot to PostgreSQL.
 
 `evaluate` and `stage` consume the completed selection, extraction, job-facts,
 and classification artifacts. They do not require the same DAG run's crawl
@@ -419,14 +448,30 @@ Across completed runs it reuses a current hold decision only when the candidate
 content hash, policy, evaluator, prompt, runtime, and model identities all
 match; changed candidates are evaluated again.
 
-The lifecycle branch reads raw selected-job and prior lifecycle history, chooses
-the oldest due active rows, and is bounded by `WREMOTELY_RECHECK_LIMIT`. It
-completes successfully with an empty batch. Explicit closed-page evidence sets
-`is_deleted`; terminal HTTP outcomes require two consecutive rechecks. The
-branch loads lifecycle events before dbt, and dbt retains rows with
-`is_deleted = true` and advances `_updated_at` instead of removing them.
-`prepare_recheck` depends on the core `load` task so its BigQuery query sees a
-deterministic current-run raw boundary rather than racing a concurrent load.
+The lifecycle DAG reads the current serving handoff plus raw selected-job
+metadata and lifecycle history. The private selector removes `is_deleted=true`
+rows before assigning active `job_id` values to seven stable hash buckets.
+Airflow derives one bucket index from the 12-hour logical date and processes the
+complete bucket with no scheduled row cap. Seven successful runs therefore
+cover every currently active serving job over 3.5 days without one growing
+all-at-once fetch burst. It completes successfully with an empty bucket.
+Explicit closed-page evidence sets `is_deleted`; terminal HTTP outcomes require
+two consecutive rechecks. The workflow loads lifecycle events before triggering
+the serialized publication DAG, and dbt retains rows with `is_deleted = true`
+and advances `_updated_at` instead of removing them.
+`WREMOTELY_RECHECK_WORKER_COUNT` controls total internal concurrency while
+`WREMOTELY_PLATFORM_WORKER_COUNT` caps concurrent tenants per recognized ATS;
+the runtime still serializes each tenant or ordinary domain.
+
+The one-slot `wremotely_network` pool prevents crawl, extraction, repair, and
+lifecycle containers from fetching concurrently across DAGs. The one-slot
+`wremotely_warehouse` pool prevents producer raw loads from overlapping dbt
+builds or serving publication writes. The trigger-only publication DAG has
+`max_active_runs=1`, so producer timing cannot interleave two complete
+dbt/publication chains. Producer trigger tasks wait deferrably and fail when the
+linked publication run fails. Keep the trigger-only publication DAG unpaused
+before running a producer DAG. These controls protect cross-DAG boundaries; the
+private runtime remains responsible for safe internal concurrency and checkpoints.
 
 The externally mounted policy file owns the complete model prompt and its
 operator-specific structured configuration, including target-country,
@@ -601,11 +646,13 @@ the selected-URL table alone does not suppress a URL.
 - `WREMOTELY_PLATFORM_WORKER_COUNT` limits concurrent tenants within one
   recognized platform for both crawl and extraction. The default is `2`, while
   each tenant or ordinary source domain remains serialized.
-- `WREMOTELY_RECHECK_LIMIT` bounds lifecycle requests per DAG run and must be
-  between `1` and `1000`. The default is `100`.
-- `WREMOTELY_RECHECK_MIN_AGE_HOURS` controls when an active row becomes due
-  after its latest selection or lifecycle check. The default is `72`; use `0`
-  only for an intentional dev integration run.
+- `WREMOTELY_RECHECK_WORKER_COUNT` controls total internal lifecycle
+  concurrency and must be between `1` and `32`. The default is `16`; source
+  tenant/domain serialization still applies.
+- Scheduled lifecycle runs always use seven buckets, minimum age zero, and a
+  complete-bucket limit of zero. A manual dev trigger may set the DAG parameter
+  `recheck_limit` to `1..1000` for a bounded orchestration smoke; production
+  scheduled runs leave it at `0`.
 - `WREMOTELY_PUBLICATION_TOPIC` selects the private environment-specific topic.
   The publisher service account receives `roles/pubsub.publisher` on this topic
   only; it does not need project-wide Pub/Sub administration or subscriber
@@ -764,40 +811,57 @@ cd /var/home/kevinesg/dev/github/data-platform
 docker build --pull=false --tag data-platform-dbt:dev dbt
 ```
 
-For an existing dev DAG run that already completed the core `load` task before
-the lifecycle branch was added, do not clear crawl, select, extract, or the core
-load chain. After rebuilding both images and recreating Airflow, run/clear only
-`prepare_recheck` through `load_recheck`. Once `load_recheck` succeeds, clear
-`dbt_build` with downstream tasks selected and upstream tasks unselected. This
-rebuilds the mart with retained `is_deleted` rows, runs publication hold for
-new jobs in the correct generated mart dataset, and publishes serving state
-without repeating the expensive core EL work.
+The incremental models inspect existing target columns before applying a
+watermark filter. When an older target lacks the required source/dbt watermark
+columns, the next ordinary build processes all candidates once, appends the
+columns, and backfills their values. Do not retry a downstream publication task
+against an older dbt image: rebuild the image and clear `dbt_build` plus its
+downstream tasks.
 
-For one intentional dev integration check, set
-`WREMOTELY_RECHECK_MIN_AGE_HOURS=0` before recreating Airflow so the selector
-chooses up to `WREMOTELY_RECHECK_LIMIT` existing rows. Restore the normal age
-after the branch has been proven.
+If `publication_hold` already completed in that DAG run before the dbt image
+was corrected, preserve its replay artifact before clearing the downstream
+tasks. The corrected candidate hash may not match the completed artifact:
 
 ```bash
-python -c 'import os
-from pathlib import Path
+export WREMOTELY_REPAIR_BASE_RUN_ID="<logical-date-as-YYYYMMDDTHHMMSSZ>-wremotely-repair"
+export COMPLETED_REPAIR_HOLD_DIR="$WREMOTELY_ETL_ARTIFACTS_DIR/$WREMOTELY_REPAIR_BASE_RUN_ID-publication-hold/publication_hold"
+export COMPLETED_REPAIR_HOLD_BACKUP="${COMPLETED_REPAIR_HOLD_DIR}.pre-dbt-watermark-migration"
 
-env_file = Path(os.environ["DATA_PLATFORM_ENV_FILE"])
-updates = {
-    "WREMOTELY_RECHECK_LIMIT": "100",
-    "WREMOTELY_RECHECK_MIN_AGE_HOURS": "0",
-}
-lines = env_file.read_text().splitlines()
-for name, value in updates.items():
-    for index, line in enumerate(lines):
-        if line.startswith(f"{name}="):
-            lines[index] = f"{name}={value}"
-            break
-    else:
-        lines.append(f"{name}={value}")
-env_file.write_text("\n".join(lines) + "\n")
-'
+test -d "$COMPLETED_REPAIR_HOLD_DIR"
+test ! -e "$COMPLETED_REPAIR_HOLD_BACKUP"
+sudo mv -- "$COMPLETED_REPAIR_HOLD_DIR" "$COMPLETED_REPAIR_HOLD_BACKUP"
 ```
+
+For a pre-split producer run, manually trigger `publish__wremotely_serving` with
+the same base run ID so it reuses those artifacts:
+
+```json
+{"publication_run_id": "<logical-date-as-YYYYMMDDTHHMMSSZ>-wremotely-repair"}
+```
+
+For a post-split run, clear `trigger_publication` in the producer or clear the
+failed tasks directly in its linked publication DAG run.
+
+Do not clear lifecycle tasks in an old `etl__wremotely` run after deploying this
+split. Trigger `maintenance__wremotely_lifecycle` instead; its run IDs and
+artifacts are independent from ingestion. A successful lifecycle run continues
+through `trigger_publication`; the linked `publish__wremotely_serving` run must
+then succeed through `signal_publication` so deletion-state changes reach the
+serving database. Clearing a producer trigger resets and replays its same
+deterministic publication DAG run instead of creating an overlapping run.
+
+For one intentional dev integration check, trigger the lifecycle DAG with
+`recheck_limit=12`. This bounds only that manual run. Scheduled production runs
+retain the default `0` and process every row in their selected bucket.
+
+To validate exact repair orchestration, first unpause
+`publish__wremotely_serving`, then trigger `repair__wremotely_job_urls` in
+the Airflow UI and enter one exact URL per line in **Job URLs to reprocess**.
+Start with one known current-handoff URL. The DAG intentionally has no schedule,
+does not crawl the registry, and fails in `select` if any requested identity is
+missing. A successful producer run must reach `trigger_publication`, and its
+linked publication run must continue through `signal_publication`. Do not
+manually patch BigQuery or PostgreSQL for the repaired row.
 
 After changing Airflow DAG code or the external Airflow environment file,
 validate the environment file and recreate the local Airflow containers so they
@@ -822,4 +886,29 @@ docker compose --env-file "$DATA_PLATFORM_ENV_FILE" \
   -f docker-compose.yml \
   -f docker-compose.dev.yml \
   exec scheduler airflow dags list-import-errors
+
+docker compose --env-file "$DATA_PLATFORM_ENV_FILE" \
+  -f docker-compose.yml \
+  -f docker-compose.dev.yml \
+  exec scheduler airflow pools list
+
+docker compose --env-file "$DATA_PLATFORM_ENV_FILE" \
+  -f docker-compose.yml \
+  -f docker-compose.dev.yml \
+  exec scheduler airflow dags list
 ```
+
+Verify that `wremotely_network` and `wremotely_warehouse` each have one slot,
+and that all four wremotely DAG IDs are listed. New DAGs are paused on creation;
+unpause the repair, lifecycle, and publication DAGs for the dev smoke. In the
+Airflow UI:
+
+1. Trigger `repair__wremotely_job_urls` with one known URL from the current
+   source-crawl handoff table. Confirm the producer reaches
+   `trigger_publication` and its linked publication DAG succeeds through
+   `signal_publication`.
+2. Trigger `maintenance__wremotely_lifecycle` with `recheck_limit=12`. Confirm
+   the prepared metadata records seven buckets, the logical-date-selected bucket
+   index, and no more than 12 rows. Confirm the linked publication DAG succeeds
+   through `signal_publication` even when no row becomes deleted.
+3. Confirm `etl__wremotely` no longer contains the five lifecycle tasks.

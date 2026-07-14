@@ -2,9 +2,13 @@
     config(
         materialized="incremental",
         incremental_strategy="merge",
-        unique_key="candidate_id"
+        unique_key="candidate_id",
+        on_schema_change="append_new_columns"
     )
 }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
 WITH job_facts AS (
     SELECT *
@@ -15,7 +19,7 @@ changed_candidates AS (
     SELECT DISTINCT source.candidate_id
     FROM job_facts AS source
     WHERE source.candidate_id IS NOT NULL
-    {% if is_incremental() %}
+    {% if incremental_watermark_ready %}
         AND (
             COALESCE(
                 source.record_updated_at

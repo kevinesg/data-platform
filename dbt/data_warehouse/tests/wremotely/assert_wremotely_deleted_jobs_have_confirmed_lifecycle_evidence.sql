@@ -13,10 +13,11 @@ FROM serving_jobs
 INNER JOIN candidate_facts
     ON serving_jobs.job_id = candidate_facts.candidate_id
 WHERE serving_jobs.is_deleted
-    AND NOT (
+    != COALESCE(
         candidate_facts.latest_lifecycle_status = 'CLOSED'
         OR (
             candidate_facts.latest_lifecycle_status = 'TERMINAL'
             AND candidate_facts.previous_lifecycle_status = 'TERMINAL'
         )
+        , FALSE
     )
