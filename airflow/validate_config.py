@@ -137,7 +137,7 @@ def validate_values(values: dict[str, str]) -> str | None:
         "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT",
         "WREMOTELY_EXTRACT_WORKER_COUNT",
         "WREMOTELY_PLATFORM_WORKER_COUNT",
-        "WREMOTELY_RECHECK_LIMIT",
+        "WREMOTELY_RECHECK_WORKER_COUNT",
         "WREMOTELY_PAGE_MAX_BYTES",
         "WREMOTELY_DOMAIN_FAILURE_LIMIT",
         "WREMOTELY_CRAWL4AI_MIN_TEXT_CHARS",
@@ -147,15 +147,12 @@ def validate_values(values: dict[str, str]) -> str | None:
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
 
-    if not is_non_negative_integer(values["WREMOTELY_RECHECK_MIN_AGE_HOURS"]):
-        return "WREMOTELY_RECHECK_MIN_AGE_HOURS must be a non-negative integer"
-
     if int(values["WREMOTELY_SOURCE_CRAWL_WORKER_COUNT"]) > 32:
         return "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT must be no greater than 32"
     if int(values["WREMOTELY_PLATFORM_WORKER_COUNT"]) > 8:
         return "WREMOTELY_PLATFORM_WORKER_COUNT must be no greater than 8"
-    if int(values["WREMOTELY_RECHECK_LIMIT"]) > 1000:
-        return "WREMOTELY_RECHECK_LIMIT must be no greater than 1000"
+    if int(values["WREMOTELY_RECHECK_WORKER_COUNT"]) > 32:
+        return "WREMOTELY_RECHECK_WORKER_COUNT must be no greater than 32"
 
     for name in ("WREMOTELY_DOMAIN_DELAY_SECONDS", "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"):
         if not is_non_negative_number(values[name]):

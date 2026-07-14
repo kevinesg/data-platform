@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow.sdk import DAG
+from airflow.sdk import DAG, Param
 
 from _wremotely import (
-    APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-    CRAWL_TASK_EXECUTION_TIMEOUT,
     ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
     WREMOTELY_DOCKER_NETWORK_MODE,
@@ -15,7 +13,6 @@ from _wremotely import (
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
     create_publication_trigger_task,
-    dag_schedule,
     docker_task,
     etl_command,
     optional_env,
@@ -24,111 +21,70 @@ from _wremotely import (
     wremotely_mounts,
 )
 
-BASE_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely"
-SOURCE_CRAWL_RUN_ID = BASE_RUN_ID
+BASE_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-repair"
 SELECTION_RUN_ID = BASE_RUN_ID
 EXTRACTION_RUN_ID = f"{BASE_RUN_ID}-extract"
 JOB_FACTS_RUN_ID = f"{BASE_RUN_ID}-job-facts"
 CLASSIFICATION_RUN_ID = f"{BASE_RUN_ID}-classify"
-PUBLICATION_RUN_ID = BASE_RUN_ID
 EVALUATION_RUN_ID = f"{BASE_RUN_ID}-evaluate"
 STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
+PUBLICATION_RUN_ID = BASE_RUN_ID
 
 DAG_RUN_TIMEOUT = timedelta(hours=24)
+
+# DockerOperator parses a rendered command that starts with "[" as a literal argv
+# list. JSON-quoted Param values therefore remain individual URL arguments.
+REPAIR_SELECT_COMMAND = """[
+    "--step", "select",
+    "--run-id", "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-repair",
+    "--output-root", "/artifacts/wremotely-etl",
+    "--gcp-project", "PROJECT_ID_VALUE",
+    "--raw-dataset", "RAW_DATASET_VALUE",
+    "--handoff-dataset", "HANDOFF_DATASET_VALUE",
+    "--bigquery-location", "BIGQUERY_LOCATION_VALUE",
+    "--select-limit", "100",
+    "--known-url-lookback-days", "KNOWN_URL_LOOKBACK_VALUE",
+{% for url in params.reprocess_urls %}
+    "--reprocess-url", {{ url | tojson }},
+{% endfor %}
+]""".replace("PROJECT_ID_VALUE", required_env("PROJECT_ID")).replace(
+    "RAW_DATASET_VALUE", required_env("RAW_DATASET")
+).replace(
+    "HANDOFF_DATASET_VALUE", required_env("WREMOTELY_HANDOFF_DATASET")
+).replace(
+    "BIGQUERY_LOCATION_VALUE", required_env("WREMOTELY_BIGQUERY_LOCATION")
+).replace(
+    "KNOWN_URL_LOOKBACK_VALUE", optional_env("WREMOTELY_KNOWN_URL_LOOKBACK_DAYS", "365")
+)
+
 with DAG(
-    dag_id="etl__wremotely",
-    description="Load newly processed wremotely jobs and trigger serialized serving publication.",
+    dag_id="repair__wremotely_job_urls",
+    description="Reprocess a bounded explicit set of current wremotely job URLs.",
     start_date=datetime(2026, 1, 1),
-    schedule=dag_schedule(ENVIRONMENT, "ETL__WREMOTELY_SCHEDULE"),
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
-    tags=["wremotely", "elt"],
+    params={
+        "reprocess_urls": Param(
+            type="array",
+            title="Job URLs to reprocess",
+            description=(
+                "Enter one exact URL per line. Every URL must exist in the current source-crawl "
+                "handoff table."
+            ),
+            items={"type": "string", "format": "uri", "minLength": 1, "maxLength": 4096},
+            minItems=1,
+            maxItems=100,
+            uniqueItems=True,
+        )
+    },
+    tags=["wremotely", "repair", "manual"],
 ) as dag:
-    crawl = docker_task(
-        task_id="crawl",
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "crawl",
-            "--run-id",
-            SOURCE_CRAWL_RUN_ID,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--source-registry-input",
-            APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-            "--source-registry-input-sha256",
-            required_env("WREMOTELY_APPROVED_SOURCES_SHA256"),
-            "--source-crawl-limit",
-            "0",
-            "--source-crawl-max-job-urls",
-            "0",
-            "--source-crawl-worker-count",
-            optional_env("WREMOTELY_SOURCE_CRAWL_WORKER_COUNT", "6"),
-            "--platform-worker-count",
-            optional_env("WREMOTELY_PLATFORM_WORKER_COUNT", "2"),
-            "--candidate-sample-seed",
-            SOURCE_CRAWL_RUN_ID,
-            "--page-max-bytes",
-            optional_env("WREMOTELY_PAGE_MAX_BYTES", "2097152"),
-            "--domain-delay-seconds",
-            optional_env("WREMOTELY_DOMAIN_DELAY_SECONDS", "1"),
-            "--domain-failure-limit",
-            optional_env("WREMOTELY_DOMAIN_FAILURE_LIMIT", "5"),
-        ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
-        execution_timeout=CRAWL_TASK_EXECUTION_TIMEOUT,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-        pool=WREMOTELY_NETWORK_POOL,
-    )
-
-    publish_handoff = docker_task(
-        task_id="publish_handoff",
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "publish-handoff",
-            "--run-id",
-            SOURCE_CRAWL_RUN_ID,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-        ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-        pool=WREMOTELY_WAREHOUSE_POOL,
-    )
-
     select = docker_task(
         task_id="select",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "select",
-            "--run-id",
-            SELECTION_RUN_ID,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--raw-dataset",
-            required_env("RAW_DATASET"),
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-            "--select-limit",
-            "0",
-            "--known-url-lookback-days",
-            optional_env("WREMOTELY_KNOWN_URL_LOOKBACK_DAYS", "365"),
-        ),
+        command=REPAIR_SELECT_COMMAND,
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
@@ -147,7 +103,7 @@ with DAG(
             "--selection-run-id",
             SELECTION_RUN_ID,
             "--extract-limit",
-            "0",
+            "100",
             "--extract-worker-count",
             optional_env("WREMOTELY_EXTRACT_WORKER_COUNT", "4"),
             "--platform-worker-count",
@@ -315,10 +271,8 @@ with DAG(
 
     trigger_publication = create_publication_trigger_task(PUBLICATION_RUN_ID)
 
-    core_load_chain = (
-        crawl
-        >> publish_handoff
-        >> select
+    (
+        select
         >> extract
         >> job_facts
         >> classify
@@ -326,5 +280,5 @@ with DAG(
         >> stage
         >> upload
         >> load
+        >> trigger_publication
     )
-    core_load_chain >> trigger_publication

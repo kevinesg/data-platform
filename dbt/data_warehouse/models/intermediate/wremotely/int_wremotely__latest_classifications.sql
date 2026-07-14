@@ -2,9 +2,13 @@
     config(
         materialized="incremental",
         incremental_strategy="merge",
-        unique_key="candidate_id"
+        unique_key="candidate_id",
+        on_schema_change="append_new_columns"
     )
 }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
 WITH source_classifications AS (
     SELECT *
@@ -15,7 +19,7 @@ changed_candidates AS (
     SELECT DISTINCT source.candidate_id
     FROM source_classifications AS source
     WHERE source.candidate_id IS NOT NULL
-    {% if is_incremental() %}
+    {% if incremental_watermark_ready %}
         AND (
             source.classified_at > (
                 SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')

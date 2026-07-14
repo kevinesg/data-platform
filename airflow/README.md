@@ -192,6 +192,25 @@ Private DAG helper modules use a leading underscore, such as
 Airflow DAG discovery while keeping those modules importable by DAG files.
 Use the same pattern for future helper modules such as `_dag_factory.py`.
 
+The wremotely workflows are split by operating purpose:
+
+- `etl__wremotely` ingests newly crawled job URLs and triggers publication after raw load;
+- `maintenance__wremotely_lifecycle` rechecks one stable active-job bucket and
+  triggers publication after lifecycle raw load;
+- `repair__wremotely_job_urls` is manual-only and reprocesses 1-100 exact URLs
+  before triggering publication;
+- `publish__wremotely_serving` is trigger-only and serializes dbt build,
+  publication hold, serving snapshot publication, and Pub/Sub signalling.
+
+Airflow initialization creates one-slot `wremotely_network` and
+`wremotely_warehouse` pools. The first prevents separate DAG runs from scraping
+concurrently outside the private runtime's per-domain controls. The second
+prevents raw loads from overlapping dbt builds and serving-table mutations;
+`publish__wremotely_serving.max_active_runs=1` additionally serializes the
+complete multi-task publication chain.
+The packaged `validate_dags.py` command is the reusable CI contract check for
+DAG imports, required task edges, pool assignments, and repair-URL rendering.
+
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs
 must still keep extract/load logic in `scripts` and transform logic in `dbt`.
