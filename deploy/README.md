@@ -360,6 +360,13 @@ has produced fresh image tags for the rebuilt repository. Replace every
 published image set during clean rebuilds. Do not commit environment-specific
 copies.
 
+Normal production promotion copies the exact immutable image refs that passed
+QA. The first wremotely production launch has an explicitly approved one-time
+exception because the QA serving environment is not provisioned yet. That
+exception uses a separate bootstrap manifest created from three images built
+from the same `main` commit. It does not permit mutable tags or make QA optional
+for later releases. See **One-Time First Production Bootstrap Without QA**.
+
 ## Deployed Web Interfaces
 
 External web access uses Cloudflare Tunnel hostnames that forward to services
@@ -1020,6 +1027,9 @@ PROD_SOURCE_IMAGE_ENV_FILE
 promotes those immutable image refs into the prod image manifest, so prod runs
 the same image set that was deployed to QA.
 
+Do not point this variable at a developer or dev-environment manifest. The only
+supported non-QA source is the temporary first-launch bootstrap manifest below.
+
 ### Prod Host Setup
 
 Run this on the deployment host after the prod GCP workspace is provisioned with
@@ -1103,20 +1113,93 @@ sudo ./svc.sh start
 sudo ./svc.sh status
 ```
 
+### One-Time First Production Bootstrap Without QA
+
+Use this section only for the explicitly approved first wremotely production
+launch while the separate desktop QA serving environment is not yet available.
+This is a release-process exception, not an equivalent substitute for QA.
+
+In GitHub Actions, run `publish-images` from `main` with `component=all`. Wait
+for all three image jobs to succeed. The manual workflow publishes Airflow,
+scripts, and dbt images from one commit, which gives the bootstrap manifest a
+single auditable source revision.
+
+Then run this on the production data-platform deployment host after **Prod Host
+Setup**. The persistent checkout must be at the same `main` commit used by the
+successful `publish-images` run:
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_BOOTSTRAP_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/bootstrap-images.env"
+
+cd "$PROD_REPO_DIR"
+git switch main
+git pull --ff-only origin main
+
+export BOOTSTRAP_SHA="$(git rev-parse HEAD)"
+test "$(git branch --show-current)" = main
+test -n "$BOOTSTRAP_SHA"
+
+{
+  printf 'DATA_PLATFORM_AIRFLOW_IMAGE=ghcr.io/kevinesg/data-platform-airflow:sha-%s\n' "$BOOTSTRAP_SHA"
+  printf 'DATA_PLATFORM_SCRIPTS_IMAGE=ghcr.io/kevinesg/data-platform-scripts:sha-%s\n' "$BOOTSTRAP_SHA"
+  printf 'DATA_PLATFORM_DBT_IMAGE=ghcr.io/kevinesg/data-platform-dbt:sha-%s\n' "$BOOTSTRAP_SHA"
+} > "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
+chmod 600 "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
+
+grep -E '^DATA_PLATFORM_(AIRFLOW|SCRIPTS|DBT)_IMAGE=ghcr\.io/kevinesg/data-platform-(airflow|scripts|dbt):sha-[0-9a-f]{40}$' \
+  "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
+test "$(wc -l < "$PROD_BOOTSTRAP_IMAGE_ENV_FILE")" -eq 3
+```
+
+Compare `BOOTSTRAP_SHA` with the commit shown by the successful
+`publish-images` workflow. Stop if they differ; do not substitute `latest`, a
+branch tag, or images from different commits.
+
+In repository **Settings** > **Environments** > **prod** > **Environment
+variables**, set `PROD_SOURCE_IMAGE_ENV_FILE` to the absolute bootstrap path,
+for example:
+
+```text
+/home/<runner-user>/secrets/data-platform/prod/bootstrap-images.env
+```
+
+Run `deploy-prod` only after that environment variable and file are in place.
+The workflow authenticates to GHCR, verifies that all three immutable manifests
+exist, and copies the refs into the normal prod image manifest before starting
+services.
+
+Keep the bootstrap file and override until the first production deployment and
+verification succeed. After QA is provisioned and the same or a later release
+passes `deploy-qa`, delete the `PROD_SOURCE_IMAGE_ENV_FILE` environment variable
+from the `prod` environment. The next production deployment will then return to
+the default `$HOME/secrets/data-platform/qa/images.env` promotion source. After
+that QA-sourced production deployment succeeds, remove the obsolete bootstrap
+file:
+
+```bash
+rm "$HOME/secrets/data-platform/prod/bootstrap-images.env"
+```
+
+Deleting the override before QA has produced its image manifest will make
+`deploy-prod` fail closed during host-state validation.
+
 ### Prod Deploy
 
 Run GitHub Actions > `deploy-prod` with `git_ref` set to the same `main` release
-that passed QA. If new commits have landed on `main` since the QA validation,
-rerun `deploy-qa` and validate QA before promoting prod.
+that passed QA. If new commits have landed on `main` since QA validation, rerun
+`deploy-qa` and validate QA before promoting prod. For the approved first-launch
+exception only, use the exact `main` commit and source manifest prepared in
+**One-Time First Production Bootstrap Without QA**.
 
 The workflow:
 
-1. Checks the prod host paths and the QA source image manifest.
+1. Checks the prod host paths and configured source image manifest.
 2. Blocks deployment when existing prod Airflow metadata has queued or running
    DAG runs.
 3. Updates the persistent prod checkout.
 4. Saves the existing prod image manifest as `images.env.previous`, then
-   promotes the QA image manifest to prod.
+   promotes the configured immutable source image manifest to prod.
 5. Runs `dbt compile` in the deployed dbt image with prod credentials.
 6. Pulls runtime images and recreates the prod Airflow stack.
 7. Runs Airflow DAG import smoke checks.
