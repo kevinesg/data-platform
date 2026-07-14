@@ -127,6 +127,18 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
 
+    serving_snapshot_command = publication.get_task("publish_serving_snapshot").command
+    if not isinstance(serving_snapshot_command, list):
+        raise AssertionError("serving snapshot command must be an argv list")
+    if command_argument(serving_snapshot_command, "--source-registry-input") != (
+        "/tmp/wremotely-approved-sources.jsonl"
+    ):
+        raise AssertionError("serving snapshot must use the mounted approved-source registry")
+    if command_argument(serving_snapshot_command, "--source-registry-input-sha256") != (
+        os.environ["WREMOTELY_APPROVED_SOURCES_SHA256"]
+    ):
+        raise AssertionError("serving snapshot must pin the approved-source checksum")
+
     validate_lifecycle_bucket_contract(lifecycle)
 
     test_urls = [

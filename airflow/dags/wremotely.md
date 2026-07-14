@@ -494,6 +494,11 @@ transactionally merges newer `_updated_at` rows into
 `wremotely__serving_job_country_eligibility`. It updates the singleton `READY`
 control row in `wremotely__serving_publication`. The pipeline performs no
 physical serving-row deletes; lifecycle removal is represented by `is_deleted`.
+The task also passes the mounted approved-source snapshot and its configured
+SHA-256 checksum to the private runtime. The runtime counts distinct enabled,
+approved source IDs for company-career and ATS-company sources, then includes
+those bounded totals in the same publication identity and control-row
+transaction. Airflow does not inspect registry rows or derive the counts.
 
 `signal_publication` reads the completed local snapshot artifact, verifies that
 its exact publication ID still has one `READY` control row in BigQuery, and
@@ -538,8 +543,10 @@ someone manually deletes verified external data.
   cleared after newer raw loads consumes the newer warehouse state. It is not a
   run-pinned historical reconstruction.
 - `publish_serving_snapshot` is content-addressed. Replaying the same completed
-  run returns its recorded publication ID; recreating the same snapshot through
-  a new run also resolves to the same immutable publication ID.
+  run verifies the pinned approved-source checksum and source-coverage aggregate
+  before returning its recorded publication ID. Recreating the same serving and
+  source-coverage snapshot through a new run resolves to the same immutable
+  publication ID.
 - `signal_publication` is intentionally at-least-once. Every successful clear
   may receive a new Pub/Sub message ID for the same publication ID. The serving
   worker must acknowledge only after its PostgreSQL transaction commits and
