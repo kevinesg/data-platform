@@ -93,7 +93,9 @@ Install tools from their official documentation:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [Docker Engine](https://docs.docker.com/engine/install/) or
   [Docker Desktop](https://docs.docker.com/desktop/)
-- POSIX ACL utilities (`setfacl`; package `acl` on Ubuntu/Debian)
+- POSIX ACL utilities (`setfacl`; package `acl` on Ubuntu/Debian) when a
+  component runbook selects the ACL path. The deployed wremotely runtime also
+  documents a group-based fallback for hosts without `setfacl`.
 
 The Google Cloud CLI installation must include `gcloud` and `bq`.
 
@@ -105,7 +107,7 @@ bq version
 uv --version
 docker version
 docker compose version
-setfacl --version
+command -v setfacl >/dev/null && setfacl --version || echo "setfacl is not installed"
 ```
 
 Authenticate GitHub CLI once per workstation:
@@ -941,13 +943,38 @@ test -s "$DATA_PLATFORM_ENV_FILE"
 test -s "$WREMOTELY_SECRETS_DIR/google-application-credentials.json"
 test -s "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
 
+export WREMOTELY_RUNTIME_GROUP=wremotely-runtime
+export WREMOTELY_RUNTIME_GID=10001
+
+export EXISTING_RUNTIME_GID="$({ getent group "$WREMOTELY_RUNTIME_GROUP" || true; } | cut -d: -f3)"
+export EXISTING_RUNTIME_GROUP="$({ getent group "$WREMOTELY_RUNTIME_GID" || true; } | cut -d: -f1)"
+
+if test -n "$EXISTING_RUNTIME_GID" && \
+  test "$EXISTING_RUNTIME_GID" != "$WREMOTELY_RUNTIME_GID"; then
+  echo "Group $WREMOTELY_RUNTIME_GROUP already uses GID $EXISTING_RUNTIME_GID" >&2
+  exit 1
+fi
+if test -n "$EXISTING_RUNTIME_GROUP" && \
+  test "$EXISTING_RUNTIME_GROUP" != "$WREMOTELY_RUNTIME_GROUP"; then
+  echo "GID $WREMOTELY_RUNTIME_GID belongs to unrelated group $EXISTING_RUNTIME_GROUP" >&2
+  exit 1
+fi
+if test -z "$EXISTING_RUNTIME_GROUP"; then
+  sudo groupadd --gid "$WREMOTELY_RUNTIME_GID" "$WREMOTELY_RUNTIME_GROUP"
+fi
+
 install -d -m 700 "$WREMOTELY_ARTIFACTS_DIR"
-setfacl -m u:10001:rwx "$WREMOTELY_ARTIFACTS_DIR"
-setfacl -d -m u:10001:rwx "$WREMOTELY_ARTIFACTS_DIR"
-chmod 600 \
+sudo chgrp "$WREMOTELY_RUNTIME_GROUP" "$WREMOTELY_ARTIFACTS_DIR"
+sudo chmod 2770 "$WREMOTELY_ARTIFACTS_DIR"
+sudo chgrp "$WREMOTELY_RUNTIME_GROUP" \
   "$WREMOTELY_SECRETS_DIR/google-application-credentials.json" \
   "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
-setfacl -m u:10001:r-- \
+sudo chmod 640 \
+  "$WREMOTELY_SECRETS_DIR/google-application-credentials.json" \
+  "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
+
+stat -c 'mode=%a uid=%u gid=%g path=%n' \
+  "$WREMOTELY_ARTIFACTS_DIR" \
   "$WREMOTELY_SECRETS_DIR/google-application-credentials.json" \
   "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
 
@@ -955,7 +982,7 @@ export ENV_BACKUP="$DATA_PLATFORM_ENV_FILE.pre-wremotely-$(date -u +%Y%m%dT%H%M%
 test ! -e "$ENV_BACKUP"
 cp -p -- "$DATA_PLATFORM_ENV_FILE" "$ENV_BACKUP"
 
-python - <<'PY'
+python3 - <<'PY'
 import os
 import stat
 from pathlib import Path
@@ -1008,23 +1035,39 @@ def render(name: str, value: str) -> str:
     return f"{name}={value}"
 
 lines = env_file.read_text(encoding="utf-8").splitlines()
-seen = set()
+last_assignment_index = {}
+assignment_counts = {}
+for index, line in enumerate(lines):
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        continue
+    name = stripped.split("=", 1)[0].strip()
+    last_assignment_index[name] = index
+    assignment_counts[name] = assignment_counts.get(name, 0) + 1
+
+duplicate_names = sorted(
+    name for name, count in assignment_counts.items() if count > 1
+)
+if duplicate_names:
+    print("deduplicated_environment_keys=" + ",".join(duplicate_names))
+
 updated = []
-for line in lines:
+for index, line in enumerate(lines):
     stripped = line.strip()
     if not stripped or stripped.startswith("#") or "=" not in stripped:
         updated.append(line)
         continue
+
     name = stripped.split("=", 1)[0].strip()
-    if name in seen:
-        raise SystemExit(f"duplicate environment key: {name}")
-    seen.add(name)
     if name in obsolete:
         continue
+    if index != last_assignment_index[name]:
+        continue
+
     updated.append(render(name, fixed[name]) if name in fixed else line)
 
 for name, value in {**fixed, **defaults}.items():
-    if name not in seen:
+    if name not in last_assignment_index:
         updated.append(render(name, value))
 
 mode = stat.S_IMODE(env_file.stat().st_mode)
@@ -1054,7 +1097,7 @@ between the database role change and the prod container recreation.
 ```bash
 export PROD_REPO_DIR="$HOME/prod/data-platform"
 export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
-export NEW_POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export NEW_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 test -s "$PROD_ENV_FILE"
 test -n "$NEW_POSTGRES_PASSWORD"
@@ -1086,7 +1129,7 @@ docker exec -i "$PROD_POSTGRES_CONTAINER_ID" \
 ALTER ROLE :"role_name" WITH PASSWORD :'new_password';
 SQL
 
-python - <<'PY'
+python3 - <<'PY'
 import os
 import stat
 from pathlib import Path
@@ -1157,8 +1200,8 @@ Useful host values:
 ```bash
 id -u
 stat -c '%g' /var/run/docker.sock
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 realpath "$HOME/secrets/data-platform/qa/scripts-service-account.json"
 realpath "$HOME/secrets/data-platform/qa/dbt-service-account.json"
 ```
@@ -1207,7 +1250,8 @@ The workflow:
 3. Writes all four refs to `$HOME/secrets/data-platform/qa/images.env`.
 4. Runs `dbt compile` in the deployed dbt image with QA credentials.
 5. Pulls runtime images and recreates the QA Airflow stack.
-6. Runs Airflow DAG import smoke checks.
+6. Waits for every Compose service health check, then requires the complete
+   deployed DAG inventory and no Airflow import errors.
 
 The `dbt compile` step uses the profile baked into the selected dbt image. That
 profile is copied from `dbt/data_warehouse/profiles.yml.example` at image build
@@ -1356,8 +1400,8 @@ Useful host values:
 ```bash
 id -u
 stat -c '%g' /var/run/docker.sock
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 realpath "$HOME/secrets/data-platform/prod/scripts-service-account.json"
 realpath "$HOME/secrets/data-platform/prod/dbt-service-account.json"
 ```
@@ -1408,7 +1452,8 @@ The workflow:
    promotes the immutable QA image manifest to prod.
 5. Runs `dbt compile` in the deployed dbt image with prod credentials.
 6. Pulls runtime images and recreates the prod Airflow stack.
-7. Runs Airflow DAG import smoke checks.
+7. Waits for every Compose service health check, then requires the complete
+   deployed DAG inventory and no Airflow import errors.
 
 The prod workflow does not run `dbt build`, dbt tests, or Airflow DAGs. Those
 are production operations, not deploy steps.

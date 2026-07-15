@@ -276,7 +276,7 @@ jobs:
           cd "$PROD_REPO_DIR/airflow"
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet
           docker_compose_pull_with_retry
-          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans
+          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml up -d --force-recreate --remove-orphans --wait --wait-timeout 300
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml ps
 
       - name: Prod Airflow smoke check
@@ -288,5 +288,47 @@ jobs:
           set +a
 
           cd "$PROD_REPO_DIR/airflow"
-          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list
-          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T scheduler airflow dags list-import-errors
+          expected_dag_ids=(
+            etl__personal_finance
+            etl__wremotely
+            maintenance__wremotely_lifecycle
+            publish__wremotely_serving
+            repair__wremotely_job_urls
+          )
+
+          missing_dag_ids=()
+          for attempt in {1..24}; do
+            dag_list="$(
+              DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
+                docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml \
+                exec -T scheduler airflow dags list
+            )"
+            missing_dag_ids=()
+            for dag_id in "${expected_dag_ids[@]}"; do
+              if ! grep -Fq "$dag_id" <<< "$dag_list"; then
+                missing_dag_ids+=("$dag_id")
+              fi
+            done
+            if [[ "${#missing_dag_ids[@]}" -eq 0 ]]; then
+              break
+            fi
+
+            echo "Waiting for Airflow DAG serialization; attempt $attempt/24; missing: ${missing_dag_ids[*]}"
+            sleep 5
+          done
+          printf '%s\n' "$dag_list"
+          if [[ "${#missing_dag_ids[@]}" -ne 0 ]]; then
+            echo "::error::Expected deployed DAGs are missing: ${missing_dag_ids[*]}"
+            exit 1
+          fi
+
+          import_errors="$(
+            DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
+              docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml \
+              exec -T scheduler airflow dags list-import-errors
+          )"
+          printf '%s\n' "$import_errors"
+          if ! grep -Fq "No data found" <<< "$import_errors"; then
+            echo "::error::Airflow reports DAG import errors."
+            exit 1
+          fi
