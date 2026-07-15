@@ -23,8 +23,9 @@ env:
   QA_REPO_DIR: ${{ vars.QA_REPO_DIR }}
   QA_DATA_PLATFORM_ENV_FILE: ${{ vars.QA_DATA_PLATFORM_ENV_FILE }}
   QA_IMAGE_ENV_FILE: ${{ vars.QA_IMAGE_ENV_FILE }}
-  QA_WREMOTELY_ETL_IMAGE: ${{ vars.QA_WREMOTELY_ETL_IMAGE }}
   REGISTRY_PREFIX: ghcr.io/kevinesg
+  WREMOTELY_ETL_IMAGE_REPOSITORY: ghcr.io/kevinesg/wremotely-etl
+  WREMOTELY_ETL_QA_CANDIDATE_IMAGE: ghcr.io/kevinesg/wremotely-etl:qa-candidate
 
 jobs:
   deploy:
@@ -57,7 +58,6 @@ jobs:
           test -d "$QA_REPO_DIR/.git"
           test -f "$QA_DATA_PLATFORM_ENV_FILE"
           test -d "$(dirname "$QA_IMAGE_ENV_FILE")"
-          test -n "$QA_WREMOTELY_ETL_IMAGE"
 
       - name: Update QA checkout
         shell: bash
@@ -143,13 +143,43 @@ jobs:
             ":(exclude)dbt/**/.gitignore" \
             ":(exclude)dbt/**/.gitkeep"
 
-          if [[ ! "$QA_WREMOTELY_ETL_IMAGE" =~ ^ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$ ]]; then
-            echo "::error::QA_WREMOTELY_ETL_IMAGE must be an immutable full-commit SHA tag."
+          docker pull "$WREMOTELY_ETL_QA_CANDIDATE_IMAGE"
+          wremotely_etl_revision="$(
+            docker image inspect "$WREMOTELY_ETL_QA_CANDIDATE_IMAGE" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+          )"
+          wremotely_etl_source="$(
+            docker image inspect "$WREMOTELY_ETL_QA_CANDIDATE_IMAGE" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.source" }}'
+          )"
+
+          if [[ ! "$wremotely_etl_revision" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Private ETL QA candidate has an invalid revision label."
+            exit 1
+          fi
+          if [[ "$wremotely_etl_source" != "https://github.com/kevinesg/wremotely-etl" ]]; then
+            echo "::error::Private ETL QA candidate has an unexpected source label."
             exit 1
           fi
 
-          DATA_PLATFORM_WREMOTELY_ETL_IMAGE="$QA_WREMOTELY_ETL_IMAGE"
-          docker manifest inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" >/dev/null
+          DATA_PLATFORM_WREMOTELY_ETL_IMAGE="$WREMOTELY_ETL_IMAGE_REPOSITORY:sha-$wremotely_etl_revision"
+          docker pull "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
+
+          immutable_revision="$(
+            docker image inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+          )"
+          if [[ "$immutable_revision" != "$wremotely_etl_revision" ]]; then
+            echo "::error::Private ETL immutable image revision does not match QA candidate."
+            exit 1
+          fi
+          if [[ "$(docker image inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" --format '{{.Id}}')" != \
+                "$(docker image inspect "$WREMOTELY_ETL_QA_CANDIDATE_IMAGE" --format '{{.Id}}')" ]]; then
+            echo "::error::Private ETL immutable image does not match QA candidate."
+            exit 1
+          fi
+
+          echo "Selected private ETL image: $DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
           test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
