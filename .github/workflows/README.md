@@ -25,8 +25,8 @@ for every component check.
 | `dbt-ci` | [dbt-ci.yml](dbt-ci.yml) | Pull requests and pushes to `main` that change dbt runtime files, plus manual dispatch | Installs the locked dbt runtime, parses the dbt project with non-secret placeholder values, and builds the dbt Docker image without publishing it. |
 | `airflow-ci` | [airflow-ci.yml](airflow-ci.yml) | Pull requests and pushes to `main` that change Airflow runtime files, plus manual dispatch | Builds the Airflow Docker image and imports packaged DAG files with non-secret placeholder values. |
 | `publish-images` | [publish-images.yml](publish-images.yml) | Successful component CI runs on `main`, plus manual dispatch | Publishes immutable component image tags to GHCR for deployed environments. |
-| `deploy-qa` | [deploy-qa.yml](deploy-qa.yml) | Manual dispatch | Deploys the selected Git ref to the QA host using the latest matching immutable runtime images. |
-| `deploy-prod` | [deploy-prod.yml](deploy-prod.yml) | Manual dispatch with `prod` environment approval | Promotes the QA image manifest to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
+| `deploy-qa` | [deploy-qa.yml](deploy-qa.yml) | Manual dispatch | Deploys the selected Git ref with the latest matching immutable data-platform images and the configured private ETL image. |
+| `deploy-prod` | [deploy-prod.yml](deploy-prod.yml) | Manual dispatch with `prod` environment approval | Promotes all four QA image-manifest entries to prod, validates prod dbt compile, and recreates the prod Airflow stack. |
 | `refresh-dbt-docs` | [refresh-dbt-docs.yml](refresh-dbt-docs.yml) | Successful `deploy-prod` runs, plus manual dispatch | Generates static dbt docs from the deployed prod dbt image and serves them from the prod host without committing artifacts. |
 | `backup-metadata` | [backup-metadata.yml](backup-metadata.yml) | Daily schedule, plus manual dispatch | Backs up prod Airflow metadata and Metabase application databases from the prod host without committing artifacts. |
 

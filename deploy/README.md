@@ -191,6 +191,41 @@ gcloud config list
 Before each mutating bootstrap command, confirm that the active account and
 project are correct.
 
+If an administrator used a development workstation for a read-only QA/prod
+check, return that workstation to its persistent dev configuration before
+continuing development. Do not revoke the shared login or delete the other
+configuration:
+
+```bash
+unset \
+  ENVIRONMENT \
+  PROJECT_ID \
+  PROJECT_NAME \
+  BIGQUERY_LOCATION \
+  PLATFORM_BOOTSTRAP_CONFIGURATION \
+  GOOGLE_CLOUD_BOOTSTRAP_ACCOUNT
+
+export DATA_PLATFORM_ENV_FILE="$HOME/dev/secrets/data-platform/.env"
+test -s "$DATA_PLATFORM_ENV_FILE"
+
+set -a
+. "$DATA_PLATFORM_ENV_FILE"
+set +a
+
+test "$PROJECT_ID" = "kevinesg-dev"
+export PLATFORM_BOOTSTRAP_CONFIGURATION="data-platform-bootstrap-dev"
+
+gcloud config configurations activate "$PLATFORM_BOOTSTRAP_CONFIGURATION"
+gcloud config set project "$PROJECT_ID"
+gcloud config list
+gcloud config get-value project
+```
+
+Shell exports are intentionally temporary. Persistent QA/prod runtime values
+belong in `$HOME/secrets/data-platform/<environment>/.env`; bootstrap-only
+operator values such as `PROJECT_NAME`, `PLATFORM_BOOTSTRAP_CONFIGURATION`, and
+`GOOGLE_CLOUD_BOOTSTRAP_ACCOUNT` do not belong in the Airflow runtime file.
+
 ### Project State
 
 Check the project:
@@ -342,9 +377,11 @@ be stored on development workstations.
 ## Deployment Image Manifest
 
 Deployed environments use an external non-secret `images.env` file beside the
-external secret `.env` file. The image manifest pins each runtime component to
-an immutable GHCR tag produced by
-[.github/workflows/publish-images.yml](../.github/workflows/publish-images.yml).
+external secret `.env` file. The image manifest pins Airflow, scripts, and dbt
+to immutable GHCR tags produced by
+[`.github/workflows/publish-images.yml`](../.github/workflows/publish-images.yml),
+and pins the private ETL runtime to the immutable tag produced by the private
+repository's `publish-image` workflow.
 
 ```text
 $HOME/secrets/data-platform/qa/images.env
@@ -363,9 +400,11 @@ copies.
 Normal production promotion copies the exact immutable image refs that passed
 QA. The first wremotely production launch has an explicitly approved one-time
 exception because the QA serving environment is not provisioned yet. That
-exception uses a separate bootstrap manifest created from three images built
-from the same `main` commit. It does not permit mutable tags or make QA optional
-for later releases. See **One-Time First Production Bootstrap Without QA**.
+exception uses a separate bootstrap manifest containing three data-platform
+images built from one `main` commit plus one independently versioned private ETL
+image built from its own merged `main` commit. It does not permit mutable tags
+or make QA optional for later releases. See **One-Time First Production
+Bootstrap Without QA**.
 
 ## Deployed Web Interfaces
 
@@ -582,6 +621,17 @@ QA_DATA_PLATFORM_ENV_FILE
 QA_IMAGE_ENV_FILE
 ```
 
+Also set this required GitHub `qa` environment variable to the exact private
+image that the release will validate:
+
+```text
+QA_WREMOTELY_ETL_IMAGE=ghcr.io/kevinesg/wremotely-etl:sha-<full-commit-sha>
+```
+
+The private package must remain private and grant `kevinesg/data-platform`
+**Read** under its **Manage Actions access** settings. The workflow rejects
+mutable or abbreviated tags and writes the validated ref into the QA manifest.
+
 ### Deployed GCP Workspace
 
 Run this section once per deployed environment as a platform maintainer after
@@ -611,7 +661,7 @@ Then set the shared deployed workspace values:
 export BIGQUERY_LOCATION=US
 export RAW_DATASET=raw
 export DBT_DEFAULT_DATASET=analytics
-export DBT_DATASETS="analytics staging intermediate seed_personal_finance mart_personal_finance"
+export DBT_DATASETS="analytics staging intermediate seed_personal_finance seed_wremotely mart_personal_finance mart_wremotely"
 export LANDING_BUCKET="$PROJECT_ID-data-platform-landing"
 export SCRIPTS_SERVICE_ACCOUNT_NAME="data-platform-scripts-$ENVIRONMENT"
 export DBT_SERVICE_ACCOUNT_NAME="data-platform-dbt-$ENVIRONMENT"
@@ -882,7 +932,10 @@ chmod 600 "$HOME/secrets/data-platform/qa/.env" "$HOME/secrets/data-platform/qa/
 Edit `$HOME/secrets/data-platform/qa/.env` and set QA values. At minimum,
 replace passwords/secrets, `PROJECT_ID`, `PERSONAL_FINANCE_GSHEET_URL`,
 `PERSONAL_FINANCE_GCS_BUCKET`, `AIRFLOW_UID`, `DOCKER_GID`, and the absolute
-service-account key paths. Keep `PERSONAL_FINANCE_GCS_PREFIX=personal_finance`.
+service-account key paths. Also create the QA wremotely service-account
+credential, approved-source snapshot, publication-hold policy, and artifacts
+directory at the paths configured by the template. Keep
+`PERSONAL_FINANCE_GCS_PREFIX=personal_finance`.
 
 Useful host values:
 
@@ -934,8 +987,8 @@ The workflow:
 
 1. Updates the persistent QA checkout.
 2. Selects the latest published scripts, dbt, and Airflow images that match the
-   deployed source history.
-3. Writes those refs to `$HOME/secrets/data-platform/qa/images.env`.
+   deployed source history and validates `QA_WREMOTELY_ETL_IMAGE`.
+3. Writes all four refs to `$HOME/secrets/data-platform/qa/images.env`.
 4. Runs `dbt compile` in the deployed dbt image with QA credentials.
 5. Pulls runtime images and recreates the QA Airflow stack.
 6. Runs Airflow DAG import smoke checks.
@@ -1062,15 +1115,32 @@ PERSONAL_FINANCE_GCS_BUCKET=kevinesg-prod-data-platform-landing
 SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/scripts-service-account.json
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/dbt-service-account.json
 ETL__PERSONAL_FINANCE_SCHEDULE=<prod cron or preset schedule>
+ETL__WREMOTELY_SCHEDULE='0 */12 * * *'
+WREMOTELY_LIFECYCLE_SCHEDULE='15 */12 * * *'
 DBT_TARGET=prod
 DBT_DATASET=analytics
 BIGQUERY_LOCATION=US
+WREMOTELY_HANDOFF_DATASET=handoff
+WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications
+WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/wremotely-etl/prod/google-application-credentials.json
+WREMOTELY_ETL_ARTIFACTS_DIR=/home/<user>/prod/wremotely-etl-artifacts
+WREMOTELY_APPROVED_SOURCES_FILE=/home/<user>/secrets/wremotely-etl/prod/approved_sources.jsonl
+WREMOTELY_APPROVED_SOURCES_SHA256=<sha256-of-approved-sources>
+WREMOTELY_PUBLICATION_HOLD_POLICY=/home/<user>/secrets/wremotely-etl/prod/publication-hold-policy.md
+WREMOTELY_GCS_BUCKET=kevinesg-prod-wremotely-etl-landing-prod
+WREMOTELY_GCS_PREFIX=wremotely
+WREMOTELY_BIGQUERY_LOCATION=US
+WREMOTELY_LOCAL_LLM_RUNTIME=ollama
+WREMOTELY_LOCAL_LLM_MODEL=<benchmark-approved-model>
+WREMOTELY_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
 ```
 
 Also replace all generated Airflow/Postgres passwords and secrets. Keep
-`PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Prod DAG import requires
-`ETL__PERSONAL_FINANCE_SCHEDULE` because prod is the scheduled environment; use
-QA for manual-only validation.
+`PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Before validating the runtime,
+create the wremotely service-account credential, approved-source snapshot,
+publication-hold policy, and artifacts directory at the configured paths.
+Prod DAG import requires all three schedule values because prod is the
+scheduled environment; use QA for manual-only validation.
 
 Useful host values:
 
@@ -1119,10 +1189,16 @@ Use this section only for the explicitly approved first wremotely production
 launch while the separate desktop QA serving environment is not yet available.
 This is a release-process exception, not an equivalent substitute for QA.
 
-In GitHub Actions, run `publish-images` from `main` with `component=all`. Wait
-for all three image jobs to succeed. The manual workflow publishes Airflow,
-scripts, and dbt images from one commit, which gives the bootstrap manifest a
-single auditable source revision.
+In the data-platform GitHub Actions, run `publish-images` from `main` with
+`component=all`. Wait for all three image jobs to succeed. The manual workflow
+publishes Airflow, scripts, and dbt images from one commit, which gives those
+three bootstrap entries a single auditable source revision.
+
+Separately confirm that the private `wremotely-etl` repository's
+`publish-image` workflow succeeded on merged `main`, that its GHCR package is
+private and linked to `kevinesg/wremotely-etl`, and that **Manage Actions
+access** grants `kevinesg/data-platform` read access. Record the full private
+ETL commit SHA; it is intentionally independent from the data-platform commit.
 
 Then run this on the production data-platform deployment host after **Prod Host
 Setup**. The persistent checkout must be at the same `main` commit used by the
@@ -1131,6 +1207,8 @@ successful `publish-images` run:
 ```bash
 export PROD_REPO_DIR="$HOME/prod/data-platform"
 export PROD_BOOTSTRAP_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/bootstrap-images.env"
+export WREMOTELY_ETL_IMAGE_SHA="<full-wremotely-etl-main-commit-sha>"
+export DATA_PLATFORM_WREMOTELY_ETL_IMAGE="ghcr.io/kevinesg/wremotely-etl:sha-$WREMOTELY_ETL_IMAGE_SHA"
 
 cd "$PROD_REPO_DIR"
 git switch main
@@ -1139,22 +1217,32 @@ git pull --ff-only origin main
 export BOOTSTRAP_SHA="$(git rev-parse HEAD)"
 test "$(git branch --show-current)" = main
 test -n "$BOOTSTRAP_SHA"
+test -n "$WREMOTELY_ETL_IMAGE_SHA"
+test -n "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
+printf '%s\n' "$WREMOTELY_ETL_IMAGE_SHA" | grep -E '^[0-9a-f]{40}$'
+printf '%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" | \
+  grep -E '^ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$'
 
 {
   printf 'DATA_PLATFORM_AIRFLOW_IMAGE=ghcr.io/kevinesg/data-platform-airflow:sha-%s\n' "$BOOTSTRAP_SHA"
   printf 'DATA_PLATFORM_SCRIPTS_IMAGE=ghcr.io/kevinesg/data-platform-scripts:sha-%s\n' "$BOOTSTRAP_SHA"
   printf 'DATA_PLATFORM_DBT_IMAGE=ghcr.io/kevinesg/data-platform-dbt:sha-%s\n' "$BOOTSTRAP_SHA"
+  printf 'DATA_PLATFORM_WREMOTELY_ETL_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 } > "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
 chmod 600 "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
 
 grep -E '^DATA_PLATFORM_(AIRFLOW|SCRIPTS|DBT)_IMAGE=ghcr\.io/kevinesg/data-platform-(airflow|scripts|dbt):sha-[0-9a-f]{40}$' \
   "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
-test "$(wc -l < "$PROD_BOOTSTRAP_IMAGE_ENV_FILE")" -eq 3
+grep -E '^DATA_PLATFORM_WREMOTELY_ETL_IMAGE=ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$' \
+  "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
+test "$(wc -l < "$PROD_BOOTSTRAP_IMAGE_ENV_FILE")" -eq 4
 ```
 
 Compare `BOOTSTRAP_SHA` with the commit shown by the successful
-`publish-images` workflow. Stop if they differ; do not substitute `latest`, a
-branch tag, or images from different commits.
+`publish-images` workflow and `WREMOTELY_ETL_IMAGE_SHA` with the commit shown by
+the successful private `publish-image` workflow. Stop if either differs. Do not
+substitute `latest`, branch tags, abbreviated SHAs, unmerged commits, or images
+from a different publisher run.
 
 In repository **Settings** > **Environments** > **prod** > **Environment
 variables**, set `PROD_SOURCE_IMAGE_ENV_FILE` to the absolute bootstrap path,
@@ -1165,7 +1253,7 @@ for example:
 ```
 
 Run `deploy-prod` only after that environment variable and file are in place.
-The workflow authenticates to GHCR, verifies that all three immutable manifests
+The workflow authenticates to GHCR, verifies that all four immutable manifests
 exist, and copies the refs into the normal prod image manifest before starting
 services.
 

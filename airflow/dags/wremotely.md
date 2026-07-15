@@ -38,7 +38,14 @@ running Docker:
   3.5 days. Keep dev/QA lifecycle runs manual.
 
 The private runtime image is configured with `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`.
-Use an immutable image tag in QA and prod.
+Dev may keep this value in its external development environment file. QA and
+prod keep it in the external deployment `images.env` manifest using the exact
+immutable form
+`ghcr.io/kevinesg/wremotely-etl:sha-<full-40-character-commit-sha>`.
+`deploy-qa` validates the explicit QA image variable, while `deploy-prod`
+promotes the same manifest entry. The private GHCR package must grant
+`kevinesg/data-platform` read access under **Manage Actions access** so the
+deployment workflows can verify and pull it without making the package public.
 
 ## Handoff dataset and publication topic
 

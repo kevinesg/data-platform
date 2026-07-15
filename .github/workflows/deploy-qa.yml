@@ -23,6 +23,7 @@ env:
   QA_REPO_DIR: ${{ vars.QA_REPO_DIR }}
   QA_DATA_PLATFORM_ENV_FILE: ${{ vars.QA_DATA_PLATFORM_ENV_FILE }}
   QA_IMAGE_ENV_FILE: ${{ vars.QA_IMAGE_ENV_FILE }}
+  QA_WREMOTELY_ETL_IMAGE: ${{ vars.QA_WREMOTELY_ETL_IMAGE }}
   REGISTRY_PREFIX: ghcr.io/kevinesg
 
 jobs:
@@ -56,6 +57,7 @@ jobs:
           test -d "$QA_REPO_DIR/.git"
           test -f "$QA_DATA_PLATFORM_ENV_FILE"
           test -d "$(dirname "$QA_IMAGE_ENV_FILE")"
+          test -n "$QA_WREMOTELY_ETL_IMAGE"
 
       - name: Update QA checkout
         shell: bash
@@ -141,14 +143,24 @@ jobs:
             ":(exclude)dbt/**/.gitignore" \
             ":(exclude)dbt/**/.gitkeep"
 
+          if [[ ! "$QA_WREMOTELY_ETL_IMAGE" =~ ^ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$ ]]; then
+            echo "::error::QA_WREMOTELY_ETL_IMAGE must be an immutable full-commit SHA tag."
+            exit 1
+          fi
+
+          DATA_PLATFORM_WREMOTELY_ETL_IMAGE="$QA_WREMOTELY_ETL_IMAGE"
+          docker manifest inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" >/dev/null
+
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
           test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
           test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DATA_PLATFORM_WREMOTELY_ETL_IMAGE:-}"
 
           {
             printf 'DATA_PLATFORM_AIRFLOW_IMAGE=%s\n' "$DATA_PLATFORM_AIRFLOW_IMAGE"
             printf 'DATA_PLATFORM_SCRIPTS_IMAGE=%s\n' "$DATA_PLATFORM_SCRIPTS_IMAGE"
             printf 'DATA_PLATFORM_DBT_IMAGE=%s\n' "$DATA_PLATFORM_DBT_IMAGE"
+            printf 'DATA_PLATFORM_WREMOTELY_ETL_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
           } > "$QA_IMAGE_ENV_FILE"
           chmod 600 "$QA_IMAGE_ENV_FILE"
 
@@ -190,6 +202,7 @@ jobs:
           docker manifest inspect "$DATA_PLATFORM_AIRFLOW_IMAGE" >/dev/null
           docker manifest inspect "$DATA_PLATFORM_SCRIPTS_IMAGE" >/dev/null
           docker manifest inspect "$DATA_PLATFORM_DBT_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" >/dev/null
 
           # DockerOperator starts sibling containers through the host Docker daemon.
           # Pull task images here while the workflow is logged in to GHCR so Airflow
@@ -197,6 +210,7 @@ jobs:
           docker pull "$DATA_PLATFORM_AIRFLOW_IMAGE"
           docker pull "$DATA_PLATFORM_SCRIPTS_IMAGE"
           docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker pull "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 
           cd "$QA_REPO_DIR/airflow"
           DATA_PLATFORM_ENV_FILE="$QA_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$QA_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet

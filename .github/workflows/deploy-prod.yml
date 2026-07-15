@@ -143,6 +143,12 @@ jobs:
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
           test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
           test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DATA_PLATFORM_WREMOTELY_ETL_IMAGE:-}"
+
+          if [[ ! "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" =~ ^ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$ ]]; then
+            echo "::error::DATA_PLATFORM_WREMOTELY_ETL_IMAGE must be an immutable full-commit SHA tag."
+            exit 1
+          fi
 
           docker_manifest_inspect_with_retry() {
             local image="$1"
@@ -163,6 +169,7 @@ jobs:
           docker_manifest_inspect_with_retry "$DATA_PLATFORM_AIRFLOW_IMAGE"
           docker_manifest_inspect_with_retry "$DATA_PLATFORM_SCRIPTS_IMAGE"
           docker_manifest_inspect_with_retry "$DATA_PLATFORM_DBT_IMAGE"
+          docker_manifest_inspect_with_retry "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 
           if [[ -f "$PROD_IMAGE_ENV_FILE" ]]; then
             cp "$PROD_IMAGE_ENV_FILE" "$PROD_IMAGE_ENV_FILE.previous"
@@ -173,6 +180,7 @@ jobs:
             printf 'DATA_PLATFORM_AIRFLOW_IMAGE=%s\n' "$DATA_PLATFORM_AIRFLOW_IMAGE"
             printf 'DATA_PLATFORM_SCRIPTS_IMAGE=%s\n' "$DATA_PLATFORM_SCRIPTS_IMAGE"
             printf 'DATA_PLATFORM_DBT_IMAGE=%s\n' "$DATA_PLATFORM_DBT_IMAGE"
+            printf 'DATA_PLATFORM_WREMOTELY_ETL_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
           } > "$PROD_IMAGE_ENV_FILE"
           chmod 600 "$PROD_IMAGE_ENV_FILE"
 
@@ -264,6 +272,7 @@ jobs:
           docker_pull_with_retry "$DATA_PLATFORM_AIRFLOW_IMAGE"
           docker_pull_with_retry "$DATA_PLATFORM_SCRIPTS_IMAGE"
           docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
+          docker_pull_with_retry "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 
           cd "$PROD_REPO_DIR/airflow"
           DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml config --quiet
