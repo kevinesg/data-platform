@@ -131,13 +131,21 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     if not isinstance(serving_snapshot_command, list):
         raise AssertionError("serving snapshot command must be an argv list")
     if command_argument(serving_snapshot_command, "--source-registry-input") != (
-        "/tmp/wremotely-approved-sources.jsonl"
+        "/app/source_registry/approved_sources.jsonl"
     ):
-        raise AssertionError("serving snapshot must use the mounted approved-source registry")
-    if command_argument(serving_snapshot_command, "--source-registry-input-sha256") != (
-        os.environ["WREMOTELY_APPROVED_SOURCES_SHA256"]
+        raise AssertionError("serving snapshot must use the image-bundled approved registry")
+    if "--source-registry-input-sha256" in serving_snapshot_command:
+        raise AssertionError("serving snapshot must not depend on an external registry checksum")
+
+    crawl_command = ingestion.get_task("crawl").command
+    if not isinstance(crawl_command, list):
+        raise AssertionError("crawl command must be an argv list")
+    if command_argument(crawl_command, "--source-registry-input") != (
+        "/app/source_registry/approved_sources.jsonl"
     ):
-        raise AssertionError("serving snapshot must pin the approved-source checksum")
+        raise AssertionError("crawl must use the image-bundled approved registry")
+    if "--source-registry-input-sha256" in crawl_command:
+        raise AssertionError("crawl must not depend on an external registry checksum")
 
     validate_lifecycle_bucket_contract(lifecycle)
 

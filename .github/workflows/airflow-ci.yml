@@ -83,8 +83,6 @@ jobs:
             -e BIGQUERY_LOCATION=US \
             -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
             -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \
-            -e WREMOTELY_APPROVED_SOURCES_FILE=/tmp/wremotely-approved-sources.jsonl \
-            -e WREMOTELY_APPROVED_SOURCES_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
             -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
             -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
             -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \

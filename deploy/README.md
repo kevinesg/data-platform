@@ -93,6 +93,7 @@ Install tools from their official documentation:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [Docker Engine](https://docs.docker.com/engine/install/) or
   [Docker Desktop](https://docs.docker.com/desktop/)
+- POSIX ACL utilities (`setfacl`; package `acl` on Ubuntu/Debian)
 
 The Google Cloud CLI installation must include `gcloud` and `bq`.
 
@@ -104,6 +105,7 @@ bq version
 uv --version
 docker version
 docker compose version
+setfacl --version
 ```
 
 Authenticate GitHub CLI once per workstation:
@@ -903,6 +905,227 @@ data-platform-scripts-qa@kevinesg-qa.iam.gserviceaccount.com
 data-platform-scripts-prod@kevinesg-prod.iam.gserviceaccount.com
 ```
 
+Complete the private ETL README's deployed warehouse setup for the matching
+environment first. It creates or verifies the ETL identity, credential, landing
+bucket, and raw dataset access. Then use the reconciliation procedure below to
+write the persistent runtime contract before running [wremotely Airflow DAGs:
+Handoff dataset and publication
+topic](../airflow/dags/wremotely.md#handoff-dataset-and-publication-topic). That
+second runbook creates or verifies `mart_wremotely`, `handoff`, the publication
+topic, and the cross-component dataset IAM. Dataset grants apply to tables
+created later by ETL and dbt; do not pre-create tables or add routine per-table
+grants.
+
+### Reconcile An Existing Deployed Environment
+
+Use this procedure when QA or prod already has an external `.env` file. It
+backs up the file, preserves unrelated values and existing operator-tuned
+wremotely defaults, sets environment-owned paths/names/schedules, and removes
+the obsolete host approved-source file and checksum keys. The approved registry
+is bundled in the immutable private image. Run once with `DEPLOY_ENV=qa`, then
+again with `DEPLOY_ENV=prod` when preparing both environments.
+
+Before running it, create the matching ETL credential and external publication
+policy, and prepare the artifacts directory. The policy is operator-specific
+and must be transferred through an authenticated channel or created directly on
+the deployment host; it is not in either repository.
+
+```bash
+export DEPLOY_ENV="qa" # change to prod for the second run
+export DATA_PLATFORM_ENV_FILE="$HOME/secrets/data-platform/$DEPLOY_ENV/.env"
+export WREMOTELY_SECRETS_DIR="$HOME/secrets/wremotely-etl/$DEPLOY_ENV"
+export WREMOTELY_ARTIFACTS_DIR="$HOME/$DEPLOY_ENV/wremotely-etl-artifacts"
+
+test "$DEPLOY_ENV" = qa || test "$DEPLOY_ENV" = prod
+test -s "$DATA_PLATFORM_ENV_FILE"
+test -s "$WREMOTELY_SECRETS_DIR/google-application-credentials.json"
+test -s "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
+
+install -d -m 700 "$WREMOTELY_ARTIFACTS_DIR"
+setfacl -m u:10001:rwx "$WREMOTELY_ARTIFACTS_DIR"
+setfacl -d -m u:10001:rwx "$WREMOTELY_ARTIFACTS_DIR"
+chmod 600 \
+  "$WREMOTELY_SECRETS_DIR/google-application-credentials.json" \
+  "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
+setfacl -m u:10001:r-- \
+  "$WREMOTELY_SECRETS_DIR/google-application-credentials.json" \
+  "$WREMOTELY_SECRETS_DIR/publication-hold-policy.md"
+
+export ENV_BACKUP="$DATA_PLATFORM_ENV_FILE.pre-wremotely-$(date -u +%Y%m%dT%H%M%SZ)"
+test ! -e "$ENV_BACKUP"
+cp -p -- "$DATA_PLATFORM_ENV_FILE" "$ENV_BACKUP"
+
+python - <<'PY'
+import os
+import stat
+from pathlib import Path
+
+environment = os.environ["DEPLOY_ENV"]
+env_file = Path(os.environ["DATA_PLATFORM_ENV_FILE"])
+home = Path.home()
+
+fixed = {
+    "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "0 */12 * * *",
+    "WREMOTELY_LIFECYCLE_SCHEDULE": "" if environment == "qa" else "15 */12 * * *",
+    "WREMOTELY_HANDOFF_DATASET": "handoff",
+    "WREMOTELY_PUBLICATION_TOPIC": "wremotely-serving-publications",
+    "WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS": str(
+        home / "secrets" / "wremotely-etl" / environment / "google-application-credentials.json"
+    ),
+    "WREMOTELY_ETL_ARTIFACTS_DIR": str(home / environment / "wremotely-etl-artifacts"),
+    "WREMOTELY_PUBLICATION_HOLD_POLICY": str(
+        home / "secrets" / "wremotely-etl" / environment / "publication-hold-policy.md"
+    ),
+    "WREMOTELY_GCS_BUCKET": f"kevinesg-{environment}-wremotely-etl-landing-{environment}",
+    "WREMOTELY_GCS_PREFIX": "wremotely",
+    "WREMOTELY_BIGQUERY_LOCATION": "US",
+}
+defaults = {
+    "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT": "6",
+    "WREMOTELY_EXTRACT_WORKER_COUNT": "4",
+    "WREMOTELY_PLATFORM_WORKER_COUNT": "2",
+    "WREMOTELY_RECHECK_WORKER_COUNT": "16",
+    "WREMOTELY_PAGE_MAX_BYTES": "2097152",
+    "WREMOTELY_DOMAIN_DELAY_SECONDS": "1",
+    "WREMOTELY_DOMAIN_FAILURE_LIMIT": "5",
+    "WREMOTELY_CRAWL4AI_FALLBACK": "auto",
+    "WREMOTELY_CRAWL4AI_MIN_TEXT_CHARS": "500",
+    "WREMOTELY_STAGE_CHUNK_ROW_COUNT": "5000",
+    "WREMOTELY_KNOWN_URL_LOOKBACK_DAYS": "365",
+    "WREMOTELY_DOCKER_NETWORK_MODE": "host",
+    "WREMOTELY_LOCAL_LLM_RUNTIME": "disabled",
+    "WREMOTELY_LOCAL_LLM_MODEL": "disabled",
+    "WREMOTELY_LOCAL_LLM_ENDPOINT": "http://127.0.0.1:11434",
+    "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS": "120",
+}
+obsolete = {"WREMOTELY_APPROVED_SOURCES_FILE", "WREMOTELY_APPROVED_SOURCES_SHA256"}
+
+def render(name: str, value: str) -> str:
+    if not value:
+        return f"{name}="
+    if any(character.isspace() for character in value):
+        return f"{name}='{value}'"
+    return f"{name}={value}"
+
+lines = env_file.read_text(encoding="utf-8").splitlines()
+seen = set()
+updated = []
+for line in lines:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        updated.append(line)
+        continue
+    name = stripped.split("=", 1)[0].strip()
+    if name in seen:
+        raise SystemExit(f"duplicate environment key: {name}")
+    seen.add(name)
+    if name in obsolete:
+        continue
+    updated.append(render(name, fixed[name]) if name in fixed else line)
+
+for name, value in {**fixed, **defaults}.items():
+    if name not in seen:
+        updated.append(render(name, value))
+
+mode = stat.S_IMODE(env_file.stat().st_mode)
+temporary = env_file.with_name(f".{env_file.name}.tmp")
+temporary.write_text("\n".join(updated) + "\n", encoding="utf-8")
+os.chmod(temporary, mode)
+os.replace(temporary, env_file)
+PY
+
+chmod 600 "$DATA_PLATFORM_ENV_FILE"
+printf 'Updated: %s\nBackup: %s\n' "$DATA_PLATFORM_ENV_FILE" "$ENV_BACKUP"
+```
+
+`WREMOTELY_LOCAL_LLM_RUNTIME=disabled` is intentional until the selected local
+runtime/model passes its production-host benchmark. The production schedules
+are configured by this procedure, but newly introduced DAGs remain paused on
+creation. Do not unpause them before the model, cloud, deployment, and serving
+worker gates pass.
+
+If the prod audit still reports a placeholder `POSTGRES_PASSWORD`, do not edit
+only the env file. PostgreSQL applies that variable only when it initializes an
+empty data directory. After `deploy-qa` and its verification succeed, take a
+fresh metadata backup, then perform this coordinated rotation immediately
+before dispatching `deploy-prod`. Expect a short Airflow maintenance window
+between the database role change and the prod container recreation.
+
+```bash
+export PROD_REPO_DIR="$HOME/prod/data-platform"
+export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
+export NEW_POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+
+test -s "$PROD_ENV_FILE"
+test -n "$NEW_POSTGRES_PASSWORD"
+
+set -a
+. "$PROD_ENV_FILE"
+set +a
+
+mapfile -t PROD_POSTGRES_CONTAINER_IDS < <(
+  docker ps \
+    --filter "label=com.docker.compose.project=$AIRFLOW_COMPOSE_PROJECT" \
+    --filter "label=com.docker.compose.service=postgres" \
+    --format '{{.ID}}'
+)
+test "${#PROD_POSTGRES_CONTAINER_IDS[@]}" -eq 1
+export PROD_POSTGRES_CONTAINER_ID="${PROD_POSTGRES_CONTAINER_IDS[0]}"
+
+export POSTGRES_ENV_BACKUP="$PROD_ENV_FILE.pre-postgres-rotation-$(date -u +%Y%m%dT%H%M%SZ)"
+test ! -e "$POSTGRES_ENV_BACKUP"
+cp -p -- "$PROD_ENV_FILE" "$POSTGRES_ENV_BACKUP"
+
+docker exec -i "$PROD_POSTGRES_CONTAINER_ID" \
+  psql \
+    --set ON_ERROR_STOP=1 \
+    --username "$POSTGRES_USER" \
+    --dbname "$POSTGRES_DB" \
+    --set role_name="$POSTGRES_USER" \
+    --set new_password="$NEW_POSTGRES_PASSWORD" <<'SQL'
+ALTER ROLE :"role_name" WITH PASSWORD :'new_password';
+SQL
+
+python - <<'PY'
+import os
+import stat
+from pathlib import Path
+
+env_file = Path(os.environ["PROD_ENV_FILE"])
+new_password = os.environ["NEW_POSTGRES_PASSWORD"]
+lines = env_file.read_text(encoding="utf-8").splitlines()
+matches = [index for index, line in enumerate(lines) if line.startswith("POSTGRES_PASSWORD=")]
+if len(matches) != 1:
+    raise SystemExit("expected exactly one POSTGRES_PASSWORD entry")
+lines[matches[0]] = f"POSTGRES_PASSWORD={new_password}"
+
+mode = stat.S_IMODE(env_file.stat().st_mode)
+temporary = env_file.with_name(f".{env_file.name}.tmp")
+temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+os.chmod(temporary, mode)
+os.replace(temporary, env_file)
+PY
+
+docker exec \
+  --env PGPASSWORD="$NEW_POSTGRES_PASSWORD" \
+  "$PROD_POSTGRES_CONTAINER_ID" \
+  psql \
+    --host 127.0.0.1 \
+    --username "$POSTGRES_USER" \
+    --dbname "$POSTGRES_DB" \
+    --no-align \
+    --tuples-only \
+    --command 'SELECT 1'
+
+unset NEW_POSTGRES_PASSWORD
+printf 'Updated: %s\nBackup: %s\n' "$PROD_ENV_FILE" "$POSTGRES_ENV_BACKUP"
+```
+
+If the role update succeeds but a later command fails, keep the current shell
+open and rerun the env-file update and verification before restarting Airflow.
+Do not restore the old env backup unless you also restore the old database role
+password. Dispatch `deploy-prod` immediately after the verification prints `1`.
+
 ### QA Host Setup
 
 Run this on the deployment host:
@@ -925,8 +1148,8 @@ Edit `$HOME/secrets/data-platform/qa/.env` and set QA values. At minimum,
 replace passwords/secrets, `PROJECT_ID`, `PERSONAL_FINANCE_GSHEET_URL`,
 `PERSONAL_FINANCE_GCS_BUCKET`, `AIRFLOW_UID`, `DOCKER_GID`, and the absolute
 service-account key paths. Also create the QA wremotely service-account
-credential, approved-source snapshot, publication-hold policy, and artifacts
-directory at the paths configured by the template. Keep
+credential, publication-hold policy, and artifacts directory at the paths
+configured by the template. Keep
 `PERSONAL_FINANCE_GCS_PREFIX=personal_finance`.
 
 Useful host values:
@@ -1112,8 +1335,6 @@ WREMOTELY_HANDOFF_DATASET=handoff
 WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications
 WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/wremotely-etl/prod/google-application-credentials.json
 WREMOTELY_ETL_ARTIFACTS_DIR=/home/<user>/prod/wremotely-etl-artifacts
-WREMOTELY_APPROVED_SOURCES_FILE=/home/<user>/secrets/wremotely-etl/prod/approved_sources.jsonl
-WREMOTELY_APPROVED_SOURCES_SHA256=<sha256-of-approved-sources>
 WREMOTELY_PUBLICATION_HOLD_POLICY=/home/<user>/secrets/wremotely-etl/prod/publication-hold-policy.md
 WREMOTELY_GCS_BUCKET=kevinesg-prod-wremotely-etl-landing-prod
 WREMOTELY_GCS_PREFIX=wremotely
@@ -1125,8 +1346,8 @@ WREMOTELY_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
 
 Also replace all generated Airflow/Postgres passwords and secrets. Keep
 `PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Before validating the runtime,
-create the wremotely service-account credential, approved-source snapshot,
-publication-hold policy, and artifacts directory at the configured paths.
+create the wremotely service-account credential, publication-hold policy, and
+artifacts directory at the configured paths.
 Prod DAG import requires all three schedule values because prod is the
 scheduled environment; use QA for manual-only validation.
 
