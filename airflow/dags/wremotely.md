@@ -27,10 +27,6 @@ running Docker:
   committed `READY` publication ID, for example
   `wremotely-serving-publications-<developer>` in shared dev and
   `wremotely-serving-publications` in environment-isolated QA/prod projects.
-- `WREMOTELY_APPROVED_SOURCES_FILE`: approved source snapshot JSONL file.
-- `WREMOTELY_APPROVED_SOURCES_SHA256`: SHA-256 checksum of the approved source
-  snapshot. Scheduled runs should pin this so a source-file edit cannot
-  silently change a run.
 - `WREMOTELY_PUBLICATION_HOLD_POLICY`: private policy file for the
   pre-publication hold step. Keep the file outside Git.
 - `WREMOTELY_LIFECYCLE_SCHEDULE`: required only when `ENVIRONMENT=prod`;
@@ -42,10 +38,18 @@ Dev may keep this value in its external development environment file. QA and
 prod keep it in the external deployment `images.env` manifest using the exact
 immutable form
 `ghcr.io/kevinesg/wremotely-etl:sha-<full-40-character-commit-sha>`.
-`deploy-qa` validates the explicit QA image variable, while `deploy-prod`
+`deploy-qa` resolves the private `qa-candidate` pointer, verifies its immutable
+revision, and records that immutable image in the QA manifest; `deploy-prod`
 promotes the same manifest entry. The private GHCR package must grant
 `kevinesg/data-platform` read access under **Manage Actions access** so the
 deployment workflows can verify and pull it without making the package public.
+
+The reviewed approved-source registry is bundled at
+`/app/source_registry/approved_sources.jsonl` in that immutable private image.
+The private runtime records its actual checksum in completed artifacts. Do not
+maintain a second deployed host copy or checksum variable; the immutable image
+reference binds the registry bytes to the reviewed private source commit. The
+operator-specific publication-hold policy remains external and read-only.
 
 ## Handoff dataset and publication topic
 
@@ -163,10 +167,10 @@ for TABLE_NAME in \
 done
 ```
 
-The approved source registry remains file-based and reviewed in the private
-source repository. Do not upload the approved registry to BigQuery as the source
-of truth. The runtime should continue to receive the reviewed snapshot through
-`WREMOTELY_APPROVED_SOURCES_FILE` and `WREMOTELY_APPROVED_SOURCES_SHA256`.
+The approved source registry remains reviewed and versioned in the private
+source repository, then ships in the immutable private runtime image. Do not
+upload the approved registry to BigQuery as the source of truth or create an
+independent deployed host copy.
 
 Create or verify the runtime's BigQuery access and handoff dataset as a platform
 maintainer before enabling a DAG or private runtime command that references
@@ -175,8 +179,11 @@ read/write access on the raw dataset, and dataset-level read/write access on the
 handoff dataset. The same account reads raw history during `select`, writes raw
 tables during `load`, and reads tested dbt candidate relations after
 `dbt_build`. `roles/bigquery.dataEditor` is intentional on raw and handoff;
-`roles/bigquery.dataViewer` is sufficient on the dbt dataset. The setup uses
-`gcloud` and `bq`, installed with Google Cloud CLI.
+`roles/bigquery.dataViewer` is sufficient for ETL reads from the dbt mart, and
+the dbt service account receives `roles/bigquery.dataEditor` on that mart.
+Tables created later inherit these dataset grants, so bootstrap does not need
+per-table IAM. The setup uses `gcloud` and `bq`, installed with Google Cloud
+CLI.
 
 ```bash
 export PROJECT_ID="${PROJECT_ID:-kevinesg-dev}"
@@ -210,6 +217,9 @@ fi
 
 export WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL="$(
   python -c 'import json, os; print(json.load(open(os.environ["WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"]))["client_email"])'
+)"
+export DBT_SERVICE_ACCOUNT_EMAIL="$(
+  python -c 'import json, os; print(json.load(open(os.environ["DBT_GOOGLE_APPLICATION_CREDENTIALS"]))["client_email"])'
 )"
 
 if test "$ENVIRONMENT" = qa || test "$ENVIRONMENT" = prod; then
@@ -261,9 +271,23 @@ bq query \
    ON SCHEMA \`$PROJECT_ID\`.$RAW_DATASET
    TO \"serviceAccount:$WREMOTELY_ETL_SERVICE_ACCOUNT_EMAIL\""
 
-bq show \
+if bq show \
   --project_id="$PROJECT_ID" \
-  "$PROJECT_ID:$WREMOTELY_DBT_MART_DATASET"
+  "$PROJECT_ID:$WREMOTELY_DBT_MART_DATASET" >/dev/null 2>&1; then
+  echo "wremotely mart dataset already exists: $PROJECT_ID:$WREMOTELY_DBT_MART_DATASET"
+else
+  bq --location="$BIGQUERY_LOCATION" mk \
+    --dataset \
+    "$PROJECT_ID:$WREMOTELY_DBT_MART_DATASET"
+fi
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --location="$BIGQUERY_LOCATION" \
+  --use_legacy_sql=false \
+  "GRANT \`roles/bigquery.dataEditor\`
+   ON SCHEMA \`$PROJECT_ID\`.$WREMOTELY_DBT_MART_DATASET
+   TO \"serviceAccount:$DBT_SERVICE_ACCOUNT_EMAIL\""
 
 bq query \
   --project_id="$PROJECT_ID" \
@@ -501,8 +525,8 @@ transactionally merges newer `_updated_at` rows into
 `wremotely__serving_job_country_eligibility`. It updates the singleton `READY`
 control row in `wremotely__serving_publication`. The pipeline performs no
 physical serving-row deletes; lifecycle removal is represented by `is_deleted`.
-The task also passes the mounted approved-source snapshot and its configured
-SHA-256 checksum to the private runtime. The runtime counts distinct enabled,
+The task also passes the approved-source snapshot bundled in the same immutable
+private image. The runtime records its actual checksum, counts distinct enabled
 approved source IDs for company-career and ATS-company sources, then includes
 those bounded totals in the same publication identity and control-row
 transaction. Airflow does not inspect registry rows or derive the counts.
@@ -550,10 +574,10 @@ someone manually deletes verified external data.
   cleared after newer raw loads consumes the newer warehouse state. It is not a
   run-pinned historical reconstruction.
 - `publish_serving_snapshot` is content-addressed. Replaying the same completed
-  run verifies the pinned approved-source checksum and source-coverage aggregate
-  before returning its recorded publication ID. Recreating the same serving and
-  source-coverage snapshot through a new run resolves to the same immutable
-  publication ID.
+  run verifies the bundled approved-source checksum recorded by the private
+  runtime and the source-coverage aggregate before returning its publication
+  ID. Recreating the same serving and source-coverage snapshot through a new run
+  resolves to the same immutable publication ID.
 - `signal_publication` is intentionally at-least-once. Every successful clear
   may receive a new Pub/Sub message ID for the same publication ID. The serving
   worker must acknowledge only after its PostgreSQL transaction commits and

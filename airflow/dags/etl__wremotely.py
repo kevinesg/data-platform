@@ -57,8 +57,6 @@ with DAG(
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
             "--source-registry-input",
             APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-            "--source-registry-input-sha256",
-            required_env("WREMOTELY_APPROVED_SOURCES_SHA256"),
             "--source-crawl-limit",
             "0",
             "--source-crawl-max-job-urls",

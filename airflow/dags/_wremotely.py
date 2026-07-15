@@ -13,7 +13,7 @@ WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH = "/credentials/wremotely-etl-service-a
 DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 PUBLICATION_HOLD_POLICY_CONTAINER_PATH = "/run/secrets/wremotely-publication-hold-policy.md"
 WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH = "/artifacts/wremotely-etl"
-APPROVED_SOURCE_REGISTRY_CONTAINER_PATH = "/tmp/wremotely-approved-sources.jsonl"
+APPROVED_SOURCE_REGISTRY_CONTAINER_PATH = "/app/source_registry/approved_sources.jsonl"
 
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
 CRAWL_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
@@ -162,12 +162,6 @@ wremotely_mounts = [
         type="bind",
         read_only=True,
     ),
-    Mount(
-        source=required_host_path_env("WREMOTELY_APPROVED_SOURCES_FILE"),
-        target=APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
 ]
 
 publication_signal_mounts = [
@@ -278,8 +272,6 @@ def create_serving_snapshot_task(run_id: str) -> DockerOperator:
             required_env("WREMOTELY_BIGQUERY_LOCATION"),
             "--source-registry-input",
             APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-            "--source-registry-input-sha256",
-            required_env("WREMOTELY_APPROVED_SOURCES_SHA256"),
         ),
         environment=wremotely_environment,
         mounts=wremotely_mounts,

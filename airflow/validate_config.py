@@ -9,7 +9,6 @@ from pathlib import Path
 ENV_EXAMPLE_FILE = Path(__file__).resolve().with_name(".env.example")
 PREFERRED_DEV_ENV_FILE = Path.home() / "dev/secrets/data-platform/.env"
 FERNET_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}=$")
-SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
 BIGQUERY_DATASET_ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
 PUBSUB_TOPIC_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
 
@@ -119,7 +118,6 @@ def validate_values(values: dict[str, str]) -> str | None:
     for name in (
         "DBT_GOOGLE_APPLICATION_CREDENTIALS",
         "WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS",
-        "WREMOTELY_APPROVED_SOURCES_FILE",
         "WREMOTELY_PUBLICATION_HOLD_POLICY",
     ):
         error = validate_existing_file_path(name, values[name])
@@ -166,9 +164,6 @@ def validate_values(values: dict[str, str]) -> str | None:
         "WREMOTELY_LOCAL_LLM_ENDPOINT"
     ].startswith(("http://", "https://")):
         return "WREMOTELY_LOCAL_LLM_ENDPOINT must be an HTTP URL"
-    if not SHA256_PATTERN.fullmatch(values["WREMOTELY_APPROVED_SOURCES_SHA256"]):
-        return "WREMOTELY_APPROVED_SOURCES_SHA256 must be a 64-character SHA-256 hex digest"
-
     return None
 
 
