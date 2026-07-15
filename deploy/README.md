@@ -1377,6 +1377,12 @@ the SQL dump with `gzip`, stores backups on the deployment host, and deletes
 old backup files after the retention window. Backups are runtime artifacts and
 must not be committed.
 
+After correcting a failed scheduled backup, manually dispatch
+`backup-metadata` once from `main`. Treat recovery as complete only when the
+workflow succeeds and logs one `Created ...` path for both the Airflow and
+Metabase backups. A failed run before either message did not create that
+database's final backup file.
+
 These local backups protect against application-state mistakes, bad upgrades,
 and accidental metadata loss on the deployment host. They do not protect
 against host or disk loss; off-host encrypted backup replication is separate
@@ -1387,7 +1393,6 @@ Default prod paths and retention:
 ```text
 Prod repo clone:         $HOME/prod/data-platform
 Prod Airflow env file:   $HOME/secrets/data-platform/prod/.env
-Prod image manifest:     $HOME/secrets/data-platform/prod/images.env
 Prod Metabase env file:  $HOME/secrets/data-platform/prod/metabase.env
 Metadata backup root:    $HOME/runtime/data-platform/prod/metadata-backups
 Airflow backups:         $HOME/runtime/data-platform/prod/metadata-backups/airflow
@@ -1401,7 +1406,6 @@ retention:
 ```text
 PROD_REPO_DIR
 PROD_DATA_PLATFORM_ENV_FILE
-PROD_IMAGE_ENV_FILE
 PROD_METABASE_ENV_FILE
 METADATA_BACKUP_DIR
 METADATA_BACKUP_RETENTION_DAYS
@@ -1412,7 +1416,6 @@ Manual backup/debug command on the deployment host:
 ```bash
 export PROD_REPO_DIR="$HOME/prod/data-platform"
 export PROD_ENV_FILE="$HOME/secrets/data-platform/prod/.env"
-export PROD_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/images.env"
 export PROD_METABASE_ENV_FILE="$HOME/secrets/data-platform/prod/metabase.env"
 export METADATA_BACKUP_DIR="$HOME/runtime/data-platform/prod/metadata-backups"
 export BACKUP_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -1423,12 +1426,24 @@ mkdir -p "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
 chmod 700 "$METADATA_BACKUP_DIR" "$METADATA_BACKUP_DIR/airflow" "$METADATA_BACKUP_DIR/metabase"
 
 set -a
-. "$PROD_IMAGE_ENV_FILE"
+. "$PROD_ENV_FILE"
 set +a
 
-cd "$PROD_REPO_DIR/airflow"
-DATA_PLATFORM_ENV_FILE="$PROD_ENV_FILE" \
-  docker compose --env-file "$PROD_ENV_FILE" -f docker-compose.yml exec -T postgres \
+if [[ ! "${AIRFLOW_COMPOSE_PROJECT:-}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "AIRFLOW_COMPOSE_PROJECT must be a valid explicit Compose project name."
+  exit 1
+fi
+
+mapfile -t AIRFLOW_POSTGRES_CONTAINER_IDS < <(
+  docker ps \
+    --filter "label=com.docker.compose.project=$AIRFLOW_COMPOSE_PROJECT" \
+    --filter "label=com.docker.compose.service=postgres" \
+    --format '{{.ID}}'
+)
+
+test "${#AIRFLOW_POSTGRES_CONTAINER_IDS[@]}" -eq 1
+
+docker exec "${AIRFLOW_POSTGRES_CONTAINER_IDS[0]}" \
   sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' |
   gzip -9 > "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
 chmod 600 "$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
@@ -1441,12 +1456,15 @@ DATA_PLATFORM_ENV_FILE="$PROD_METABASE_ENV_FILE" \
 chmod 600 "$METADATA_BACKUP_DIR/metabase/metabase-app-$BACKUP_TIMESTAMP.sql.gz"
 ```
 
-These commands pass env files to Docker Compose instead of sourcing the
-Metabase env file in Bash. Metabase settings such as `MB_SITE_NAME=Data
+The Airflow backup identifies the one running Postgres container from its
+explicit Compose project and service labels. It does not render the complete
+Airflow Compose model or depend on application image references merely to run
+`pg_dump`. The Metabase command still passes its env file to Docker Compose
+instead of sourcing it in Bash. Metabase settings such as `MB_SITE_NAME=Data
 Platform` are valid Compose env-file values but are not valid unquoted shell
-assignments. The Metabase backup commands use `POSTGRES_USER` and
-`POSTGRES_DB` inside the Postgres container; those are derived from the
-Metabase `MB_DB_*` Compose values and should not be added to `metabase.env`.
+assignments. Both backup commands use `POSTGRES_USER` and `POSTGRES_DB` inside
+the Postgres container; the Metabase values are derived from `MB_DB_*` and
+should not be added to `metabase.env`.
 
 Restore backups only into a fresh or intentionally reset metadata database.
 Never pipe a backup into an active populated database as a routine operation.

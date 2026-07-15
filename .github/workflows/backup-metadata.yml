@@ -18,7 +18,6 @@ permissions:
 env:
   PROD_REPO_DIR: ${{ vars.PROD_REPO_DIR }}
   PROD_DATA_PLATFORM_ENV_FILE: ${{ vars.PROD_DATA_PLATFORM_ENV_FILE }}
-  PROD_IMAGE_ENV_FILE: ${{ vars.PROD_IMAGE_ENV_FILE }}
   PROD_METABASE_ENV_FILE: ${{ vars.PROD_METABASE_ENV_FILE }}
   METADATA_BACKUP_DIR: ${{ vars.METADATA_BACKUP_DIR }}
   METADATA_BACKUP_RETENTION_DAYS: ${{ vars.METADATA_BACKUP_RETENTION_DAYS }}
@@ -40,7 +39,6 @@ jobs:
           {
             echo "PROD_REPO_DIR=${PROD_REPO_DIR:-$HOME/prod/data-platform}"
             echo "PROD_DATA_PLATFORM_ENV_FILE=${PROD_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/prod/.env}"
-            echo "PROD_IMAGE_ENV_FILE=${PROD_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/prod/images.env}"
             echo "PROD_METABASE_ENV_FILE=${PROD_METABASE_ENV_FILE:-$HOME/secrets/data-platform/prod/metabase.env}"
             echo "METADATA_BACKUP_DIR=${METADATA_BACKUP_DIR:-$HOME/runtime/data-platform/prod/metadata-backups}"
             echo "METADATA_BACKUP_RETENTION_DAYS=${METADATA_BACKUP_RETENTION_DAYS:-30}"
@@ -54,7 +52,6 @@ jobs:
 
           test -d "$PROD_REPO_DIR/.git"
           test -f "$PROD_DATA_PLATFORM_ENV_FILE"
-          test -f "$PROD_IMAGE_ENV_FILE"
           test -f "$PROD_METABASE_ENV_FILE"
 
           if ! [[ "$METADATA_BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
@@ -70,18 +67,30 @@ jobs:
         run: |
           set -euo pipefail
           set -a
-          source "$PROD_IMAGE_ENV_FILE"
+          source "$PROD_DATA_PLATFORM_ENV_FILE"
           set +a
 
-          test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
+          if [[ ! "${AIRFLOW_COMPOSE_PROJECT:-}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+            echo "AIRFLOW_COMPOSE_PROJECT must be a valid explicit Compose project name."
+            exit 1
+          fi
 
-          cd "$PROD_REPO_DIR/airflow"
+          mapfile -t postgres_container_ids < <(
+            docker ps \
+              --filter "label=com.docker.compose.project=$AIRFLOW_COMPOSE_PROJECT" \
+              --filter "label=com.docker.compose.service=postgres" \
+              --format '{{.ID}}'
+          )
+
+          if [[ "${#postgres_container_ids[@]}" -ne 1 ]]; then
+            echo "Expected exactly one running Airflow Postgres container; found ${#postgres_container_ids[@]}."
+            exit 1
+          fi
 
           backup_file="$METADATA_BACKUP_DIR/airflow/airflow-metadata-$BACKUP_TIMESTAMP.sql.gz"
           temp_file="$backup_file.tmp"
 
-          DATA_PLATFORM_ENV_FILE="$PROD_DATA_PLATFORM_ENV_FILE" \
-            docker compose --env-file "$PROD_DATA_PLATFORM_ENV_FILE" -f docker-compose.yml exec -T postgres \
+          docker exec "${postgres_container_ids[0]}" \
             sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip -9 > "$temp_file"
 
           mv "$temp_file" "$backup_file"
