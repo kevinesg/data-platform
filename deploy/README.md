@@ -388,23 +388,19 @@ $HOME/secrets/data-platform/qa/images.env
 $HOME/secrets/data-platform/prod/images.env
 ```
 
-Create the first copy from
-[deploy/images.env.example](images.env.example) after the publishing workflow
-has produced fresh image tags for the rebuilt repository. Replace every
-`sha-change-me` value with a real `sha-<commit-sha>` tag.
+The deployment workflows create and update these manifests from published
+images. [deploy/images.env.example](images.env.example) documents the required
+four-entry format for clean-host recovery and local validation; do not maintain
+deployed image SHAs by hand during normal promotion.
 
 `images.env` is disposable deployment state, not a secret. Recreate it from the
 published image set during clean rebuilds. Do not commit environment-specific
 copies.
 
 Normal production promotion copies the exact immutable image refs that passed
-QA. The first wremotely production launch has an explicitly approved one-time
-exception because the QA serving environment is not provisioned yet. That
-exception uses a separate bootstrap manifest containing three data-platform
-images built from one `main` commit plus one independently versioned private ETL
-image built from its own merged `main` commit. It does not permit mutable tags
-or make QA optional for later releases. See **One-Time First Production
-Bootstrap Without QA**.
+QA. Data-platform QA and prod run on the same mini-PC host, so prod reads the QA
+manifest directly. The separately hosted wremotely serving QA environment does
+not change this data-platform image-promotion boundary.
 
 ## Deployed Web Interfaces
 
@@ -621,16 +617,13 @@ QA_DATA_PLATFORM_ENV_FILE
 QA_IMAGE_ENV_FILE
 ```
 
-Also set this required GitHub `qa` environment variable to the exact private
-image that the release will validate:
-
-```text
-QA_WREMOTELY_ETL_IMAGE=ghcr.io/kevinesg/wremotely-etl:sha-<full-commit-sha>
-```
-
 The private package must remain private and grant `kevinesg/data-platform`
-**Read** under its **Manage Actions access** settings. The workflow rejects
-mutable or abbreviated tags and writes the validated ref into the QA manifest.
+**Read** under its **Manage Actions access** settings. After successful private
+`main` CI, its publisher advances
+`ghcr.io/kevinesg/wremotely-etl:qa-candidate`. The QA workflow uses that mutable
+pointer only to discover the OCI revision, verifies the matching immutable
+`sha-<full-commit-sha>` image, and writes only the immutable ref into the QA
+manifest. No GitHub environment variable carries a private ETL commit SHA.
 
 ### Deployed GCP Workspace
 
@@ -925,8 +918,7 @@ cd "$HOME/qa/data-platform"
 git switch main
 
 cp deploy/env.example "$HOME/secrets/data-platform/qa/.env"
-cp deploy/images.env.example "$HOME/secrets/data-platform/qa/images.env"
-chmod 600 "$HOME/secrets/data-platform/qa/.env" "$HOME/secrets/data-platform/qa/images.env"
+chmod 600 "$HOME/secrets/data-platform/qa/.env"
 ```
 
 Edit `$HOME/secrets/data-platform/qa/.env` and set QA values. At minimum,
@@ -987,7 +979,8 @@ The workflow:
 
 1. Updates the persistent QA checkout.
 2. Selects the latest published scripts, dbt, and Airflow images that match the
-   deployed source history and validates `QA_WREMOTELY_ETL_IMAGE`.
+   deployed source history, then resolves and verifies the private ETL QA
+   candidate as an immutable image.
 3. Writes all four refs to `$HOME/secrets/data-platform/qa/images.env`.
 4. Runs `dbt compile` in the deployed dbt image with QA credentials.
 5. Pulls runtime images and recreates the QA Airflow stack.
@@ -1061,7 +1054,7 @@ Prod deployment uses:
 Prod repo clone:           $HOME/prod/data-platform
 Prod secrets file:         $HOME/secrets/data-platform/prod/.env
 Prod image manifest:       $HOME/secrets/data-platform/prod/images.env
-Prod source image manifest: $HOME/secrets/data-platform/qa/images.env
+Promoted QA image manifest: $HOME/secrets/data-platform/qa/images.env
 Prod runner dir:           $HOME/actions-runners/data-platform/prod
 Prod runner label:         data-platform-prod
 ```
@@ -1073,15 +1066,11 @@ variables only when the host uses different absolute paths:
 PROD_REPO_DIR
 PROD_DATA_PLATFORM_ENV_FILE
 PROD_IMAGE_ENV_FILE
-PROD_SOURCE_IMAGE_ENV_FILE
 ```
 
-`PROD_SOURCE_IMAGE_ENV_FILE` defaults to the QA image manifest. Prod deployment
-promotes those immutable image refs into the prod image manifest, so prod runs
-the same image set that was deployed to QA.
-
-Do not point this variable at a developer or dev-environment manifest. The only
-supported non-QA source is the temporary first-launch bootstrap manifest below.
+Prod deployment always promotes the immutable refs from the same host's QA
+image manifest into the prod image manifest, so prod runs the exact image set
+that was deployed to QA. There is no developer-manifest or bootstrap override.
 
 ### Prod Host Setup
 
@@ -1099,8 +1088,7 @@ cd "$HOME/prod/data-platform"
 git switch main
 
 cp deploy/env.example "$HOME/secrets/data-platform/prod/.env"
-cp deploy/images.env.example "$HOME/secrets/data-platform/prod/images.env"
-chmod 600 "$HOME/secrets/data-platform/prod/.env" "$HOME/secrets/data-platform/prod/images.env"
+chmod 600 "$HOME/secrets/data-platform/prod/.env"
 ```
 
 Edit `$HOME/secrets/data-platform/prod/.env` and set prod values. At minimum:
@@ -1183,111 +1171,20 @@ sudo ./svc.sh start
 sudo ./svc.sh status
 ```
 
-### One-Time First Production Bootstrap Without QA
-
-Use this section only for the explicitly approved first wremotely production
-launch while the separate desktop QA serving environment is not yet available.
-This is a release-process exception, not an equivalent substitute for QA.
-
-In the data-platform GitHub Actions, run `publish-images` from `main` with
-`component=all`. Wait for all three image jobs to succeed. The manual workflow
-publishes Airflow, scripts, and dbt images from one commit, which gives those
-three bootstrap entries a single auditable source revision.
-
-Separately confirm that the private `wremotely-etl` repository's
-`publish-image` workflow succeeded on merged `main`, that its GHCR package is
-private and linked to `kevinesg/wremotely-etl`, and that **Manage Actions
-access** grants `kevinesg/data-platform` read access. Record the full private
-ETL commit SHA; it is intentionally independent from the data-platform commit.
-
-Then run this on the production data-platform deployment host after **Prod Host
-Setup**. The persistent checkout must be at the same `main` commit used by the
-successful `publish-images` run:
-
-```bash
-export PROD_REPO_DIR="$HOME/prod/data-platform"
-export PROD_BOOTSTRAP_IMAGE_ENV_FILE="$HOME/secrets/data-platform/prod/bootstrap-images.env"
-export WREMOTELY_ETL_IMAGE_SHA="<full-wremotely-etl-main-commit-sha>"
-export DATA_PLATFORM_WREMOTELY_ETL_IMAGE="ghcr.io/kevinesg/wremotely-etl:sha-$WREMOTELY_ETL_IMAGE_SHA"
-
-cd "$PROD_REPO_DIR"
-git switch main
-git pull --ff-only origin main
-
-export BOOTSTRAP_SHA="$(git rev-parse HEAD)"
-test "$(git branch --show-current)" = main
-test -n "$BOOTSTRAP_SHA"
-test -n "$WREMOTELY_ETL_IMAGE_SHA"
-test -n "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
-printf '%s\n' "$WREMOTELY_ETL_IMAGE_SHA" | grep -E '^[0-9a-f]{40}$'
-printf '%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" | \
-  grep -E '^ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$'
-
-{
-  printf 'DATA_PLATFORM_AIRFLOW_IMAGE=ghcr.io/kevinesg/data-platform-airflow:sha-%s\n' "$BOOTSTRAP_SHA"
-  printf 'DATA_PLATFORM_SCRIPTS_IMAGE=ghcr.io/kevinesg/data-platform-scripts:sha-%s\n' "$BOOTSTRAP_SHA"
-  printf 'DATA_PLATFORM_DBT_IMAGE=ghcr.io/kevinesg/data-platform-dbt:sha-%s\n' "$BOOTSTRAP_SHA"
-  printf 'DATA_PLATFORM_WREMOTELY_ETL_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
-} > "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
-chmod 600 "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
-
-grep -E '^DATA_PLATFORM_(AIRFLOW|SCRIPTS|DBT)_IMAGE=ghcr\.io/kevinesg/data-platform-(airflow|scripts|dbt):sha-[0-9a-f]{40}$' \
-  "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
-grep -E '^DATA_PLATFORM_WREMOTELY_ETL_IMAGE=ghcr\.io/kevinesg/wremotely-etl:sha-[0-9a-f]{40}$' \
-  "$PROD_BOOTSTRAP_IMAGE_ENV_FILE"
-test "$(wc -l < "$PROD_BOOTSTRAP_IMAGE_ENV_FILE")" -eq 4
-```
-
-Compare `BOOTSTRAP_SHA` with the commit shown by the successful
-`publish-images` workflow and `WREMOTELY_ETL_IMAGE_SHA` with the commit shown by
-the successful private `publish-image` workflow. Stop if either differs. Do not
-substitute `latest`, branch tags, abbreviated SHAs, unmerged commits, or images
-from a different publisher run.
-
-In repository **Settings** > **Environments** > **prod** > **Environment
-variables**, set `PROD_SOURCE_IMAGE_ENV_FILE` to the absolute bootstrap path,
-for example:
-
-```text
-/home/<runner-user>/secrets/data-platform/prod/bootstrap-images.env
-```
-
-Run `deploy-prod` only after that environment variable and file are in place.
-The workflow authenticates to GHCR, verifies that all four immutable manifests
-exist, and copies the refs into the normal prod image manifest before starting
-services.
-
-Keep the bootstrap file and override until the first production deployment and
-verification succeed. After QA is provisioned and the same or a later release
-passes `deploy-qa`, delete the `PROD_SOURCE_IMAGE_ENV_FILE` environment variable
-from the `prod` environment. The next production deployment will then return to
-the default `$HOME/secrets/data-platform/qa/images.env` promotion source. After
-that QA-sourced production deployment succeeds, remove the obsolete bootstrap
-file:
-
-```bash
-rm "$HOME/secrets/data-platform/prod/bootstrap-images.env"
-```
-
-Deleting the override before QA has produced its image manifest will make
-`deploy-prod` fail closed during host-state validation.
-
 ### Prod Deploy
 
 Run GitHub Actions > `deploy-prod` with `git_ref` set to the same `main` release
 that passed QA. If new commits have landed on `main` since QA validation, rerun
-`deploy-qa` and validate QA before promoting prod. For the approved first-launch
-exception only, use the exact `main` commit and source manifest prepared in
-**One-Time First Production Bootstrap Without QA**.
+`deploy-qa` and validate QA before promoting prod.
 
 The workflow:
 
-1. Checks the prod host paths and configured source image manifest.
+1. Checks the prod host paths and same-host QA image manifest.
 2. Blocks deployment when existing prod Airflow metadata has queued or running
    DAG runs.
 3. Updates the persistent prod checkout.
 4. Saves the existing prod image manifest as `images.env.previous`, then
-   promotes the configured immutable source image manifest to prod.
+   promotes the immutable QA image manifest to prod.
 5. Runs `dbt compile` in the deployed dbt image with prod credentials.
 6. Pulls runtime images and recreates the prod Airflow stack.
 7. Runs Airflow DAG import smoke checks.

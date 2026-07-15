@@ -24,7 +24,6 @@ env:
   PROD_REPO_DIR: ${{ vars.PROD_REPO_DIR }}
   PROD_DATA_PLATFORM_ENV_FILE: ${{ vars.PROD_DATA_PLATFORM_ENV_FILE }}
   PROD_IMAGE_ENV_FILE: ${{ vars.PROD_IMAGE_ENV_FILE }}
-  PROD_SOURCE_IMAGE_ENV_FILE: ${{ vars.PROD_SOURCE_IMAGE_ENV_FILE }}
 
 jobs:
   deploy:
@@ -47,7 +46,7 @@ jobs:
             echo "PROD_REPO_DIR=${PROD_REPO_DIR:-$HOME/prod/data-platform}"
             echo "PROD_DATA_PLATFORM_ENV_FILE=${PROD_DATA_PLATFORM_ENV_FILE:-$HOME/secrets/data-platform/prod/.env}"
             echo "PROD_IMAGE_ENV_FILE=${PROD_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/prod/images.env}"
-            echo "PROD_SOURCE_IMAGE_ENV_FILE=${PROD_SOURCE_IMAGE_ENV_FILE:-$HOME/secrets/data-platform/qa/images.env}"
+            echo "PROMOTED_QA_IMAGE_ENV_FILE=$HOME/secrets/data-platform/qa/images.env"
           } >> "$GITHUB_ENV"
 
       - name: Validate prod host state
@@ -57,7 +56,7 @@ jobs:
 
           test -d "$PROD_REPO_DIR/.git"
           test -f "$PROD_DATA_PLATFORM_ENV_FILE"
-          test -f "$PROD_SOURCE_IMAGE_ENV_FILE"
+          test -f "$PROMOTED_QA_IMAGE_ENV_FILE"
           test -d "$(dirname "$PROD_IMAGE_ENV_FILE")"
 
       - name: Check active prod DAG runs
@@ -132,12 +131,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote source image manifest
+      - name: Promote QA image manifest
         shell: bash
         run: |
           set -euo pipefail
           set -a
-          source "$PROD_SOURCE_IMAGE_ENV_FILE"
+          source "$PROMOTED_QA_IMAGE_ENV_FILE"
           set +a
 
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
