@@ -29,6 +29,9 @@ running Docker:
   `wremotely-serving-publications` in environment-isolated QA/prod projects.
 - `WREMOTELY_PUBLICATION_HOLD_POLICY`: private policy file for the
   pre-publication hold step. Keep the file outside Git.
+- `GROQ_API_KEY`: required only when `WREMOTELY_LOCAL_LLM_RUNTIME=groq`.
+  Keep separate keys in the external QA and prod environment files and never
+  put a live key in Git, an image, or a DAG command.
 - `WREMOTELY_LIFECYCLE_SCHEDULE`: required only when `ENVIRONMENT=prod`;
   configure `15 */12 * * *` so seven half-day runs cover the active catalog in
   3.5 days. Keep dev/QA lifecycle runs manual.
@@ -471,13 +474,14 @@ cannot keep writing a checkpoint while an Airflow retry starts.
 `publication_hold` reads `serving_jobs` from the generated wremotely mart
 dataset (`${DBT_DATASET}_mart_wremotely` in dev and `mart_wremotely` in
 QA/prod).
-Before invoking the local model, it keeps only candidates
+Before invoking the configured inference runtime, it keeps only candidates
 whose trimmed, uppercased structured title contains `DATA ENGINEER`,
 `ANALYTICS ENGINEER`, `SQL DEVELOPER`, or `ETL ENGINEER`. Its checkpoint is
-bound to the complete candidate-set hash, policy hash, and title-filter contract.
-Across completed runs it reuses a current hold decision only when the candidate
-content hash, policy, evaluator, prompt, runtime, and model identities all
-match; changed candidates are evaluated again.
+then narrowed by the policy's remote-only and direct target-country requirements.
+Validated country eligibility takes precedence over possible visa-support text,
+and jobs filtered from this operator-specific evaluation remain serveable for
+countries where they are eligible. Verdicts are final by job ID; later content,
+policy, prompt, runtime, or model changes do not reevaluate an existing verdict.
 
 The lifecycle DAG reads the current serving handoff plus raw selected-job
 metadata and lifecycle history. The private selector removes `is_deleted=true`
@@ -698,9 +702,54 @@ the selected-URL table alone does not suppress a URL.
 - `WREMOTELY_DOCKER_NETWORK_MODE=host` lets a container reach a local
   host-bound inference endpoint on Linux. Use another Docker network mode only
   if the configured endpoint is reachable from child containers.
-- `WREMOTELY_LOCAL_LLM_*` configures the local inference endpoint used by the
-  pre-publication hold step. Keep the selected model/runtime value in the
-  external environment file, not in this repository.
+- `WREMOTELY_LOCAL_LLM_*` configures the inference runtime used only by the
+  pre-publication hold step. `groq` requires `GROQ_API_KEY`; the DAG passes that
+  key through Airflow's UI-hidden private environment only to
+  `publication_hold`, not to dbt, snapshot publication, or signal tasks. Keep
+  runtime settings and the key in the external environment file.
+
+### Groq publication-hold setup
+
+Create a dedicated project and one key per environment in the official
+[Groq API Keys console](https://console.groq.com/keys). Groq keys do not have
+configurable scopes, so separate projects and keys are the available
+least-privilege boundary. Before enabling an environment, review Groq's current
+[data handling documentation](https://console.groq.com/docs/your-data) and
+enable Zero Data Retention in Data Controls.
+
+Store the QA and prod keys only in these external files, each with mode `600`:
+
+```text
+/home/kevinesg/secrets/data-platform/qa/.env
+/home/kevinesg/secrets/data-platform/prod/.env
+```
+
+Configure each file with its own key:
+
+```dotenv
+GROQ_API_KEY=<environment-specific-secret>
+WREMOTELY_LOCAL_LLM_RUNTIME=groq
+WREMOTELY_LOCAL_LLM_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
+WREMOTELY_LOCAL_LLM_ENDPOINT=https://api.groq.com/openai/v1
+WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60
+```
+
+Follow the private runtime README's Groq model-access verification before
+deployment. Then validate the platform environment:
+
+```bash
+python validate_config.py --env-file "$DATA_PLATFORM_ENV_FILE"
+```
+
+Validation fails when the key is missing or the Groq endpoint is not the
+official HTTPS endpoint. Check the current
+[rate limits](https://console.groq.com/docs/rate-limits) before a full run.
+
+Rotate a key by creating and verifying its replacement, updating only the
+matching environment file, redeploying that environment, and then deleting the
+old key in the Groq console. Revoke a possibly exposed key immediately and
+follow Groq's current
+[security guidance](https://console.groq.com/docs/production-readiness/security-onboarding).
 
 ## Publication signal recovery and revocation
 

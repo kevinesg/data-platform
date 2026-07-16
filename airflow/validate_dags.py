@@ -127,6 +127,8 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
 
+    assert_publication_hold_environment(publication)
+
     serving_snapshot_command = publication.get_task("publish_serving_snapshot").command
     if not isinstance(serving_snapshot_command, list):
         raise AssertionError("serving snapshot command must be an argv list")
@@ -207,6 +209,39 @@ def assert_publication_trigger(dag: DAG) -> None:
         raise AssertionError(f"{dag.dag_id} triggers the wrong publication DAG")
     if not task.reset_dag_run or not task.wait_for_completion or not task.deferrable:
         raise AssertionError(f"{dag.dag_id} publication trigger is not replay-safe and deferrable")
+
+
+def assert_publication_hold_environment(publication: DAG) -> None:
+    publication_hold_task = publication.get_task("publication_hold")
+    publication_hold_environment = publication_hold_task.environment
+    publication_hold_private_environment = publication_hold_task._private_environment
+    serving_snapshot_environment = publication.get_task("publish_serving_snapshot").environment
+    runtime = os.environ["WREMOTELY_LOCAL_LLM_RUNTIME"]
+
+    if publication_hold_environment.get("WREMOTELY_LOCAL_LLM_RUNTIME") != runtime:
+        raise AssertionError("publication hold does not receive its inference runtime")
+    if runtime == "groq":
+        expected_key = os.environ.get("GROQ_API_KEY", "")
+        if (
+            not expected_key
+            or publication_hold_private_environment.get("GROQ_API_KEY") != expected_key
+        ):
+            raise AssertionError("Groq publication hold does not receive private GROQ_API_KEY")
+    elif "GROQ_API_KEY" in publication_hold_private_environment:
+        raise AssertionError("non-Groq publication hold must not receive GROQ_API_KEY")
+    if "GROQ_API_KEY" in publication_hold_environment:
+        raise AssertionError("GROQ_API_KEY must not appear in the visible task environment")
+
+    for secret_name in (
+        "GROQ_API_KEY",
+        "WREMOTELY_PUBLICATION_HOLD_POLICY",
+        "WREMOTELY_LOCAL_LLM_RUNTIME",
+        "WREMOTELY_LOCAL_LLM_MODEL",
+        "WREMOTELY_LOCAL_LLM_ENDPOINT",
+        "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS",
+    ):
+        if secret_name in serving_snapshot_environment:
+            raise AssertionError(f"serving snapshot unexpectedly receives {secret_name}")
 
 
 def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:

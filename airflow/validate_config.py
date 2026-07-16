@@ -48,6 +48,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    values["GROQ_API_KEY"] = os.getenv(
+        "GROQ_API_KEY", env_file_values.get("GROQ_API_KEY", "")
+    ).strip()
 
     error = validate_values(values)
     if error:
@@ -158,12 +161,22 @@ def validate_values(values: dict[str, str]) -> str | None:
 
     if values["WREMOTELY_CRAWL4AI_FALLBACK"] not in {"auto", "disabled"}:
         return "WREMOTELY_CRAWL4AI_FALLBACK must be auto or disabled"
-    if values["WREMOTELY_LOCAL_LLM_RUNTIME"] not in {"disabled", "ollama"}:
-        return "WREMOTELY_LOCAL_LLM_RUNTIME must be disabled or ollama"
-    if values["WREMOTELY_LOCAL_LLM_RUNTIME"] == "ollama" and not values[
-        "WREMOTELY_LOCAL_LLM_ENDPOINT"
-    ].startswith(("http://", "https://")):
+    inference_runtime = values["WREMOTELY_LOCAL_LLM_RUNTIME"]
+    inference_endpoint = values["WREMOTELY_LOCAL_LLM_ENDPOINT"].rstrip("/")
+    if inference_runtime not in {"disabled", "ollama", "groq"}:
+        return "WREMOTELY_LOCAL_LLM_RUNTIME must be disabled, ollama, or groq"
+    if inference_runtime == "ollama" and not inference_endpoint.startswith(
+        ("http://", "https://")
+    ):
         return "WREMOTELY_LOCAL_LLM_ENDPOINT must be an HTTP URL"
+    if inference_runtime == "groq":
+        if not values["GROQ_API_KEY"]:
+            return "GROQ_API_KEY is required when WREMOTELY_LOCAL_LLM_RUNTIME=groq"
+        if inference_endpoint != "https://api.groq.com/openai/v1":
+            return (
+                "WREMOTELY_LOCAL_LLM_ENDPOINT must be "
+                "https://api.groq.com/openai/v1 when using groq"
+            )
     return None
 
 

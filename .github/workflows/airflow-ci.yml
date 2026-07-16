@@ -90,8 +90,9 @@ jobs:
             -e WREMOTELY_GCS_PREFIX=wremotely \
             -e WREMOTELY_BIGQUERY_LOCATION=US \
             -e WREMOTELY_RECHECK_WORKER_COUNT=16 \
-            -e WREMOTELY_LOCAL_LLM_RUNTIME=ollama \
-            -e WREMOTELY_LOCAL_LLM_MODEL=ci-model \
-            -e WREMOTELY_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434 \
-            -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=120 \
+            -e GROQ_API_KEY=ci-placeholder-key \
+            -e WREMOTELY_LOCAL_LLM_RUNTIME=groq \
+            -e WREMOTELY_LOCAL_LLM_MODEL=meta-llama/llama-4-scout-17b-16e-instruct \
+            -e WREMOTELY_LOCAL_LLM_ENDPOINT=https://api.groq.com/openai/v1 \
+            -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60 \
             data-platform-airflow:ci /opt/airflow/validate_dags.py
