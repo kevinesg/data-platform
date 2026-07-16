@@ -185,6 +185,18 @@ jobs:
 
           cat "$PROD_IMAGE_ENV_FILE"
 
+      - name: Validate prod Airflow configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$PROD_IMAGE_ENV_FILE"
+          source "$PROD_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          cd "$PROD_REPO_DIR/airflow"
+          python3 validate_config.py --env-file "$PROD_DATA_PLATFORM_ENV_FILE"
+
       - name: Validate prod dbt compile
         shell: bash
         run: |

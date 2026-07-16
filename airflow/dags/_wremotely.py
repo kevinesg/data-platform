@@ -70,6 +70,7 @@ def docker_task(
     command: list[str] | str,
     environment: dict[str, str],
     mounts: list[Mount],
+    private_environment: dict[str, str] | None = None,
     execution_timeout: timedelta = DEFAULT_TASK_EXECUTION_TIMEOUT,
     network_mode: str | None = None,
     entrypoint: list[str] | None = None,
@@ -81,6 +82,7 @@ def docker_task(
         image=image,
         command=command,
         environment=environment,
+        private_environment=private_environment,
         mounts=mounts,
         docker_url="unix://var/run/docker.sock",
         mount_tmp_dir=False,
@@ -105,6 +107,7 @@ WREMOTELY_ETL_IMAGE = required_env("DATA_PLATFORM_WREMOTELY_ETL_IMAGE")
 SCRIPTS_IMAGE = required_env("DATA_PLATFORM_SCRIPTS_IMAGE")
 DBT_IMAGE = required_env("DATA_PLATFORM_DBT_IMAGE")
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
+WREMOTELY_LOCAL_LLM_RUNTIME = required_env("WREMOTELY_LOCAL_LLM_RUNTIME")
 WREMOTELY_DBT_MART_DATASET = dbt_schema_name(
     required_env("DBT_DATASET"),
     "mart_wremotely",
@@ -121,14 +124,21 @@ wremotely_environment = {
     "WREMOTELY_GCS_BUCKET": required_env("WREMOTELY_GCS_BUCKET"),
     "WREMOTELY_GCS_PREFIX": required_env("WREMOTELY_GCS_PREFIX"),
     "WREMOTELY_BIGQUERY_LOCATION": required_env("WREMOTELY_BIGQUERY_LOCATION"),
+}
+
+publication_hold_environment = {
+    **wremotely_environment,
     "WREMOTELY_PUBLICATION_HOLD_POLICY": PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
-    "WREMOTELY_LOCAL_LLM_RUNTIME": required_env("WREMOTELY_LOCAL_LLM_RUNTIME"),
+    "WREMOTELY_LOCAL_LLM_RUNTIME": WREMOTELY_LOCAL_LLM_RUNTIME,
     "WREMOTELY_LOCAL_LLM_MODEL": required_env("WREMOTELY_LOCAL_LLM_MODEL"),
     "WREMOTELY_LOCAL_LLM_ENDPOINT": required_env("WREMOTELY_LOCAL_LLM_ENDPOINT"),
     "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS": required_env(
         "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"
     ),
 }
+publication_hold_private_environment = {}
+if WREMOTELY_LOCAL_LLM_RUNTIME == "groq":
+    publication_hold_private_environment["GROQ_API_KEY"] = required_env("GROQ_API_KEY")
 
 publication_signal_environment = {
     "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
@@ -156,6 +166,10 @@ wremotely_mounts = [
         target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
         type="bind",
     ),
+]
+
+publication_hold_mounts = [
+    *wremotely_mounts,
     Mount(
         source=required_host_path_env("WREMOTELY_PUBLICATION_HOLD_POLICY"),
         target=PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
@@ -235,7 +249,7 @@ def create_publication_hold_task(run_id: str) -> DockerOperator:
             "--publication-hold-policy",
             PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
             "--local-llm-runtime",
-            required_env("WREMOTELY_LOCAL_LLM_RUNTIME"),
+            WREMOTELY_LOCAL_LLM_RUNTIME,
             "--local-llm-model",
             required_env("WREMOTELY_LOCAL_LLM_MODEL"),
             "--local-llm-endpoint",
@@ -243,8 +257,9 @@ def create_publication_hold_task(run_id: str) -> DockerOperator:
             "--local-llm-timeout-seconds",
             required_env("WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"),
         ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
+        environment=publication_hold_environment,
+        mounts=publication_hold_mounts,
+        private_environment=publication_hold_private_environment,
         execution_timeout=PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,

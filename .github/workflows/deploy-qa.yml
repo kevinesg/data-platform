@@ -196,6 +196,18 @@ jobs:
 
           cat "$QA_IMAGE_ENV_FILE"
 
+      - name: Validate QA Airflow configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source "$QA_IMAGE_ENV_FILE"
+          source "$QA_DATA_PLATFORM_ENV_FILE"
+          set +a
+
+          cd "$QA_REPO_DIR/airflow"
+          python3 validate_config.py --env-file "$QA_DATA_PLATFORM_ENV_FILE"
+
       - name: Validate QA dbt compile
         shell: bash
         run: |

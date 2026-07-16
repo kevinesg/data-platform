@@ -1081,11 +1081,11 @@ chmod 600 "$DATA_PLATFORM_ENV_FILE"
 printf 'Updated: %s\nBackup: %s\n' "$DATA_PLATFORM_ENV_FILE" "$ENV_BACKUP"
 ```
 
-`WREMOTELY_LOCAL_LLM_RUNTIME=disabled` is intentional until the selected local
-runtime/model passes its production-host benchmark. The production schedules
-are configured by this procedure, but newly introduced DAGs remain paused on
-creation. Do not unpause them before the model, cloud, deployment, and serving
-worker gates pass.
+`WREMOTELY_LOCAL_LLM_RUNTIME=disabled` is the safe bootstrap value until the
+environment-specific inference key and runtime settings are configured and
+verified. The production schedules are configured by this procedure, but newly
+introduced DAGs remain paused on creation. Do not unpause them before the
+inference, cloud, deployment, and serving worker gates pass.
 
 If the prod audit still reports a placeholder `POSTGRES_PASSWORD`, do not edit
 only the env file. PostgreSQL applies that variable only when it initializes an
@@ -1383,9 +1383,11 @@ WREMOTELY_PUBLICATION_HOLD_POLICY=/home/<user>/secrets/wremotely-etl/prod/public
 WREMOTELY_GCS_BUCKET=kevinesg-prod-wremotely-etl-landing-prod
 WREMOTELY_GCS_PREFIX=wremotely
 WREMOTELY_BIGQUERY_LOCATION=US
-WREMOTELY_LOCAL_LLM_RUNTIME=ollama
-WREMOTELY_LOCAL_LLM_MODEL=<benchmark-approved-model>
-WREMOTELY_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
+GROQ_API_KEY=<environment-specific-secret>
+WREMOTELY_LOCAL_LLM_RUNTIME=groq
+WREMOTELY_LOCAL_LLM_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
+WREMOTELY_LOCAL_LLM_ENDPOINT=https://api.groq.com/openai/v1
+WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60
 ```
 
 Also replace all generated Airflow/Postgres passwords and secrets. Keep
