@@ -63,36 +63,41 @@ jobs:
         # This validates packaged DAG imports without live cloud credentials.
         # Deployed QA smoke checks should validate real GCP connections later.
         run: |
-          docker run --rm --entrypoint python \
-            -e ENVIRONMENT=dev \
-            -e PROJECT_ID=ci-project \
-            -e RAW_DATASET=raw_ci \
-            -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
-            -e DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:ci \
-            -e DATA_PLATFORM_WREMOTELY_ETL_IMAGE=wremotely-etl:ci \
-            -e SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/tmp/scripts-ci-service-account.json \
-            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/tmp/dbt-ci-service-account.json \
-            -e PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/ci/edit \
-            -e PERSONAL_FINANCE_GCS_BUCKET=ci-bucket \
-            -e PERSONAL_FINANCE_GCS_PREFIX=personal_finance \
-            -e PERSONAL_FINANCE_CHUNK_SIZE=5000 \
-            -e PERSONAL_FINANCE_JSONL_RETENTION_DAYS=7 \
-            -e DBT_TARGET=dev \
-            -e DBT_DATASET=dbt_ci \
-            -e DBT_THREADS=4 \
-            -e BIGQUERY_LOCATION=US \
-            -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
-            -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \
-            -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
-            -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
-            -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \
-            -e WREMOTELY_GCS_BUCKET=ci-bucket \
-            -e WREMOTELY_GCS_PREFIX=wremotely \
-            -e WREMOTELY_BIGQUERY_LOCATION=US \
-            -e WREMOTELY_RECHECK_WORKER_COUNT=16 \
-            -e GROQ_API_KEY=ci-placeholder-key \
-            -e WREMOTELY_LOCAL_LLM_RUNTIME=groq \
-            -e WREMOTELY_LOCAL_LLM_MODEL=meta-llama/llama-4-scout-17b-16e-instruct \
-            -e WREMOTELY_LOCAL_LLM_ENDPOINT=https://api.groq.com/openai/v1 \
-            -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60 \
-            data-platform-airflow:ci /opt/airflow/validate_dags.py
+          for environment in dev prod; do
+            docker run --rm --entrypoint python \
+              -e ENVIRONMENT="$environment" \
+              -e ETL__PERSONAL_FINANCE_SCHEDULE='0 20 * * *' \
+              -e ETL__WREMOTELY_SCHEDULE='0 */12 * * *' \
+              -e WREMOTELY_LIFECYCLE_SCHEDULE='0 6,18 * * *' \
+              -e PROJECT_ID=ci-project \
+              -e RAW_DATASET=raw_ci \
+              -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
+              -e DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:ci \
+              -e DATA_PLATFORM_WREMOTELY_ETL_IMAGE=wremotely-etl:ci \
+              -e SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/tmp/scripts-ci-service-account.json \
+              -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/tmp/dbt-ci-service-account.json \
+              -e PERSONAL_FINANCE_GSHEET_URL=https://docs.google.com/spreadsheets/d/ci/edit \
+              -e PERSONAL_FINANCE_GCS_BUCKET=ci-bucket \
+              -e PERSONAL_FINANCE_GCS_PREFIX=personal_finance \
+              -e PERSONAL_FINANCE_CHUNK_SIZE=5000 \
+              -e PERSONAL_FINANCE_JSONL_RETENTION_DAYS=7 \
+              -e DBT_TARGET=dev \
+              -e DBT_DATASET=dbt_ci \
+              -e DBT_THREADS=4 \
+              -e BIGQUERY_LOCATION=US \
+              -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
+              -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \
+              -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
+              -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
+              -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \
+              -e WREMOTELY_GCS_BUCKET=ci-bucket \
+              -e WREMOTELY_GCS_PREFIX=wremotely \
+              -e WREMOTELY_BIGQUERY_LOCATION=US \
+              -e WREMOTELY_RECHECK_WORKER_COUNT=16 \
+              -e GROQ_API_KEY=ci-placeholder-key \
+              -e WREMOTELY_LOCAL_LLM_RUNTIME=groq \
+              -e WREMOTELY_LOCAL_LLM_MODEL=meta-llama/llama-4-scout-17b-16e-instruct \
+              -e WREMOTELY_LOCAL_LLM_ENDPOINT=https://api.groq.com/openai/v1 \
+              -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60 \
+              data-platform-airflow:ci /opt/airflow/validate_dags.py
+          done
