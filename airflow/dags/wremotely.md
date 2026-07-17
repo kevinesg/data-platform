@@ -33,8 +33,9 @@ running Docker:
   Keep separate keys in the external QA and prod environment files and never
   put a live key in Git, an image, or a DAG command.
 - `WREMOTELY_LIFECYCLE_SCHEDULE`: required only when `ENVIRONMENT=prod`;
-  configure `15 */12 * * *` so seven half-day runs cover the active catalog in
-  3.5 days. Keep dev/QA lifecycle runs manual.
+  configure `0 6,18 * * *` so lifecycle starts six hours after each main ELT
+  schedule while seven half-day runs still cover the active catalog in 3.5
+  days. Keep dev/QA lifecycle runs manual.
 
 The private runtime image is configured with `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`.
 Dev may keep this value in its external development environment file. QA and
@@ -425,12 +426,15 @@ The normal scheduled path does not acquire new sources. It starts from the
 approved source snapshot, selects unseen job URLs, loads raw BigQuery tables,
 and only then builds the dbt serving snapshot.
 The intended production ingestion cadence is every 12 hours (`0 */12 * * *`).
-Lifecycle runs every 12 hours at minute 15 (`15 */12 * * *`) with seven stable
-buckets and 16 internal workers. Each scheduled run owns one complete bucket,
-so seven successful runs cover the active catalog in 3.5 days. Bucket size grows
-with the active catalog; monitor actual run duration, network-pool queue delay,
-retries, and completion before the next lifecycle interval. Dev and QA remain
-manually triggered; repair and publication are unscheduled in every environment.
+Lifecycle runs every 12 hours at 06:00 and 18:00 UTC (`0 6,18 * * *`), six hours
+after each main ELT schedule, with seven stable buckets and 16 internal workers.
+Each scheduled run owns one complete bucket, so seven successful runs cover the
+active catalog in 3.5 days. The offset reduces routine contention but does not
+guarantee separation when a producer exceeds six hours; the one-slot network
+and warehouse pools remain the concurrency controls. Bucket size grows with the
+active catalog; monitor actual run duration, network-pool queue delay, retries,
+and completion before the next lifecycle interval. Dev and QA remain manually
+triggered; repair and publication are unscheduled in every environment.
 
 These DAGs include every implemented step required to create and refresh the
 BigQuery serving publication. They intentionally do not run search-provider

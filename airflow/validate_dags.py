@@ -13,6 +13,9 @@ from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOpe
 from airflow.sdk import DAG
 from jinja2 import Environment
 
+EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
+EXPECTED_PROD_LIFECYCLE_SCHEDULE = "0 6,18 * * *"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate packaged Airflow DAG contracts.")
@@ -105,8 +108,17 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     )
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
-    if environment == "prod" and lifecycle.schedule is None:
-        raise AssertionError("prod lifecycle DAG must have a schedule")
+    if environment == "prod":
+        if ingestion.schedule != EXPECTED_PROD_INGESTION_SCHEDULE:
+            raise AssertionError(
+                "prod ingestion DAG schedule must be "
+                f"{EXPECTED_PROD_INGESTION_SCHEDULE!r}, got {ingestion.schedule!r}"
+            )
+        if lifecycle.schedule != EXPECTED_PROD_LIFECYCLE_SCHEDULE:
+            raise AssertionError(
+                "prod lifecycle DAG schedule must be "
+                f"{EXPECTED_PROD_LIFECYCLE_SCHEDULE!r}, got {lifecycle.schedule!r}"
+            )
     if environment != "prod" and lifecycle.schedule is not None:
         raise AssertionError("non-prod lifecycle DAG must be manual")
     if repair.schedule is not None:

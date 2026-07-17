@@ -993,7 +993,7 @@ home = Path.home()
 
 fixed = {
     "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "0 */12 * * *",
-    "WREMOTELY_LIFECYCLE_SCHEDULE": "" if environment == "qa" else "15 */12 * * *",
+    "WREMOTELY_LIFECYCLE_SCHEDULE": "" if environment == "qa" else "0 6,18 * * *",
     "WREMOTELY_HANDOFF_DATASET": "handoff",
     "WREMOTELY_PUBLICATION_TOPIC": "wremotely-serving-publications",
     "WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS": str(
@@ -1371,7 +1371,7 @@ SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/s
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/dbt-service-account.json
 ETL__PERSONAL_FINANCE_SCHEDULE=<prod cron or preset schedule>
 ETL__WREMOTELY_SCHEDULE='0 */12 * * *'
-WREMOTELY_LIFECYCLE_SCHEDULE='15 */12 * * *'
+WREMOTELY_LIFECYCLE_SCHEDULE='0 6,18 * * *'
 DBT_TARGET=prod
 DBT_DATASET=analytics
 BIGQUERY_LOCATION=US
