@@ -6,6 +6,7 @@ WITH company_job_counts AS (
     FROM {{ ref('wremotely__companies') }} AS c
     LEFT JOIN {{ ref('wremotely__serving_jobs') }} AS j
         ON c.company_id = j.company_id
+        AND NOT j.is_deleted
     GROUP BY
         c.company_id
         , c.open_job_count
