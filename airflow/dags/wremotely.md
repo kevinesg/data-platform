@@ -1,6 +1,7 @@
 # wremotely Airflow DAGs
 
 `etl__wremotely` ingests newly crawled jobs,
+`maintenance__wremotely_artifacts` removes verified-safe private ETL artifacts,
 `maintenance__wremotely_lifecycle` rechecks one stable active-job bucket, and
 `repair__wremotely_job_urls` performs bounded exact-URL repairs.
 `repair__wremotely_classifications` replays one completed historical extraction
@@ -38,6 +39,10 @@ running Docker:
   configure `0 6,18 * * *` so lifecycle starts six hours after each main ELT
   schedule while seven half-day runs still cover the active catalog in 3.5
   days. Keep dev/QA lifecycle runs manual.
+- `WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE`: required only when
+  `ENVIRONMENT=prod`; configure `0 3 * * *` so cleanup runs daily between the
+  00:00 ingestion and 06:00 lifecycle starts and far from the 18:17 metadata
+  backup. Keep dev/QA cleanup manual.
 
 The private runtime image is configured with `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`.
 Dev may keep this value in its external development environment file. QA and
@@ -446,21 +451,75 @@ and only then builds the dbt serving snapshot.
 The intended production ingestion cadence is every 12 hours (`0 */12 * * *`).
 Lifecycle runs every 12 hours at 06:00 and 18:00 UTC (`0 6,18 * * *`), six hours
 after each main ELT schedule, with seven stable buckets and 16 internal workers.
+Artifact cleanup runs daily at 03:00 UTC (`0 3 * * *`) and retains three
+complete days of local and GCS artifacts.
 Each scheduled run owns one complete bucket, so seven successful runs cover the
 active catalog in 3.5 days. The offset reduces routine contention but does not
 guarantee separation when a producer exceeds six hours; the one-slot network
 and warehouse pools remain the concurrency controls. Bucket size grows with the
 active catalog; monitor actual run duration, network-pool queue delay, retries,
-and completion before the next lifecycle interval. Dev and QA remain manually
-triggered; repair and publication are unscheduled in every environment.
+and completion before the next lifecycle interval. Cleanup and lifecycle are
+manual in dev and QA; repair and publication are unscheduled in every
+environment.
 
 These DAGs include every implemented step required to create and refresh the
 BigQuery serving publication. They intentionally do not run search-provider
-`discover`, offline crawl merging, classifier benchmarks, or destructive local
-artifact cleanup. Those are source-acquisition, evaluation, or maintenance
-workflows with different budgets and cadences. The DAG publishes the exact
-committed `READY` publication ID to Pub/Sub. The VPS publication worker consumes
-that signal and applies the bounded serving snapshot to PostgreSQL.
+`discover`, offline crawl merging, or classifier benchmarks. Those are
+source-acquisition or evaluation workflows with different budgets and
+cadences. The producer DAGs publish the exact committed `READY` publication ID
+to Pub/Sub. The VPS publication worker consumes that signal and applies the
+bounded serving snapshot to PostgreSQL.
+
+Artifact cleanup is an independent maintenance DAG so ingestion or publication
+failure does not suppress retention and cleanup failure does not block
+publication. Its one task invokes the private runtime with:
+
+```text
+cleanup
+  --cleanup-min-age-days 3
+  --cleanup-gcs
+  --cleanup-apply
+```
+
+The task uses the environment's mounted `WREMOTELY_ETL_ARTIFACTS_DIR`, exact
+GCP project, bucket, and wremotely prefix. It shares the one-slot
+`wremotely_warehouse` pool with raw loads and publication mutations. The
+private runtime scans every repository-owned run output and interrupted work
+directory. It deletes exact manifest-listed GCS generations only for
+checksum-verified loaded stage runs, deletes each stage `_SUCCESS` marker last,
+and removes eligible local run directories only after all eligible GCS
+deletions succeed. It retains recent, uploaded-not-loaded, staged-not-loaded,
+and primary local-only artifacts. It never deletes BigQuery rows, source
+registry inputs, other GCS prefixes or buckets, Airflow logs, Docker logs, or
+personal-finance files.
+
+### Artifact cleanup rollout and recovery
+
+The service account needs the bucket-scoped object read/delete permission
+documented by the private ETL warehouse setup. Before unpausing cleanup in an
+environment, run the private ETL README's cleanup report against that
+environment's mounted artifact root, project, bucket, and prefix with
+`--cleanup-min-age-days 3 --cleanup-gcs` and without `--cleanup-apply`. Inspect
+`cleanup.json`, `cleanup_candidates.jsonl`, and
+`gcs_cleanup_candidates.jsonl`; investigate any unexpected prefix, bucket,
+eligibility reason, or run identity before enabling deletion.
+
+After the report is accepted, trigger `maintenance__wremotely_artifacts`
+manually once in dev or QA. Confirm its `cleanup.json` reports only expected
+eligible/deleted counts and that retained reasons include every recent,
+uploaded-not-loaded, staged-not-loaded, and primary local-only run. Prod uses
+the same immutable private image and exact command, with the schedule enabled
+only after this smoke check.
+
+Pause `maintenance__wremotely_artifacts` to disable future deletion; pausing
+does not remove state. If GCS deletion fails, the private runtime leaves local
+upload/load evidence and the cleanup run incomplete, so clear or retry the same
+task after correcting credentials, IAM, bucket, prefix, or connectivity. If a
+cleanup task completed, rerunning the same DAG run verifies and reuses its
+completed report; trigger a new DAG run to scan a fresh artifact snapshot.
+Deleted local replay files are not reconstructed by Airflow. Recovery uses the
+durable BigQuery data or surviving GCS objects where available, so policy
+changes must be tested through dry-run before the schedule is re-enabled.
 
 `evaluate` and `stage` consume the completed selection, extraction, job-facts,
 and classification artifacts. They do not require the same DAG run's crawl
@@ -1085,9 +1144,9 @@ docker compose --env-file "$DATA_PLATFORM_ENV_FILE" \
 ```
 
 Verify that `wremotely_network` and `wremotely_warehouse` each have one slot,
-and that all four wremotely DAG IDs are listed. New DAGs are paused on creation;
-unpause the repair, lifecycle, and publication DAGs for the dev smoke. In the
-Airflow UI:
+and that all six wremotely DAG IDs are listed. New DAGs are paused on creation;
+unpause only the DAGs needed for each dev smoke. Keep artifact cleanup paused
+until its dry-run report has been reviewed. In the Airflow UI:
 
 1. Trigger `repair__wremotely_job_urls` with one known URL from the current
    source-crawl handoff table. Confirm the producer reaches
@@ -1097,4 +1156,8 @@ Airflow UI:
    the prepared metadata records seven buckets, the logical-date-selected bucket
    index, and no more than 12 rows. Confirm the linked publication DAG succeeds
    through `signal_publication` even when no row becomes deleted.
-3. Confirm `etl__wremotely` no longer contains the five lifecycle tasks.
+3. Review a dry-run cleanup report, then trigger
+   `maintenance__wremotely_artifacts`. Confirm only verified-safe artifacts
+   older than three days were deleted and all evidence-required/recent runs were
+   retained.
+4. Confirm `etl__wremotely` no longer contains the five lifecycle tasks.

@@ -303,8 +303,10 @@ jobs:
           expected_dag_ids=(
             etl__personal_finance
             etl__wremotely
+            maintenance__wremotely_artifacts
             maintenance__wremotely_lifecycle
             publish__wremotely_serving
+            repair__wremotely_classifications
             repair__wremotely_job_urls
           )
 

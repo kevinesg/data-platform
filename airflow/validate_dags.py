@@ -15,6 +15,7 @@ from jinja2 import Environment
 
 EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
 EXPECTED_PROD_LIFECYCLE_SCHEDULE = "0 6,18 * * *"
+EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE = "0 3 * * *"
 
 
 def main() -> int:
@@ -63,6 +64,7 @@ def assert_all_tasks_have_execution_timeouts(modules: dict[str, ModuleType]) -> 
 
 def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     ingestion = require_dag(modules, "etl__wremotely")
+    artifact_cleanup = require_dag(modules, "maintenance__wremotely_artifacts")
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
     repair = require_dag(modules, "repair__wremotely_job_urls")
@@ -83,6 +85,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "load",
             "trigger_publication",
         ],
+    )
+    assert_task_contract(
+        artifact_cleanup,
+        ["cleanup"],
     )
     assert_task_contract(
         lifecycle,
@@ -135,8 +141,18 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
                 "prod lifecycle DAG schedule must be "
                 f"{EXPECTED_PROD_LIFECYCLE_SCHEDULE!r}, got {lifecycle.schedule!r}"
             )
+        if artifact_cleanup.schedule != EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE:
+            raise AssertionError(
+                "prod artifact cleanup DAG schedule must be "
+                f"{EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE!r}, "
+                f"got {artifact_cleanup.schedule!r}"
+            )
+    if environment != "prod" and artifact_cleanup.schedule is not None:
+        raise AssertionError("non-prod artifact cleanup DAG must be manual")
     if environment != "prod" and lifecycle.schedule is not None:
         raise AssertionError("non-prod lifecycle DAG must be manual")
+    if artifact_cleanup.max_active_runs != 1:
+        raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
     if repair.schedule is not None:
         raise AssertionError("repair DAG must always be manual")
     if classification_repair.schedule is not None:
@@ -150,6 +166,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
 
     assert_pool(ingestion, "crawl", "wremotely_network")
     assert_pool(ingestion, "extract", "wremotely_network")
+    assert_pool(artifact_cleanup, "cleanup", "wremotely_warehouse")
     assert_pool(lifecycle, "recheck", "wremotely_network")
     assert_pool(repair, "extract", "wremotely_network")
     assert_pool(classification_repair, "load", "wremotely_warehouse")
@@ -183,6 +200,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("crawl must not depend on an external registry checksum")
 
     validate_lifecycle_bucket_contract(lifecycle)
+    validate_artifact_cleanup_contract(artifact_cleanup)
 
     classification_params = {
         "extraction_run_id": "20260715T102748Z-wremotely-extract",
@@ -338,6 +356,28 @@ def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
             raise AssertionError("scheduled recheck does not accept the complete bucket")
     if set(bucket_indexes[:7]) != set(range(7)) or bucket_indexes[7] != bucket_indexes[0]:
         raise AssertionError("12-hour lifecycle runs do not cover exactly seven stable buckets")
+
+
+def validate_artifact_cleanup_contract(artifact_cleanup: DAG) -> None:
+    cleanup_task = artifact_cleanup.get_task("cleanup")
+    cleanup_command = cleanup_task.command
+    if not isinstance(cleanup_command, list):
+        raise AssertionError("artifact cleanup command must be an argv list")
+    if command_argument(cleanup_command, "--step") != "cleanup":
+        raise AssertionError("artifact cleanup must use the private cleanup step")
+    if command_argument(cleanup_command, "--cleanup-min-age-days") != "3":
+        raise AssertionError("artifact cleanup must retain three complete days")
+    for required_flag in ("--cleanup-gcs", "--cleanup-apply"):
+        if required_flag not in cleanup_command:
+            raise AssertionError(f"artifact cleanup command is missing {required_flag}")
+    if command_argument(cleanup_command, "--gcp-project") != os.environ["PROJECT_ID"]:
+        raise AssertionError("artifact cleanup must use the environment GCP project")
+    if command_argument(cleanup_command, "--gcs-bucket") != os.environ["WREMOTELY_GCS_BUCKET"]:
+        raise AssertionError("artifact cleanup must use the environment GCS bucket")
+    if command_argument(cleanup_command, "--gcs-prefix") != os.environ["WREMOTELY_GCS_PREFIX"]:
+        raise AssertionError("artifact cleanup must use the environment wremotely GCS prefix")
+    if cleanup_task.execution_timeout != timedelta(hours=8):
+        raise AssertionError("artifact cleanup task must have its bounded extended timeout")
 
 
 def command_argument(command: list[str], option: str) -> str:
