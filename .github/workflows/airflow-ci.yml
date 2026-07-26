@@ -69,6 +69,7 @@ jobs:
               -e ETL__PERSONAL_FINANCE_SCHEDULE='0 20 * * *' \
               -e ETL__WREMOTELY_SCHEDULE='0 */12 * * *' \
               -e WREMOTELY_LIFECYCLE_SCHEDULE='0 6,18 * * *' \
+              -e WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE='0 3 * * *' \
               -e PROJECT_ID=ci-project \
               -e RAW_DATASET=raw_ci \
               -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
