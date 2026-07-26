@@ -23,6 +23,7 @@ def main() -> int:
     args = parser.parse_args()
 
     modules = import_dag_modules(args.dag_dir)
+    assert_all_tasks_have_execution_timeouts(modules)
     validate_wremotely_dags(modules)
     print("airflow DAG contracts OK")
     return 0
@@ -50,11 +51,22 @@ def import_dag_modules(dag_dir: Path) -> dict[str, ModuleType]:
     return modules
 
 
+def assert_all_tasks_have_execution_timeouts(modules: dict[str, ModuleType]) -> None:
+    for module_name, module in modules.items():
+        dag = getattr(module, "dag", None)
+        if not isinstance(dag, DAG):
+            raise AssertionError(f"{module_name} does not expose a DAG named dag")
+        for task in dag.tasks:
+            if task.execution_timeout is None:
+                raise AssertionError(f"{dag.dag_id}.{task.task_id} has no bounded timeout")
+
+
 def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     ingestion = require_dag(modules, "etl__wremotely")
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
     repair = require_dag(modules, "repair__wremotely_job_urls")
+    classification_repair = require_dag(modules, "repair__wremotely_classifications")
 
     assert_task_contract(
         ingestion,
@@ -98,6 +110,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ],
     )
     assert_task_contract(
+        classification_repair,
+        ["job_facts", "classify", "evaluate", "stage", "upload", "load"],
+    )
+    assert_task_contract(
         publication,
         [
             "dbt_build",
@@ -123,6 +139,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("non-prod lifecycle DAG must be manual")
     if repair.schedule is not None:
         raise AssertionError("repair DAG must always be manual")
+    if classification_repair.schedule is not None:
+        raise AssertionError("classification repair DAG must always be manual")
+    if classification_repair.max_active_runs != 1:
+        raise AssertionError("classification repair DAG must serialize historical loads")
     if publication.schedule is not None:
         raise AssertionError("publication DAG must always be trigger-only")
     if publication.max_active_runs != 1:
@@ -132,6 +152,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(ingestion, "extract", "wremotely_network")
     assert_pool(lifecycle, "recheck", "wremotely_network")
     assert_pool(repair, "extract", "wremotely_network")
+    assert_pool(classification_repair, "load", "wremotely_warehouse")
     for dag in (ingestion, lifecycle, repair):
         assert_pool(dag, "load" if dag is not lifecycle else "load_recheck", "wremotely_warehouse")
         assert_publication_trigger(dag)
@@ -162,6 +183,33 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("crawl must not depend on an external registry checksum")
 
     validate_lifecycle_bucket_contract(lifecycle)
+
+    classification_params = {
+        "extraction_run_id": "20260715T102748Z-wremotely-extract",
+        "replay_label": "classification-reconciliation-v1",
+    }
+    rendered_commands = {
+        task_id: [
+            Environment().from_string(value).render(params=classification_params)
+            for value in classification_repair.get_task(task_id).command
+        ]
+        for task_id in classification_repair.task_ids
+    }
+    if command_argument(rendered_commands["classify"], "--work-arrangement-mode") != "raw_only":
+        raise AssertionError("classification replay must keep work arrangement inference disabled")
+    if command_argument(rendered_commands["classify"], "--country-eligibility-mode") != "raw_only":
+        raise AssertionError("classification replay must keep country inference disabled")
+    if command_argument(rendered_commands["stage"], "--stage-kind") != "classification_replay":
+        raise AssertionError("classification replay must stage only rebuilt classification artifacts")
+    expected_stage_run_id = (
+        "20260715T102748Z-wremotely-extract-classification-reconciliation-v1-stage"
+    )
+    if command_argument(rendered_commands["load"], "--run-id") != expected_stage_run_id:
+        raise AssertionError("classification replay changed its stable load run ID")
+    expected_replay_timeout = timedelta(hours=8)
+    for task_id in classification_repair.task_ids:
+        if classification_repair.get_task(task_id).execution_timeout != expected_replay_timeout:
+            raise AssertionError(f"classification replay task {task_id} has no bounded timeout")
 
     test_urls = [
         "https://company.example/jobs/one",

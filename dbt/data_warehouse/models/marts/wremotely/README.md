@@ -12,7 +12,11 @@ employment type, declared language, and source validity timestamps. The private
 publication gate applies current hold decisions after dbt tests this relation.
 Closed jobs remain in the relation as retained `is_deleted = true` rows so a
 publisher can update an existing serving row instead of inferring deletion from
-absence. `source_updated_at` is the latest relevant pipeline event.
+absence. Incremental builds use the same tombstone signal when a previously
+served job becomes non-publishable. The intermediate publication-status model
+keeps classification suppression distinct from confirmed lifecycle closure in
+the warehouse and also suppresses elapsed source `validThrough` boundaries.
+`source_updated_at` is the latest relevant pipeline event.
 `dbt_updated_at` is one stable dbt run timestamp assigned to rows selected by
 the incremental merge, and `_updated_at` remains its current-publication
 compatibility alias. Explicit
@@ -26,9 +30,11 @@ private model reevaluation.
 that an existing target has the required source and dbt watermark columns before
 using its watermark. A target created by an older contract is processed in full
 once, the missing columns are appended, and every existing row receives the
-current dbt run timestamp. Later normal builds merge only new jobs or jobs whose
-`source_updated_at` advanced. Taxonomy or transformation changes that must
-reprocess unchanged source rows still require an explicit full refresh.
+current dbt run timestamp. Later normal builds compare each job against its own
+source watermark and merge new, changed, closed, suppressed, or reactivated
+rows. Publication-status changes can suppress or reactivate a row without a new
+source event. Other taxonomy or transformation changes that must recompute
+unchanged public fields still require an explicit full refresh.
 
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a
@@ -74,6 +80,10 @@ uv run dbt build \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select $WREMOTELY_DBT_SELECTOR
 ```
+
+Historical classification reconciliation must use this ordinary incremental
+build. Do not add `--full-refresh`: the existing serving rows are the state
+against which the model emits suppression tombstones.
 
 Use an explicit full refresh when a taxonomy or transformation change must
 reprocess rows whose source watermark did not advance:

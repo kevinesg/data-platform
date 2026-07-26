@@ -25,23 +25,38 @@ salary, employment type, source dates, and language metadata when those facts
 are available. It does not decide what to publish or how to publish it.
 
 `int_wremotely__country_eligibility_evidence` maps raw country and region
-evidence to reviewed country and group taxonomy where possible. It keeps
-unknown, invalid, and unmatched evidence visible for QA/RCA instead of silently
-promoting it to a country. Physical job-location evidence stays non-restrictive;
-applicant eligibility must come from applicant-location or role-level
-eligibility evidence.
+evidence from the matching latest classification run to reviewed country and
+group taxonomy where possible. Structured atomic values require a complete,
+unambiguous alias match; bounded role-level text may contain an alias. Unicode
+normalization and unique ISO short-name derivation cover taxonomy variants
+without a growing country-specific correction list. Unknown, invalid,
+ambiguous, and unmatched evidence remains visible for QA/RCA instead of being
+silently promoted. Physical job-location evidence stays non-restrictive;
+applicant eligibility must come from applicant-location or role-level evidence.
+Structured country fields are used only to disambiguate those existing
+eligibility signals. An alias observed as a subcountry location under a
+different structured country more often than it is observed with its own
+country context is left unmatched unless the candidate has structured context
+supporting the country interpretation.
 
 `int_wremotely__candidate_country_eligibility` keeps the validated eligibility
 contract compact at candidate grain. Global jobs are represented by scope and
-exclusions rather than expanded to every country.
+exclusions rather than expanded to every country. Explicit restrictive country
+evidence takes precedence when a source also contains contradictory global
+prose.
 
 `int_wremotely__job_country_eligibility` is the compact bridge for explicit
 eligible countries and explicit exclusions.
 
-`int_wremotely__publishable_job_facts` applies the warehouse eligibility rules
-once so downstream candidate marts can share the same job grain.
-It retains lifecycle-closed rows with `is_deleted` and `_updated_at` metadata;
-it does not drop them from the current-state contract.
+`int_wremotely__job_publication_status` records whether each current candidate
+is publishable, lifecycle-closed, or non-publishable and preserves a bounded
+reason for that decision. Source `validThrough` values suppress a job only
+after their declared boundary: date-only values remain valid through that UTC
+calendar date, while timestamp values use their exact instant.
+`int_wremotely__publishable_job_facts` applies that status once so downstream
+candidate marts can share the same job grain. It retains lifecycle-closed rows
+with `is_deleted` and `_updated_at` metadata; it does not drop them from the
+current-state contract.
 It also derives nullable conservative company identity fields from source
 company name plus source domain. Known non-English rows are excluded from the
 serving set for MVP, while unknown-language rows remain eligible. Full job

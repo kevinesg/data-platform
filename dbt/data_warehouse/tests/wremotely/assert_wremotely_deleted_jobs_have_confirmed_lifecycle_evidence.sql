@@ -5,15 +5,15 @@ WITH serving_jobs AS (
 
 candidate_facts AS (
     SELECT *
-    FROM {{ ref('int_wremotely__current_candidate_facts') }}
+    FROM {{ ref('int_wremotely__job_publication_status') }}
 )
 
 SELECT serving_jobs.job_id
 FROM serving_jobs
 INNER JOIN candidate_facts
     ON serving_jobs.job_id = candidate_facts.candidate_id
-WHERE serving_jobs.is_deleted
-    != COALESCE(
+WHERE candidate_facts.publication_status = 'CLOSED'
+    AND NOT COALESCE(
         candidate_facts.latest_lifecycle_status = 'CLOSED'
         OR (
             candidate_facts.latest_lifecycle_status = 'TERMINAL'

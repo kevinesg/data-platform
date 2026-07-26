@@ -95,7 +95,9 @@ models:
                 values: [true, false]
                 quote: false
       - name: is_deleted
-        description: True when explicit lifecycle evidence marks the retained job closed or terminal.
+        description: >
+          Serving tombstone. True when explicit lifecycle evidence closes a job
+          or when a previously served job no longer meets publication requirements.
         data_tests:
           - not_null
           - accepted_values:
