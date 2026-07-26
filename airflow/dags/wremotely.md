@@ -67,7 +67,7 @@ operator-specific publication-hold policy remains external and read-only.
 The wremotely DAG uses a private BigQuery handoff dataset for current-state
 handoff and serving publication tables. This dataset is not raw
 warehouse history or a dbt target. It is the private exchange boundary between
-pipeline steps and the future serving publication worker; no table is public.
+pipeline steps and the serving publication worker; no table is public.
 
 Use a descriptive dataset name such as `handoff_<developer>` for local dev and
 `handoff` for QA and prod. The environment-specific GCP projects already separate
@@ -75,8 +75,7 @@ QA and prod, so deployed dataset names do not need a developer suffix. Avoid
 `temp` because these tables are replaceable but still persistent handoff state;
 the name can be confused with BigQuery temporary tables or data that may be
 deleted at any moment. Avoid the shorthand `ops` in resource names unless a
-broader operations dataset is created later with a documented ownership
-contract.
+broader operations dataset has a documented ownership contract.
 
 The intended table behavior is:
 
