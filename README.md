@@ -23,6 +23,7 @@ imports or production runtime bind mounts.
 
 - [Production-Scale Assumption](#production-scale-assumption)
 - [Initial Delivery Direction](#initial-delivery-direction)
+- [Roadmap](#roadmap)
 - [Environments](#environments)
 - [Deployed Interfaces](#deployed-interfaces)
 - [Setup Flow](#setup-flow)
@@ -54,6 +55,25 @@ next component depends on it:
 5. CI for implemented components
 6. QA and prod deployment paths
 7. analytics service integration
+
+## Roadmap
+
+- Evaluate migrating the wremotely landing, warehouse, and publication-signal
+  workloads from GCP to an on-prem data platform to reduce recurring cloud
+  costs as storage and processing grow into hundreds of gigabytes.
+- No on-prem technology stack is selected. Measure the current GCS, BigQuery,
+  and Pub/Sub workload and cost baseline, then benchmark a small set of
+  candidate object-storage, analytical-storage/query, and signalling
+  combinations on representative production-scale data.
+- Include redundant storage, immutable off-host backup, restore drills, power
+  protection, monitoring, hardware replacement, operator time, and recovery
+  objectives in the cost and reliability comparison. On-prem operation moves
+  these responsibilities; it does not make them free.
+- Require data reconciliation, dbt and query performance gates, failure
+  testing, staged cutover, and rollback evidence before selecting a stack or
+  replacing any production GCP service. Keep the current GCP path authoritative
+  until an on-prem alternative proves correctness, durability, performance,
+  recovery, and lower total cost.
 
 ## Environments
 
