@@ -23,7 +23,6 @@ need. Local Compose is still useful for smoke testing runtime configuration.
 - [Runtime Hardening](#runtime-hardening)
 - [Application Database](#application-database)
 - [Warehouse Connections](#warehouse-connections)
-- [CI/CD Scope](#cicd-scope)
 
 ## Command Flow
 
@@ -335,14 +334,3 @@ After the key exists:
 8. Save the connection and let Metabase sync database metadata.
 9. Confirm Metabase can browse analytics tables and run a small row-limited
    query.
-
-## CI/CD Scope
-
-Metabase does not need a dedicated CI/CD workflow yet. The current Metabase
-change is runtime infrastructure only: Compose config, environment contract, and
-operator documentation.
-
-Add Metabase CI later when there is something deterministic to validate, such as
-Compose config rendering in GitHub Actions or a governed dashboard/export
-format. Add Metabase CD later only if the deployed Metabase runtime becomes
-managed by GitHub Actions.

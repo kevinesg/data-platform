@@ -416,19 +416,18 @@ direct LAN access is intentionally required.
 
 | Surface | Hostname | Current posture |
 | --- | --- | --- |
-| Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) | Authenticated operational UI. Public-viewer credentials are future work and must be read-only before broader sharing. |
-| Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) | Authenticated analytics UI. Public access should be limited to explicitly reviewed public dashboards later. |
+| Airflow | [airflow.kevinesg.com](https://airflow.kevinesg.com) | Authenticated operational UI. Do not create anonymous or public-viewer access. |
+| Metabase | [metabase.kevinesg.com](https://metabase.kevinesg.com) | Authenticated analytics UI. No anonymous dashboard access is configured. |
 | dbt docs | [dbt.kevinesg.com](https://dbt.kevinesg.com) | Static docs refresh workflow added. Public exposure waits for generated metadata review. |
-| Data-quality dashboard | TBD | Backlog. No dashboard product is selected yet. |
 
 Airflow and Metabase remain protected by application login and role-based
 access control. Do not expose Airflow anonymously. Do not expose Metabase admin,
 query-builder, or database-connection pages publicly.
 
-Static dbt docs and future data-quality reports can be made externally visible
-only after reviewing generated metadata for sensitive project, source, column,
-description, test, owner, or incident details. If those reports contain
-sensitive metadata, keep them behind access control.
+Generated data reports can be made externally visible only after reviewing
+their metadata for sensitive project, source, column, description, test, owner,
+or incident details. If a report contains sensitive metadata, keep it behind
+access control.
 
 ## Observability Surfaces
 
@@ -439,23 +438,16 @@ triaged.
 | Surface | Owner | Purpose | Status |
 | --- | --- | --- | --- |
 | Airflow UI | Airflow runtime | DAG state, task retries, task logs, import errors, and manual triggers. | Active through `airflow.kevinesg.com`. |
-| dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Generated during dbt commands. External archival is deferred until a concrete consumer needs it. Do not commit generated artifacts. |
+| dbt artifacts | dbt runtime | Manifest, catalog, run results, source freshness, and docs metadata. | Generated during dbt commands and not externally archived. Do not commit generated artifacts. |
 | dbt docs | dbt runtime | Static documentation for models, tests, lineage, and column contracts. | Refresh workflow added for `dbt.kevinesg.com`; expose only after metadata review. |
-| Native dbt freshness and monitor tests | dbt observability runtime | Source freshness and selected data-quality checks run outside every business DAG when they have useful signal. | Backlog. Add after audit-backed freshness checks or intentional non-blocking monitor tests exist. |
-| Data-quality dashboard | Observability runtime | Dashboard view for data quality history, incidents, alerts, and metadata if native dbt checks are not enough. | Backlog decision. No product is selected yet. |
 | Metabase | Analytics runtime | Business-facing dashboards and exploration, not pipeline incident triage. | Active through `metabase.kevinesg.com`. |
-| BigQuery metadata | Platform operations | Table storage, table age, row counts, and warehouse cost investigations. | Planned as targeted runbook queries. |
 
-Generated dbt docs, future data-quality reports, and dbt artifacts belong in
-external runtime storage with explicit retention, not in Git. Add artifact
-archival only when a concrete consumer needs historical files or queryable run
-history beyond Airflow, dbt docs, and native checks.
+Generated dbt docs and dbt artifacts belong in external runtime storage with
+explicit retention, not in Git.
 
 Business DAGs run the blocking `dbt build` tests for the graph they publish. A
-dedicated observability DAG or workflow belongs in backlog until it has useful
-signal, such as audit-backed freshness checks or intentionally non-blocking
-monitor tests. Do not run all freshness checks or all dbt tests in every
-business DAG.
+business DAG must not run unrelated freshness checks or the full repository
+test suite.
 
 Warehouse storage monitoring should use BigQuery metadata views such as
 `INFORMATION_SCHEMA.TABLE_STORAGE` only through bounded, environment-specific
@@ -1552,8 +1544,8 @@ database's final backup file.
 
 These local backups protect against application-state mistakes, bad upgrades,
 and accidental metadata loss on the deployment host. They do not protect
-against host or disk loss; off-host encrypted backup replication is separate
-future operations work.
+against host or disk loss. No off-host encrypted replication is currently
+configured.
 
 Default prod paths and retention:
 

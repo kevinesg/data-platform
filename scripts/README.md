@@ -3,8 +3,8 @@
 The `scripts` component owns extract/load commands and source-specific pipeline
 code.
 
-This component is terminal-testable without Airflow. Airflow can orchestrate
-script commands later, but extraction and loading logic belongs here.
+This component is terminal-testable without Airflow. Airflow orchestrates the
+same script commands, while extraction and loading logic remains here.
 
 Source-specific contracts and commands live near the relevant pipeline
 implementation instead of accumulating in this component README.
@@ -294,8 +294,8 @@ and extract/load validation.
 ## Runtime Contract
 
 Scripts expose explicit terminal commands for each major extract/load step. Each
-command is runnable locally first, then callable by Airflow later through the
-same stable interface.
+command is runnable locally and callable by Airflow through the same stable
+interface.
 
 Keep task boundaries retryable:
 
