@@ -80,11 +80,12 @@ combined AS (
     SELECT
         er.candidate_id
         , CASE
+            WHEN ARRAY_LENGTH(IFNULL(cr.included_country_codes, ARRAY<STRING>[])) > 0
+                THEN 'SPECIFIC'
             WHEN er.has_global_evidence
                 AND ARRAY_LENGTH(IFNULL(cr.excluded_country_codes, ARRAY<STRING>[])) > 0
                 THEN 'GLOBAL_EXCEPT'
             WHEN er.has_global_evidence THEN 'GLOBAL'
-            WHEN ARRAY_LENGTH(IFNULL(cr.included_country_codes, ARRAY<STRING>[])) > 0 THEN 'SPECIFIC'
             ELSE 'UNKNOWN'
         END AS validated_country_eligibility_scope
         , ARRAY(

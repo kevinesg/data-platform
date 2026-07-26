@@ -21,6 +21,7 @@ EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
+PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
 SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publication"
@@ -333,6 +334,7 @@ def create_publication_trigger_task(publication_run_id: str) -> TriggerDagRunOpe
         wait_for_completion=True,
         poke_interval=30,
         deferrable=True,
+        execution_timeout=PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT,
         retries=TASK_RETRIES,
         retry_delay=TASK_RETRY_DELAY,
         on_failure_callback=send_failure_alert,

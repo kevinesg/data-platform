@@ -21,6 +21,14 @@ search_facets AS (
     FROM {{ ref('int_wremotely__job_search_facets') }}
 ),
 
+publication_status AS (
+    SELECT
+        candidate_id AS job_id
+        , publication_status
+        , source_updated_at
+    FROM {{ ref('int_wremotely__job_publication_status') }}
+),
+
 incremental_source AS (
     SELECT
         job.*
@@ -30,14 +38,23 @@ incremental_source AS (
     INNER JOIN search_facets AS facets
         USING (job_id)
     {% if incremental_watermark_ready %}
-    WHERE job.source_updated_at > (
-        SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
-        FROM {{ this }}
-    )
-        OR NOT EXISTS (
+    WHERE NOT EXISTS (
             SELECT 1
             FROM {{ this }} AS current_job
             WHERE current_job.job_id = job.job_id
+        )
+        OR job.source_updated_at > (
+            SELECT current_job.source_updated_at
+            FROM {{ this }} AS current_job
+            WHERE current_job.job_id = job.job_id
+        )
+        OR (
+            (
+                SELECT current_job.is_deleted
+                FROM {{ this }} AS current_job
+                WHERE current_job.job_id = job.job_id
+            )
+            AND NOT job.is_deleted
         )
     {% endif %}
 ),
@@ -84,6 +101,44 @@ prepared AS (
         , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
         , TIMESTAMP('{{ run_started_at.isoformat() }}') AS _updated_at
     FROM incremental_source
+),
+
+suppressed AS (
+    {% if incremental_watermark_ready %}
+    SELECT
+        previous.* EXCEPT (
+            publication_hold_content_sha256
+            , serving_content_sha256
+            , serving_row_sha256
+        ) REPLACE (
+            TRUE AS is_deleted
+            , GREATEST(
+                previous.source_updated_at
+                , COALESCE(status.source_updated_at, previous.source_updated_at)
+            ) AS source_updated_at
+            , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
+            , TIMESTAMP('{{ run_started_at.isoformat() }}') AS _updated_at
+        )
+    FROM {{ this }} AS previous
+    INNER JOIN publication_status AS status
+        USING (job_id)
+    WHERE NOT previous.is_deleted
+        AND status.publication_status = 'NOT_PUBLISHABLE'
+    {% else %}
+    SELECT *
+    FROM prepared
+    WHERE FALSE
+    {% endif %}
+),
+
+changes AS (
+    SELECT *
+    FROM prepared
+
+    UNION ALL BY NAME
+
+    SELECT *
+    FROM suppressed
 ),
 
 content_hashed AS (
@@ -142,7 +197,7 @@ content_hashed AS (
             , is_deleted
             , public_snippet
         )))) AS serving_content_sha256
-    FROM prepared
+    FROM changes
 ),
 
 final AS (

@@ -2,8 +2,10 @@
 
 `etl__wremotely` ingests newly crawled jobs,
 `maintenance__wremotely_lifecycle` rechecks one stable active-job bucket, and
-`repair__wremotely_job_urls` performs bounded exact-URL repairs. Each producer
-loads raw data and triggers `publish__wremotely_serving`, which serializes the
+`repair__wremotely_job_urls` performs bounded exact-URL repairs.
+`repair__wremotely_classifications` replays one completed historical extraction
+through raw classification load without crawling it again. Normal producers
+load raw data and trigger `publish__wremotely_serving`, which serializes the
 tested dbt build, publication hold, current serving snapshot, and publication
 signal. Airflow owns dependency order, retries, and timeouts only; the private
 runtime owns extract/load behavior and dbt owns transformation and blocking
@@ -83,7 +85,7 @@ The intended table behavior is:
 - publication hold merges final per-job decisions only after its local
   checkpoint completes;
 - final serving tables retain current job state and advance `_updated_at` only
-  for newly ingested jobs or lifecycle changes;
+  for newly ingested, changed, closed, suppressed, or reactivated jobs;
 - durable raw tables that dbt reads remain separate and are updated only by the
   core load step.
 
@@ -422,6 +424,22 @@ runs `select -> extract -> job_facts -> classify -> evaluate -> stage -> upload
 job URLs. Each URL must exist in the current source-crawl handoff table; the
 selector fails rather than broadening the repair when a requested URL is absent.
 
+The manual historical-classification repair DAG runs:
+
+```text
+job_facts
+  -> classify
+  -> evaluate
+  -> stage
+  -> upload
+  -> load
+```
+
+It intentionally stops before dbt and publication. Operators process completed
+extraction runs oldest to newest, then trigger the serialized publication DAG
+once after the final load. Every task has an eight-hour execution timeout and
+the complete DAG has a 24-hour timeout.
+
 The normal scheduled path does not acquire new sources. It starts from the
 approved source snapshot, selects unseen job URLs, loads raw BigQuery tables,
 and only then builds the dbt serving snapshot.
@@ -474,6 +492,10 @@ pagination once the configured per-page URL budget is satisfied.
 registry can exceed the two-hour default used by smaller tasks. Docker tasks
 use forced container removal on failure or timeout so an orphaned runtime
 cannot keep writing a checkpoint while an Airflow retry starts.
+Every wremotely task has a bounded execution timeout. Smaller Docker tasks and
+dbt use their shared two-hour limits, measured network and repair work has a
+larger explicit limit, and publication-trigger waits are bounded at 12 hours.
+The DAG-level timeout remains the final bound for each complete workflow.
 
 `publication_hold` reads `serving_jobs` from the generated wremotely mart
 dataset (`${DBT_DATASET}_mart_wremotely` in dev and `mart_wremotely` in
@@ -498,6 +520,12 @@ Explicit closed-page evidence sets `is_deleted`; terminal HTTP outcomes require
 two consecutive rechecks. The workflow loads lifecycle events before triggering
 the serialized publication DAG, and dbt retains rows with `is_deleted = true`
 and advances `_updated_at` instead of removing them.
+Classification reconciliation uses the same serving tombstone for a previously
+served row that no longer meets publication requirements; the warehouse status
+model keeps that reason distinct from lifecycle closure. A source-declared
+`validThrough` boundary is also an explicit suppression reason. Date-only
+values remain valid through that UTC date; values with a time expire at their
+exact timestamp.
 `WREMOTELY_RECHECK_WORKER_COUNT` controls total internal concurrency while
 `WREMOTELY_PLATFORM_WORKER_COUNT` caps concurrent tenants per recognized ATS;
 the runtime still serializes each tenant or ordinary domain.
@@ -548,11 +576,78 @@ is intentional, and the serving worker must use its PostgreSQL publication
 ledger to make duplicate IDs no-ops. If signaling fails, clear only
 `signal_publication`; do not rebuild the snapshot.
 
-The topic has no subscription in this PR. The VPS worker PR creates one
-environment-specific pull subscription with its own least-privilege subscriber
-identity. Pub/Sub does not retain topic messages for a future subscription, so
-after that subscription is created, clear `signal_publication` once to send the
-latest ready publication ID.
+The VPS worker consumes an environment-specific pull subscription with its own
+least-privilege subscriber identity. Pub/Sub does not retain topic messages for
+a subscription that does not yet exist.
+
+## Historical classification reconciliation
+
+Use this procedure only after a reviewed classifier change must be applied to
+completed extraction artifacts. It is a controlled repair, not a scheduled
+workflow. The deployed private ETL image must contain the reviewed classifier
+and the `classification_replay` staging contract. The deployed data-platform
+images must contain this DAG and the serving-tombstone reconciliation model.
+
+Before triggering the repair, use the deployment host and external production
+environment documented in `deploy/README.md`. Verify the runtime file and list
+completed extraction runs without modifying artifacts:
+
+```bash
+test -s "$DATA_PLATFORM_ENV_FILE"
+set -a
+. "$DATA_PLATFORM_ENV_FILE"
+set +a
+
+test -d "$WREMOTELY_ETL_ARTIFACTS_DIR"
+find "$WREMOTELY_ETL_ARTIFACTS_DIR" \
+  -mindepth 3 \
+  -maxdepth 3 \
+  -path '*/extract/_SUCCESS' \
+  -printf '%h\n' |
+sed 's#/extract$##; s#.*/##' |
+sort
+```
+
+In the Airflow UI:
+
+1. Pause `etl__wremotely`, `maintenance__wremotely_lifecycle`, and
+   `repair__wremotely_job_urls`. Wait for every active wremotely producer or
+   publication run to finish before loading historical observations.
+2. Leave `repair__wremotely_classifications` available for manual triggers.
+3. Trigger one repair run for each completed extraction ID, strictly oldest to
+   newest. Use the same reviewed `replay_label` for every run, such as
+   `classification-reconciliation-v1`, and wait for all six tasks to succeed
+   before starting the next extraction ID.
+4. After the final replay load succeeds, trigger
+   `publish__wremotely_serving` once with a new `publication_run_id`. Do not run
+   dbt with `--full-refresh`; the incremental serving model needs its prior rows
+   to emit explicit suppression tombstones.
+5. Wait for `dbt_build`, `publication_hold`, `publish_serving_snapshot`, and
+   `signal_publication` to succeed, then verify the VPS worker applies that exact
+   publication ID before resuming producers.
+
+Use these read-only BigQuery checks after `dbt_build` and before resuming the
+normal DAGs:
+
+```sql
+SELECT
+    publication_status
+    , publication_status_reason
+    , COUNT(*) AS candidate_count
+FROM `<project>.intermediate.int_wremotely__job_publication_status`
+GROUP BY publication_status, publication_status_reason
+ORDER BY publication_status, candidate_count DESC;
+
+SELECT
+    COUNTIF(NOT is_deleted) AS active_job_count
+    , COUNTIF(is_deleted) AS tombstone_job_count
+FROM `<project>.mart_wremotely.serving_jobs`;
+```
+
+Reusing the same extraction ID and replay label is a verification replay: the
+private runtime validates completed local/GCS/load artifacts and skips matching
+work. A changed classifier must use a new replay label. Do not clear an older
+repair into a newer raw history or process extraction runs out of order.
 
 ## Successful task clear and replay behavior
 

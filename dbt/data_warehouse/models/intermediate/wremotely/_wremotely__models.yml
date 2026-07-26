@@ -1,6 +1,49 @@
 version: 2
 
 models:
+  - name: int_wremotely__job_publication_status
+    description: >
+      Current publication eligibility and reason for every candidate. This keeps
+      classification suppression distinct from confirmed lifecycle closure.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: publication_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['PUBLISHABLE', 'CLOSED', 'NOT_PUBLISHABLE']
+      - name: publication_status_reason
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - PUBLICATION_READY
+                  - NOT_JOB
+                  - WORK_ARRANGEMENT
+                  - COUNTRY_ELIGIBILITY_SCOPE
+                  - COUNTRY_ELIGIBILITY_VALUES
+                  - MISSING_TITLE
+                  - UNSUPPORTED_LANGUAGE
+                  - LIFECYCLE_CLOSED
+                  - LIFECYCLE_TERMINAL_CONFIRMED
+                  - EXPIRED_VALID_THROUGH
+      - name: has_expired_valid_through
+        description: >
+          Whether the source-declared validity boundary has elapsed. Date-only
+          values remain valid through that UTC calendar date; timestamp values
+          use their exact instant.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
   - name: int_wremotely__latest_selected_job_urls
     description: Latest selected job URL row for each candidate_id.
     columns:
@@ -247,9 +290,13 @@ models:
 
   - name: int_wremotely__country_eligibility_evidence
     description: >
-      Raw country eligibility evidence mapped to reviewed country and group
-      taxonomy when possible. Rows with unknown or invalid evidence stay visible
-      for QA/RCA rather than being silently promoted.
+      Country eligibility evidence from the matching latest classification run,
+      mapped to unambiguous country and group taxonomy aliases when possible.
+      Structured atomic fields require a complete alias match; bounded text may
+      contain aliases. Unknown, invalid, ambiguous, and unmatched evidence stays
+      visible for QA/RCA rather than being silently promoted. Structured country
+      fields disambiguate aliases whose conflicting subcountry usage dominates
+      supporting country usage, but never create applicant-eligibility evidence.
     columns:
       - name: candidate_id
         data_tests:
@@ -265,7 +312,10 @@ models:
           - not_null
 
   - name: int_wremotely__candidate_country_eligibility
-    description: Compact validated country eligibility facts at candidate grain.
+    description: >
+      Compact validated country eligibility facts at candidate grain. Explicit
+      restrictive country evidence takes precedence over contradictory global
+      prose so a broad claim cannot widen a bounded applicant requirement.
     columns:
       - name: candidate_id
         data_tests:
