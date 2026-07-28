@@ -28,11 +28,21 @@ are available. It does not decide what to publish or how to publish it.
 evidence from the matching latest classification run to reviewed country and
 group taxonomy where possible. Structured atomic values require a complete,
 unambiguous alias match; bounded role-level text may contain an alias. Unicode
-normalization and unique ISO short-name derivation cover taxonomy variants
-without a growing country-specific correction list. Unknown, invalid,
-ambiguous, and unmatched evidence remains visible for QA/RCA instead of being
-silently promoted. Physical job-location evidence stays non-restrictive;
-applicant eligibility must come from applicant-location or role-level evidence.
+normalization, unique ISO short-name derivation, and pinned English Unicode CLDR
+country display names cover taxonomy variants. Versioned CLDR subdivision names
+map bounded role-level location evidence only when the same text identifies the
+parent country. A complete ISO subdivision code may map without separate parent
+context; standalone code suffixes are not interpreted. Country and subdivision
+codes are matched case-sensitively and country codes are accepted only from
+atomic fields, not as substrings in free text. A longer subdivision phrase may
+embed an otherwise conflicting country name, as in `New Mexico` or `Northern
+Ireland`. Standalone subdivision names remain unmatched because CLDR uniqueness
+does not distinguish an administrative division from an identically named city,
+street, timezone, or colloquial region. Unknown, invalid, ambiguous,
+context-conflicting, and unmatched evidence remains visible for QA/RCA instead
+of being silently promoted. Physical job-location evidence stays
+non-restrictive; applicant eligibility must come from applicant-location or
+role-level evidence.
 Structured country fields are used only to disambiguate those existing
 eligibility signals. An alias observed as a subcountry location under a
 different structured country more often than it is observed with its own
