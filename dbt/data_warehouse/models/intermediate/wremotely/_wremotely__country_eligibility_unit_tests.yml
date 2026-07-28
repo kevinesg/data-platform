@@ -1,0 +1,448 @@
+version: 2
+
+unit_tests:
+  - name: test_country_and_subdivision_text_disambiguation
+    description: >
+      Maps subdivision phrases containing conflicting country aliases to their
+      parent country, requires parent-country context for other subdivision
+      names, requires complete subdivision codes, preserves separate country
+      mentions, and does not reinterpret country names as subdivisions.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-new-jersey
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote - New Jersey
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-new-mexico
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 2
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote - New Mexico
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-mexico
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 3
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote in Mexico
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-ireland
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 4
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Candidates can be located in Ireland or Northern Ireland
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-luxembourg
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 5
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote - Luxembourg
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-ontario
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 12
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote - Ontario, Canada
+            json_path: null
+            can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-new-jersey, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-new-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-ireland, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-luxembourg, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-ontario, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: BE, country_name: Belgium, alpha_3_code: BEL}
+          - {country_code: CA, country_name: Canada, alpha_3_code: CAN}
+          - {country_code: GB, country_name: United Kingdom, alpha_3_code: GBR}
+          - {country_code: IE, country_name: Ireland, alpha_3_code: IRL}
+          - {country_code: JE, country_name: Jersey, alpha_3_code: JEY}
+          - {country_code: LU, country_name: Luxembourg, alpha_3_code: LUX}
+          - {country_code: MX, country_name: Mexico, alpha_3_code: MEX}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: CZ, alias: Czech Republic, match_kind: phrase}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: BE-WLX, country_code: BE, subdivision_name: Luxembourg}
+          - {subdivision_code: CA-ON, country_code: CA, subdivision_name: Ontario}
+          - {subdivision_code: GB-NIR, country_code: GB, subdivision_name: Northern Ireland}
+          - {subdivision_code: US-NJ, country_code: US, subdivision_name: New Jersey}
+          - {subdivision_code: US-NM, country_code: US, subdivision_name: New Mexico}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {candidate_id: candidate-new-jersey, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-new-mexico, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-mexico, matched_country_code: MX, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-ireland, matched_country_code: GB, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-ireland, matched_country_code: IE, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-luxembourg, matched_country_code: LU, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-ontario, matched_country_code: CA, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+
+  - name: test_atomic_country_group_and_subdivision_code_controls
+    description: >
+      Keeps country and subdivision codes case-sensitive and atomic, preserves
+      reviewed country and group aliases, and leaves standalone subdivision
+      names unmatched.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-virginia
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote - Virginia
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-us-name
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 2
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote (United States)
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-ca-code
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 3
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote-CA
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-tx-code
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 4
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote-US-TX
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-czech
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 5
+            source_evidence_index: 1
+            country_field_role: APPLICANT_LOCATION_REQUIREMENTS
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Czech Republic
+            json_path: $.documents[0].applicantLocationRequirements.name
+            can_restrict: true
+          - candidate_id: candidate-eu
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 6
+            source_evidence_index: 1
+            country_field_role: APPLICANT_LOCATION_REQUIREMENTS
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: European Union
+            json_path: $.documents[0].applicantLocationRequirements.name
+            can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-virginia, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-us-name, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-ca-code, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-tx-code, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-czech, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-eu, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: CA, country_name: Canada, alpha_3_code: CAN}
+          - {country_code: CZ, country_name: Czechia, alpha_3_code: CZE}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: CZ, alias: Czech Republic, match_kind: phrase}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: US-CA, country_code: US, subdivision_name: California}
+          - {subdivision_code: US-TX, country_code: US, subdivision_name: Texas}
+          - {subdivision_code: US-VA, country_code: US, subdivision_name: Virginia}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {candidate_id: candidate-virginia, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: candidate-us-name, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-ca-code, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: candidate-tx-code, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-czech, matched_country_code: CZ, matched_country_group_code: null, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: candidate-eu, matched_country_code: null, matched_country_group_code: EU, match_source: ATOMIC_COUNTRY_GROUP_ALIAS}
+
+  - name: test_location_label_confidence_controls
+    description: >
+      Keeps recognized heuristic location labels restrictive while preserving
+      unmatched labels as non-blocking unknown evidence for QA.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-unmatched-location-label
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Full-Time
+            json_path: null
+            rule: location_shaped_remote_label
+            can_restrict: true
+          - candidate_id: candidate-matched-location-label
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 2
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: United States
+            json_path: null
+            rule: location_shaped_remote_label
+            can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-unmatched-location-label, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-matched-location-label, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: US, alias: U.S., match_kind: phrase}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: US-TX, country_code: US, subdivision_name: Texas}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {candidate_id: candidate-unmatched-location-label, evidence_direction: UNKNOWN, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_LOCATION_LABEL}
+        - {candidate_id: candidate-matched-location-label, evidence_direction: INCLUDED, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+
+  - name: test_subdivision_alias_confidence_controls
+    description: >
+      Requires complete subdivision codes and rejects subdivision names that
+      lack parent-country context, conflict with explicit country context, or
+      occur incidentally as titles, abbreviations, and street numbers.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-tx-suffix
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote-TX
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-brazil-porto
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 2
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Brazil (Remote) - Porto Alegre
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-east-usa
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 3
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote, East Coast United States
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-title-vp
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 4
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: VP, Account Management (Hybrid- NYC)
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-address-number
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 5
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Cedar Rapids, IA - 333 1st Street
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-country-code-text
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 6
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Remote (USA)
+            json_path: null
+            can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-tx-suffix, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-brazil-porto, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-east-usa, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-title-vp, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-address-number, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-country-code-text, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: BR, country_name: Brazil, alpha_3_code: BRA}
+          - {country_code: CM, country_name: Cameroon, alpha_3_code: CMR}
+          - {country_code: MU, country_name: Mauritius, alpha_3_code: MUS}
+          - {country_code: PT, country_name: Portugal, alpha_3_code: PRT}
+          - {country_code: UG, country_name: Uganda, alpha_3_code: UGA}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: US, alias: U.S., match_kind: phrase}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: CM-ES, country_code: CM, subdivision_name: East}
+          - {subdivision_code: MU-VP, country_code: MU, subdivision_name: Vacoas-Phoenix}
+          - {subdivision_code: PT-13, country_code: PT, subdivision_name: Porto}
+          - {subdivision_code: UG-333, country_code: UG, subdivision_name: Kwania}
+          - {subdivision_code: US-TX, country_code: US, subdivision_name: Texas}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {candidate_id: candidate-tx-suffix, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: candidate-brazil-porto, matched_country_code: BR, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-east-usa, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: candidate-title-vp, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: candidate-address-number, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: candidate-country-code-text, matched_country_code: null, matched_country_group_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+
+  - name: test_country_alias_conflicting_with_structured_location_context
+    description: >
+      Uses structured address-country context to keep a locality containing a
+      country alias from becoming applicant-country eligibility.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-jersey-city
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: NORMALIZED_TEXT
+            raw_country_eligibility_scope: SPECIFIC
+            raw_value: Candidates based in Raleigh or Jersey City
+            json_path: null
+            can_restrict: true
+          - candidate_id: candidate-jersey-city
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 2
+            country_field_role: JOB_LOCATION
+            raw_country_eligibility_scope: UNKNOWN
+            raw_value: Jersey City
+            json_path: $.documents[0].jobLocation.address.addressLocality
+            can_restrict: false
+          - candidate_id: candidate-jersey-city
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 3
+            country_field_role: JOB_LOCATION
+            raw_country_eligibility_scope: UNKNOWN
+            raw_value: US
+            json_path: $.documents[0].jobLocation.address.addressCountry
+            can_restrict: false
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-jersey-city, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: JE, country_name: Jersey, alpha_3_code: JEY}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: US, alias: US, match_kind: exact_code}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: US-NJ, country_code: US, subdivision_name: New Jersey}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {source_evidence_index: 1, matched_country_code: null, match_source: AMBIGUOUS_COUNTRY_ALIAS}
+        - {source_evidence_index: 2, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+        - {source_evidence_index: 3, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}

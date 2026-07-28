@@ -62,6 +62,56 @@ seeds:
               arguments:
                 values: ['exact_code', 'phrase']
 
+  - name: wremotely__country_cldr_aliases
+    description: >
+      English country display names and alternatives generated from the stable
+      Unicode CLDR 48.2 `common/main/en.xml` data file and restricted to the
+      ISO country taxonomy. Uppercase short forms are exact-code aliases; other
+      names are phrase aliases. Regenerate this seed and the subdivision seed
+      together with `generate_country_subdivisions.py`.
+    columns:
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: alias
+        data_tests:
+          - not_null
+      - name: match_kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exact_code', 'phrase']
+
+  - name: wremotely__country_subdivisions
+    description: >
+      English country-subdivision names generated from the stable Unicode CLDR
+      48.2 `common/subdivisions/en.xml` data file. The seed excludes provisional
+      draft rows and retains the CLDR subdivision code, parent country code, and
+      English display name for hierarchy-aware country-evidence matching.
+      Regenerate it and the CLDR country-alias seed together with
+      `generate_country_subdivisions.py`; the associated Unicode-3.0 notice is
+      in `UNICODE-LICENSE.txt`.
+    columns:
+      - name: subdivision_code
+        data_tests:
+          - unique
+          - not_null
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: subdivision_name
+        data_tests:
+          - not_null
+
   - name: wremotely__country_groups
     description: Reviewed country groups used to expand broad hiring-region evidence.
     columns:

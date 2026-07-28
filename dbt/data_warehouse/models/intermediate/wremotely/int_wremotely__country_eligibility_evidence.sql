@@ -36,6 +36,11 @@ country_alias_candidates AS (
 
     SELECT country_code, alias, match_kind
     FROM {{ ref('wremotely__country_aliases') }}
+
+    UNION ALL
+
+    SELECT country_code, alias, match_kind
+    FROM {{ ref('wremotely__country_cldr_aliases') }}
 ),
 
 normalized_country_aliases AS (
@@ -51,16 +56,128 @@ normalized_country_aliases AS (
     WHERE NULLIF(TRIM(alias), '') IS NOT NULL
 ),
 
-country_match_phrases AS (
+country_match_phrase_candidates AS (
     SELECT
-        MIN(alias_row.country_code) AS country_code
-        , alias_row.alias_search_text
-        , MIN(alias_row.alias_case_sensitive_text) AS alias_case_sensitive_text
-        , alias_row.match_kind
+        alias_row.*
+        , MIN(alias_row.country_code) OVER (
+            PARTITION BY alias_row.alias_search_text, alias_row.match_kind
+        ) AS minimum_country_code
+        , MAX(alias_row.country_code) OVER (
+            PARTITION BY alias_row.alias_search_text, alias_row.match_kind
+        ) AS maximum_country_code
+        , ROW_NUMBER() OVER (
+            PARTITION BY alias_row.alias_search_text, alias_row.match_kind
+            ORDER BY
+                alias_row.country_code
+                , alias_row.alias_case_sensitive_text
+                , alias_row.alias
+        ) AS alias_rank
     FROM normalized_country_aliases AS alias_row
     WHERE alias_row.alias_search_text != ''
-    GROUP BY alias_row.alias_search_text, alias_row.match_kind
-    HAVING COUNT(DISTINCT alias_row.country_code) = 1
+),
+
+country_match_phrases AS (
+    SELECT
+        country_code
+        , alias_search_text
+        , alias_case_sensitive_text
+        , match_kind
+    FROM country_match_phrase_candidates
+    WHERE minimum_country_code = maximum_country_code
+        AND alias_rank = 1
+),
+
+country_text_match_phrases AS (
+    SELECT country.*
+    FROM country_match_phrases AS country
+    WHERE country.match_kind = 'phrase'
+),
+
+country_subdivision_alias_candidates AS (
+    SELECT
+        subdivision_code
+        , country_code
+        , subdivision_name
+        , subdivision_name AS alias
+        , 'phrase' AS match_kind
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE_AND_CASEFOLD(subdivision_name, NFKD)
+                , r'[^\p{L}\p{N}]+'
+                , ' '
+            )
+        ) AS alias_search_text
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE(subdivision_name, NFKD)
+                , r'[^A-Za-z0-9]+'
+                , ' '
+            )
+        ) AS alias_case_sensitive_text
+    FROM {{ ref('wremotely__country_subdivisions') }}
+    WHERE NULLIF(TRIM(subdivision_name), '') IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+        subdivision_code
+        , country_code
+        , subdivision_name
+        , subdivision_code AS alias
+        , 'exact_code' AS match_kind
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE_AND_CASEFOLD(subdivision_code, NFKD)
+                , r'[^\p{L}\p{N}]+'
+                , ' '
+            )
+        ) AS alias_search_text
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE(subdivision_code, NFKD)
+                , r'[^A-Za-z0-9]+'
+                , ' '
+            )
+        ) AS alias_case_sensitive_text
+    FROM {{ ref('wremotely__country_subdivisions') }}
+    WHERE NULLIF(TRIM(subdivision_code), '') IS NOT NULL
+),
+
+subdivision_match_phrase_candidates AS (
+    SELECT
+        subdivision.*
+        , MIN(country_code) OVER (
+            PARTITION BY alias_search_text, match_kind
+        ) AS minimum_country_code
+        , MAX(country_code) OVER (
+            PARTITION BY alias_search_text, match_kind
+        ) AS maximum_country_code
+        , ROW_NUMBER() OVER (
+            PARTITION BY alias_search_text, match_kind
+            ORDER BY country_code, subdivision_code, subdivision_name
+        ) AS alias_rank
+    FROM country_subdivision_alias_candidates AS subdivision
+    WHERE alias_search_text != ''
+),
+
+subdivision_match_phrases AS (
+    SELECT
+        country_code
+        , alias_search_text
+        , alias_case_sensitive_text
+        , match_kind
+    FROM subdivision_match_phrase_candidates
+    WHERE minimum_country_code = maximum_country_code
+        AND alias_rank = 1
+),
+
+unambiguous_subdivision_match_phrases AS (
+    SELECT subdivision.*
+    FROM subdivision_match_phrases AS subdivision
+    LEFT JOIN country_match_phrases AS country
+        ON subdivision.alias_search_text = country.alias_search_text
+        AND subdivision.match_kind = country.match_kind
+    WHERE country.alias_search_text IS NULL
 ),
 
 normalized_country_group_aliases AS (
@@ -75,16 +192,37 @@ normalized_country_group_aliases AS (
     WHERE NULLIF(TRIM(alias), '') IS NOT NULL
 ),
 
-country_group_match_phrases AS (
+country_group_match_phrase_candidates AS (
     SELECT
-        MIN(alias_row.country_group_code) AS country_group_code
-        , alias_row.alias_search_text
-        , MIN(alias_row.alias_case_sensitive_text) AS alias_case_sensitive_text
-        , LOGICAL_OR(alias_row.is_code) AS is_code
+        alias_row.*
+        , MIN(alias_row.country_group_code) OVER (
+            PARTITION BY alias_row.alias_search_text
+        ) AS minimum_country_group_code
+        , MAX(alias_row.country_group_code) OVER (
+            PARTITION BY alias_row.alias_search_text
+        ) AS maximum_country_group_code
+        , MAX(CAST(alias_row.is_code AS INT64)) OVER (
+            PARTITION BY alias_row.alias_search_text
+        ) > 0 AS has_code_alias
+        , ROW_NUMBER() OVER (
+            PARTITION BY alias_row.alias_search_text
+            ORDER BY
+                alias_row.country_group_code
+                , alias_row.alias_case_sensitive_text
+        ) AS alias_rank
     FROM normalized_country_group_aliases AS alias_row
     WHERE alias_row.alias_search_text != ''
-    GROUP BY alias_row.alias_search_text
-    HAVING COUNT(DISTINCT alias_row.country_group_code) = 1
+),
+
+country_group_match_phrases AS (
+    SELECT
+        country_group_code
+        , alias_search_text
+        , alias_case_sensitive_text
+        , has_code_alias AS is_code
+    FROM country_group_match_phrase_candidates
+    WHERE minimum_country_group_code = maximum_country_group_code
+        AND alias_rank = 1
 ),
 
 prepared AS (
@@ -151,7 +289,8 @@ prepared AS (
         END AS country_match_mode
         , CASE
             WHEN country_field_role IN (
-                'LLM_EXCLUDED_GROUP'
+                'APPLICANT_LOCATION_REQUIREMENTS'
+                , 'LLM_EXCLUDED_GROUP'
                 , 'LLM_INCLUDED_GROUP'
                 , 'SOURCE_DEFAULT_COUNTRY_ELIGIBILITY'
             ) THEN 'ATOMIC'
@@ -182,7 +321,7 @@ structured_country_context AS (
         )
 ),
 
-exact_location_alias_context_observations AS (
+location_alias_context_observations AS (
     SELECT DISTINCT
         a.country_code
         , a.alias_search_text
@@ -191,7 +330,10 @@ exact_location_alias_context_observations AS (
     FROM prepared AS p
     INNER JOIN country_match_phrases AS a
         ON a.match_kind = 'phrase'
-        AND p.normalized_raw_value = a.alias_search_text
+        AND STRPOS(
+            CONCAT(' ', p.normalized_raw_value, ' ')
+            , CONCAT(' ', a.alias_search_text, ' ')
+        ) > 0
     INNER JOIN structured_country_context AS context
         ON p.candidate_id = context.candidate_id
         AND p.stage_run_id = context.stage_run_id
@@ -212,7 +354,7 @@ observed_context_conflicting_country_aliases AS (
     SELECT
         country_code
         , alias_search_text
-    FROM exact_location_alias_context_observations
+    FROM location_alias_context_observations
     GROUP BY country_code, alias_search_text
     HAVING COUNT(DISTINCT IF(
         country_code != context_country_code, candidate_id, NULL
@@ -289,12 +431,31 @@ country_text_match_candidates AS (
         p.*
         , a.country_code AS matched_country_code
         , a.alias_search_text AS matched_alias_search_text
+        , a.alias_case_sensitive_text AS matched_alias_case_sensitive_text
+        , a.match_kind AS matched_alias_kind
+        , ARRAY_LENGTH(
+            SPLIT(
+                IF(
+                    a.match_kind = 'exact_code'
+                    , CONCAT(' ', p.case_sensitive_search_text, ' ')
+                    , CONCAT(' ', p.normalized_raw_value, ' ')
+                )
+                , CONCAT(
+                    ' '
+                    , IF(
+                        a.match_kind = 'exact_code'
+                        , a.alias_case_sensitive_text
+                        , a.alias_search_text
+                    )
+                    , ' '
+                )
+            )
+        ) - 1 AS matched_alias_occurrence_count
         , CAST(NULL AS STRING) AS matched_country_group_code
         , 'COUNTRY_TEXT_ALIAS' AS match_source
     FROM prepared AS p
-    INNER JOIN country_match_phrases AS a
-        ON a.match_kind = 'phrase'
-        AND STRPOS(
+    INNER JOIN country_text_match_phrases AS a
+        ON STRPOS(
             CONCAT(' ', p.normalized_raw_value, ' ')
             , CONCAT(' ', a.alias_search_text, ' ')
         ) > 0
@@ -307,8 +468,136 @@ country_text_match_candidates AS (
         AND conflict.evidence_id IS NULL
 ),
 
+subdivision_text_match_candidates AS (
+    SELECT
+        p.*
+        , subdivision.country_code AS matched_country_code
+        , subdivision.alias_search_text AS matched_alias_search_text
+        , subdivision.alias_case_sensitive_text AS matched_alias_case_sensitive_text
+        , subdivision.match_kind AS matched_alias_kind
+        , ARRAY_LENGTH(
+            SPLIT(
+                CONCAT(' ', p.case_sensitive_search_text, ' ')
+                , CONCAT(' ', subdivision.alias_case_sensitive_text, ' ')
+            )
+        ) - 1 AS matched_alias_occurrence_count
+        , CAST(NULL AS STRING) AS matched_country_group_code
+        , 'COUNTRY_SUBDIVISION_TEXT_ALIAS' AS match_source
+    FROM prepared AS p
+    INNER JOIN unambiguous_subdivision_match_phrases AS subdivision
+        ON (
+            subdivision.match_kind = 'phrase'
+            AND STRPOS(
+                CONCAT(' ', p.case_sensitive_search_text, ' ')
+                , CONCAT(' ', subdivision.alias_case_sensitive_text, ' ')
+            ) > 0
+        )
+        OR (
+            subdivision.match_kind = 'exact_code'
+            AND REGEXP_CONTAINS(
+                NORMALIZE(COALESCE(p.raw_value, ''), NFKD)
+                , CONCAT(
+                    r'(^|[^A-Za-z0-9])'
+                    , REPLACE(
+                        subdivision.alias_case_sensitive_text
+                        , ' '
+                        , '-'
+                    )
+                    , r'([^A-Za-z0-9]|$)'
+                )
+            )
+        )
+    WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
+        AND p.country_match_mode = 'TEXT'
+),
+
+subdivision_country_context AS (
+    SELECT
+        subdivision.evidence_id
+        , subdivision.matched_country_code
+        , subdivision.matched_alias_search_text
+        , subdivision.matched_alias_kind
+        , COUNTIF(
+            country.matched_alias_kind = 'phrase'
+            AND country.matched_country_code = subdivision.matched_country_code
+        ) > 0 AS has_parent_country_context
+        , COUNTIF(
+            country.matched_alias_kind = 'phrase'
+            AND country.matched_country_code != subdivision.matched_country_code
+            AND LENGTH(subdivision.matched_alias_search_text)
+                > LENGTH(country.matched_alias_search_text)
+            AND STRPOS(
+                CONCAT(' ', subdivision.matched_alias_search_text, ' ')
+                , CONCAT(' ', country.matched_alias_search_text, ' ')
+            ) > 0
+        ) > 0 AS contains_country_name
+    FROM subdivision_text_match_candidates AS subdivision
+    LEFT JOIN country_text_match_candidates AS country
+        ON country.evidence_id = subdivision.evidence_id
+    GROUP BY
+        subdivision.evidence_id
+        , subdivision.matched_country_code
+        , subdivision.matched_alias_search_text
+        , subdivision.matched_alias_kind
+),
+
+subdivision_text_matches AS (
+    SELECT candidate.*
+    FROM subdivision_text_match_candidates AS candidate
+    INNER JOIN subdivision_country_context AS context
+        ON context.evidence_id = candidate.evidence_id
+        AND context.matched_country_code = candidate.matched_country_code
+        AND context.matched_alias_search_text = candidate.matched_alias_search_text
+        AND context.matched_alias_kind = candidate.matched_alias_kind
+    LEFT JOIN subdivision_text_match_candidates AS longer_alias
+        ON longer_alias.evidence_id = candidate.evidence_id
+        AND longer_alias.matched_country_code != candidate.matched_country_code
+        AND LENGTH(longer_alias.matched_alias_search_text)
+            > LENGTH(candidate.matched_alias_search_text)
+        AND STRPOS(
+            CONCAT(' ', longer_alias.matched_alias_search_text, ' ')
+            , CONCAT(' ', candidate.matched_alias_search_text, ' ')
+        ) > 0
+    WHERE longer_alias.evidence_id IS NULL
+        AND (
+            candidate.matched_alias_kind = 'exact_code'
+            OR context.has_parent_country_context
+            OR context.contains_country_name
+        )
+),
+
+country_subdivision_conflicts AS (
+    SELECT
+        country.evidence_id
+        , country.matched_country_code
+        , country.matched_alias_search_text
+        , country.matched_alias_occurrence_count
+        , SUM(subdivision.matched_alias_occurrence_count)
+            AS conflicting_subdivision_occurrence_count
+    FROM country_text_match_candidates AS country
+    INNER JOIN subdivision_text_matches AS subdivision
+        ON subdivision.evidence_id = country.evidence_id
+        AND subdivision.matched_country_code != country.matched_country_code
+        AND LENGTH(subdivision.matched_alias_search_text)
+            > LENGTH(country.matched_alias_search_text)
+        AND STRPOS(
+            CONCAT(' ', subdivision.matched_alias_search_text, ' ')
+            , CONCAT(' ', country.matched_alias_search_text, ' ')
+        ) > 0
+    GROUP BY
+        country.evidence_id
+        , country.matched_country_code
+        , country.matched_alias_search_text
+        , country.matched_alias_occurrence_count
+),
+
 country_text_evidence AS (
-    SELECT candidate.* EXCEPT (matched_alias_search_text)
+    SELECT candidate.* EXCEPT (
+        matched_alias_search_text
+        , matched_alias_case_sensitive_text
+        , matched_alias_kind
+        , matched_alias_occurrence_count
+    )
     FROM country_text_match_candidates AS candidate
     LEFT JOIN country_text_match_candidates AS longer_alias
         ON longer_alias.evidence_id = candidate.evidence_id
@@ -319,7 +608,26 @@ country_text_evidence AS (
             CONCAT(' ', longer_alias.matched_alias_search_text, ' ')
             , CONCAT(' ', candidate.matched_alias_search_text, ' ')
         ) > 0
+    LEFT JOIN country_subdivision_conflicts AS subdivision_conflict
+        ON subdivision_conflict.evidence_id = candidate.evidence_id
+        AND subdivision_conflict.matched_country_code = candidate.matched_country_code
+        AND subdivision_conflict.matched_alias_search_text
+            = candidate.matched_alias_search_text
     WHERE longer_alias.evidence_id IS NULL
+        AND COALESCE(
+            subdivision_conflict.conflicting_subdivision_occurrence_count
+            , 0
+        ) < candidate.matched_alias_occurrence_count
+),
+
+subdivision_text_evidence AS (
+    SELECT * EXCEPT (
+        matched_alias_search_text
+        , matched_alias_case_sensitive_text
+        , matched_alias_kind
+        , matched_alias_occurrence_count
+    )
+    FROM subdivision_text_matches
 ),
 
 atomic_country_group_evidence AS (
@@ -366,9 +674,31 @@ matched_restrictive_evidence AS (
     UNION ALL
     SELECT * FROM country_text_evidence
     UNION ALL
+    SELECT * FROM subdivision_text_evidence
+    UNION ALL
     SELECT * FROM atomic_country_group_evidence
     UNION ALL
     SELECT * FROM country_group_text_evidence
+),
+
+unmatched_location_label_evidence AS (
+    SELECT
+        p.* REPLACE ('UNKNOWN' AS evidence_direction)
+        , CAST(NULL AS STRING) AS matched_country_code
+        , CAST(NULL AS STRING) AS matched_country_group_code
+        , 'UNMATCHED_LOCATION_LABEL' AS match_source
+    FROM prepared AS p
+    LEFT JOIN matched_restrictive_evidence AS matched
+        ON matched.evidence_id = p.evidence_id
+    LEFT JOIN (
+        SELECT DISTINCT evidence_id
+        FROM context_conflicting_country_matches
+    ) AS conflict
+        ON conflict.evidence_id = p.evidence_id
+    WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
+        AND p.rule = 'location_shaped_remote_label'
+        AND matched.evidence_id IS NULL
+        AND conflict.evidence_id IS NULL
 ),
 
 unmatched_restrictive_evidence AS (
@@ -391,12 +721,18 @@ unmatched_restrictive_evidence AS (
         ON conflict.evidence_id = p.evidence_id
     WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
         AND matched.evidence_id IS NULL
+        AND NOT (
+            COALESCE(p.rule, '') = 'location_shaped_remote_label'
+            AND conflict.evidence_id IS NULL
+        )
 ),
 
 combined AS (
     SELECT * FROM global_or_unknown_evidence
     UNION ALL
     SELECT * FROM matched_restrictive_evidence
+    UNION ALL
+    SELECT * FROM unmatched_location_label_evidence
     UNION ALL
     SELECT * FROM unmatched_restrictive_evidence
 ),

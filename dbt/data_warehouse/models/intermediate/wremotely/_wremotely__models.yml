@@ -297,6 +297,9 @@ models:
       visible for QA/RCA rather than being silently promoted. Structured country
       fields disambiguate aliases whose conflicting subcountry usage dominates
       supporting country usage, but never create applicant-eligibility evidence.
+      Unmatched heuristic Remote/Hybrid location labels remain UNKNOWN rather
+      than blocking publication; recognized taxonomy matches from those labels
+      remain restrictive.
     columns:
       - name: candidate_id
         data_tests:

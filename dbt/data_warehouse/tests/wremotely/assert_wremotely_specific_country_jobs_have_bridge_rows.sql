@@ -2,6 +2,7 @@ WITH specific_jobs AS (
     SELECT job_id
     FROM {{ ref('wremotely__serving_jobs') }}
     WHERE country_eligibility_scope = 'SPECIFIC'
+        AND NOT is_deleted
 ),
 
 eligible_bridge_rows AS (
