@@ -347,10 +347,12 @@ final AS (
         , lr.latest_lifecycle_source_record_index
         , lr.latest_lifecycle_artifact_sha256
         , ce.validated_country_eligibility_scope
-        , ce.eligible_country_codes
-        , ce.excluded_country_codes
-        , ce.included_country_group_codes
-        , ce.excluded_country_group_codes
+        , IFNULL(ce.eligible_country_codes, ARRAY<STRING>[]) AS eligible_country_codes
+        , IFNULL(ce.excluded_country_codes, ARRAY<STRING>[]) AS excluded_country_codes
+        , IFNULL(ce.included_country_group_codes, ARRAY<STRING>[])
+            AS included_country_group_codes
+        , IFNULL(ce.excluded_country_group_codes, ARRAY<STRING>[])
+            AS excluded_country_group_codes
         , ce.has_global_evidence
         , ce.has_unknown_evidence
         , ce.country_eligibility_evidence_count
@@ -387,18 +389,46 @@ final AS (
 )
 
 SELECT
-    *
-    , latest_observed_at AS source_updated_at
+    final.*
+    , final.latest_observed_at AS source_updated_at
     , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
 FROM final
 {% if incremental_watermark_ready %}
-WHERE latest_observed_at > (
+LEFT JOIN {{ this }} AS current_candidate
+    ON final.candidate_id = current_candidate.candidate_id
+WHERE final.latest_observed_at > (
     SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
     FROM {{ this }}
 )
-    OR NOT EXISTS (
-        SELECT 1
-        FROM {{ this }} AS current_candidate
-        WHERE current_candidate.candidate_id = final.candidate_id
-    )
+    OR current_candidate.candidate_id IS NULL
+    OR TO_JSON_STRING(STRUCT(
+        final.validated_country_eligibility_scope AS validated_country_eligibility_scope
+        , final.eligible_country_codes AS eligible_country_codes
+        , final.excluded_country_codes AS excluded_country_codes
+        , final.included_country_group_codes AS included_country_group_codes
+        , final.excluded_country_group_codes AS excluded_country_group_codes
+        , final.has_global_evidence AS has_global_evidence
+        , final.has_unknown_evidence AS has_unknown_evidence
+        , final.country_eligibility_evidence_count AS country_eligibility_evidence_count
+        , final.matched_country_evidence_count AS matched_country_evidence_count
+        , final.matched_country_group_evidence_count AS matched_country_group_evidence_count
+        , final.has_country_eligibility_evidence AS has_country_eligibility_evidence
+    )) IS DISTINCT FROM TO_JSON_STRING(STRUCT(
+        current_candidate.validated_country_eligibility_scope
+            AS validated_country_eligibility_scope
+        , current_candidate.eligible_country_codes AS eligible_country_codes
+        , current_candidate.excluded_country_codes AS excluded_country_codes
+        , current_candidate.included_country_group_codes AS included_country_group_codes
+        , current_candidate.excluded_country_group_codes AS excluded_country_group_codes
+        , current_candidate.has_global_evidence AS has_global_evidence
+        , current_candidate.has_unknown_evidence AS has_unknown_evidence
+        , current_candidate.country_eligibility_evidence_count
+            AS country_eligibility_evidence_count
+        , current_candidate.matched_country_evidence_count
+            AS matched_country_evidence_count
+        , current_candidate.matched_country_group_evidence_count
+            AS matched_country_group_evidence_count
+        , current_candidate.has_country_eligibility_evidence
+            AS has_country_eligibility_evidence
+    ))
 {% endif %}
