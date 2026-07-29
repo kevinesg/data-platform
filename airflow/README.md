@@ -201,6 +201,8 @@ The wremotely workflows are split by operating purpose:
   triggers publication after lifecycle raw load;
 - `repair__wremotely_classifications` is manual-only and replays completed
   historical extraction artifacts through raw classification load;
+- `repair__wremotely_warehouse_classifications` is manual-only and rebuilds
+  current classifications from exact-lineage raw warehouse facts;
 - `repair__wremotely_job_urls` is manual-only and reprocesses 1-100 exact URLs
   before triggering publication;
 - `publish__wremotely_serving` is trigger-only and serializes dbt build,
@@ -214,7 +216,8 @@ serving-table mutations;
 `publish__wremotely_serving.max_active_runs=1` additionally serializes the
 complete multi-task publication chain.
 The packaged `validate_dags.py` command is the reusable CI contract check for
-DAG imports, required task edges, pool assignments, and repair-URL rendering.
+DAG imports, required task edges, pool assignments, repair-URL rendering, and
+classification-replay command rendering.
 
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs
