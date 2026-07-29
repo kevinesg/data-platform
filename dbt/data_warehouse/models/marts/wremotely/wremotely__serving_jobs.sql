@@ -4,12 +4,16 @@
         materialized="incremental",
         incremental_strategy="merge",
         unique_key="job_id",
-        on_schema_change="append_new_columns"
+        on_schema_change="append_new_columns",
+        full_refresh=false
     )
 }}
 
-{% set incremental_watermark_ready = is_incremental()
-    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+{% set incremental_state_ready = is_incremental()
+    and relation_has_columns(
+        this,
+        ['source_updated_at', 'dbt_updated_at', 'serving_content_sha256']
+    ) %}
 
 WITH publishable_job_facts AS (
     SELECT *
@@ -29,7 +33,7 @@ publication_status AS (
     FROM {{ ref('int_wremotely__job_publication_status') }}
 ),
 
-incremental_source AS (
+candidate_source AS (
     SELECT
         job.*
         , facets.employment_types
@@ -37,26 +41,6 @@ incremental_source AS (
     FROM publishable_job_facts AS job
     INNER JOIN search_facets AS facets
         USING (job_id)
-    {% if incremental_watermark_ready %}
-    WHERE NOT EXISTS (
-            SELECT 1
-            FROM {{ this }} AS current_job
-            WHERE current_job.job_id = job.job_id
-        )
-        OR job.source_updated_at > (
-            SELECT current_job.source_updated_at
-            FROM {{ this }} AS current_job
-            WHERE current_job.job_id = job.job_id
-        )
-        OR (
-            (
-                SELECT current_job.is_deleted
-                FROM {{ this }} AS current_job
-                WHERE current_job.job_id = job.job_id
-            )
-            AND NOT job.is_deleted
-        )
-    {% endif %}
 ),
 
 prepared AS (
@@ -100,11 +84,11 @@ prepared AS (
         , source_updated_at
         , TIMESTAMP('{{ run_started_at.isoformat() }}') AS dbt_updated_at
         , TIMESTAMP('{{ run_started_at.isoformat() }}') AS _updated_at
-    FROM incremental_source
+    FROM candidate_source
 ),
 
 suppressed AS (
-    {% if incremental_watermark_ready %}
+    {% if incremental_state_ready %}
     SELECT
         previous.* EXCEPT (
             publication_hold_content_sha256
@@ -131,7 +115,7 @@ suppressed AS (
     {% endif %}
 ),
 
-changes AS (
+candidate_rows AS (
     SELECT *
     FROM prepared
 
@@ -197,7 +181,19 @@ content_hashed AS (
             , is_deleted
             , public_snippet
         )))) AS serving_content_sha256
-    FROM changes
+    FROM candidate_rows
+),
+
+incremental_changes AS (
+    SELECT candidate.*
+    FROM content_hashed AS candidate
+    {% if incremental_state_ready %}
+    LEFT JOIN {{ this }} AS current_job
+        USING (job_id)
+    WHERE current_job.job_id IS NULL
+        OR candidate.serving_content_sha256
+            IS DISTINCT FROM current_job.serving_content_sha256
+    {% endif %}
 ),
 
 final AS (
@@ -244,7 +240,7 @@ final AS (
             , publication_hold_content_sha256
             , serving_content_sha256
         )))) AS serving_row_sha256
-    FROM content_hashed
+    FROM incremental_changes
 )
 
 SELECT *

@@ -109,13 +109,13 @@ models:
         data_tests:
           - not_null
       - name: source_updated_at
-        description: Latest relevant upstream pipeline event for incremental source selection.
+        description: Latest relevant upstream pipeline event for the serving row.
         data_tests:
           - not_null
       - name: dbt_updated_at
         description: >
-          Stable dbt run timestamp assigned to selected rows. A full refresh
-          assigns the current run timestamp to every rebuilt row.
+          Stable dbt run timestamp assigned only to rows selected for an
+          incremental merge.
         data_tests:
           - not_null
       - name: serving_content_sha256
