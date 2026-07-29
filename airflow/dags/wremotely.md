@@ -696,7 +696,9 @@ In the Airflow UI:
 4. After the final replay load succeeds, trigger
    `publish__wremotely_serving` once with a new `publication_run_id`. Do not run
    dbt with `--full-refresh`; the incremental serving model needs its prior rows
-   to emit explicit suppression tombstones.
+   to emit explicit suppression tombstones. The model overrides command-level
+   full-refresh requests as a defense in depth; a missing serving target is a
+   recovery condition, not permission to publish a state-less rebuild.
 5. Wait for `dbt_build`, `publication_hold`, `publish_serving_snapshot`, and
    `signal_publication` to succeed, then verify the VPS worker applies that exact
    publication ID before resuming producers.
@@ -760,6 +762,9 @@ In the Airflow UI for dev:
 3. Trigger `publish__wremotely_serving` once with a new
    `publication_run_id`. Do not run dbt with `--full-refresh`; the incremental
    serving model needs its prior rows to emit explicit suppression tombstones.
+   The model overrides command-level full-refresh requests as a defense in
+   depth. If its prior target is missing or damaged, stop and recover that state
+   before publication.
 4. Wait for all publication tasks to succeed. Verify that the serving worker
    applies that exact publication ID and that the read-only checks below return
    no contract failures before resuming the paused DAGs.

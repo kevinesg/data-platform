@@ -27,14 +27,19 @@ from `serving_row_sha256`, so lifecycle-only `_updated_at` changes do not force
 private model reevaluation.
 
 `wremotely__serving_jobs` is incremental by `job_id`. Incremental models verify
-that an existing target has the required source and dbt watermark columns before
-using its watermark. A target created by an older contract is processed in full
-once, the missing columns are appended, and every existing row receives the
-current dbt run timestamp. Later normal builds compare each job against its own
-source watermark and merge new, changed, closed, suppressed, or reactivated
-rows. Publication-status changes can suppress or reactivate a row without a new
-source event. Other taxonomy or transformation changes that must recompute
-unchanged public fields still require an explicit full refresh.
+that an existing target has the columns required for content comparison. A
+target created by an older contract is processed in full once and receives the
+missing columns. Later builds hash the complete public serving content and merge
+new, changed, closed, suppressed, or reactivated rows. This detects taxonomy and
+transformation changes even when the source watermark does not advance.
+Publication-status changes can also suppress or reactivate a row without a new
+source event.
+
+The model sets `full_refresh: false` so a command-level `--full-refresh` cannot
+erase the prior serving state needed to emit suppression tombstones. Do not
+override this protection or drop the target as a rebuild shortcut. If the target
+is missing or damaged, recover its prior state before publishing a replacement
+snapshot.
 
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a
@@ -85,16 +90,17 @@ Historical classification reconciliation must use this ordinary incremental
 build. Do not add `--full-refresh`: the existing serving rows are the state
 against which the model emits suppression tombstones.
 
-Use an explicit full refresh when a taxonomy or transformation change must
-reprocess rows whose source watermark did not advance:
+Broad upstream rebuilds may use `--full-refresh`; the protected serving-jobs
+model ignores that command-level flag and still reconciles against its prior
+state. Run the ordinary build once more afterward:
 
 ```bash
 uv run dbt build \
   --project-dir data_warehouse \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --full-refresh \
   --select $WREMOTELY_DBT_SELECTOR
 ```
 
-Run the ordinary build once afterward. With no newer source rows, the existing
-serving-job `dbt_updated_at` values must remain unchanged.
+With no intervening source or transformation changes, the second serving-jobs
+merge must process zero rows and existing `dbt_updated_at` values must remain
+unchanged.

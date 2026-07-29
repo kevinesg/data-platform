@@ -1,0 +1,89 @@
+version: 2
+
+unit_tests:
+  - name: test_serving_jobs_incremental_content_changes_and_suppression
+    description: >
+      Merges derived serving-content changes even when the source watermark
+      does not advance, and emits a tombstone when a previously served job
+      becomes non-publishable.
+    model: wremotely__serving_jobs
+    overrides:
+      macros:
+        is_incremental: true
+        relation_has_columns: true
+    given:
+      - input: ref('int_wremotely__publishable_job_facts')
+        rows:
+          - job_id: candidate-derived-change
+            canonical_url: https://example.com/jobs/derived-change
+            source_url: https://example.com/jobs/derived-change
+            title: Remote Data Engineer
+            location_text: Philippines
+            remote_scope: REMOTE
+            raw_work_arrangement: REMOTE
+            country_eligibility_scope: SPECIFIC
+            eligible_country_codes: ['PH']
+            excluded_country_codes: []
+            included_country_group_codes: []
+            excluded_country_group_codes: []
+            country_eligibility_evidence_count: 1
+            has_lifecycle_recheck: false
+            is_deleted: false
+            source_updated_at: '2026-07-01T00:00:00+00:00'
+      - input: ref('int_wremotely__job_search_facets')
+        rows:
+          - job_id: candidate-derived-change
+            employment_types: ['FULL_TIME']
+            search_tags: ['DATA']
+      - input: ref('int_wremotely__job_publication_status')
+        rows:
+          - candidate_id: candidate-derived-change
+            publication_status: PUBLISHABLE
+            source_updated_at: '2026-07-01T00:00:00+00:00'
+          - candidate_id: candidate-suppressed
+            publication_status: NOT_PUBLISHABLE
+            source_updated_at: '2026-07-02T00:00:00+00:00'
+      - input: this
+        rows:
+          - job_id: candidate-derived-change
+            remote_scope: HYBRID
+            country_eligibility_scope: SPECIFIC
+            eligible_country_codes: ['PH']
+            has_lifecycle_recheck: false
+            is_deleted: false
+            source_updated_at: '2026-07-01T00:00:00+00:00'
+            dbt_updated_at: '2026-07-01T00:00:00+00:00'
+            serving_content_sha256: OLD_DERIVED_CONTENT
+          - job_id: candidate-suppressed
+            canonical_url: https://example.com/jobs/suppressed
+            source_url: https://example.com/jobs/suppressed
+            title: Suppressed Job
+            remote_scope: REMOTE
+            raw_work_arrangement: REMOTE
+            country_eligibility_scope: GLOBAL
+            eligible_country_codes: []
+            excluded_country_codes: []
+            included_country_group_codes: []
+            excluded_country_group_codes: []
+            country_eligibility_evidence_count: 1
+            employment_types: []
+            search_tags: []
+            has_lifecycle_recheck: false
+            is_deleted: false
+            source_updated_at: '2026-07-01T00:00:00+00:00'
+            dbt_updated_at: '2026-07-01T00:00:00+00:00'
+            publication_hold_content_sha256: OLD_HOLD_CONTENT
+            serving_content_sha256: OLD_SUPPRESSED_CONTENT
+            serving_row_sha256: OLD_SUPPRESSED_ROW
+    expect:
+      rows:
+        - job_id: candidate-derived-change
+          remote_scope: REMOTE
+          country_eligibility_scope: SPECIFIC
+          eligible_country_codes: ['PH']
+          is_deleted: false
+        - job_id: candidate-suppressed
+          remote_scope: REMOTE
+          country_eligibility_scope: GLOBAL
+          eligible_country_codes: []
+          is_deleted: true
