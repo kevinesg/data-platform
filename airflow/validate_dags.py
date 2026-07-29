@@ -69,6 +69,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     publication = require_dag(modules, "publish__wremotely_serving")
     repair = require_dag(modules, "repair__wremotely_job_urls")
     classification_repair = require_dag(modules, "repair__wremotely_classifications")
+    warehouse_classification_repair = require_dag(
+        modules,
+        "repair__wremotely_warehouse_classifications",
+    )
 
     assert_task_contract(
         ingestion,
@@ -120,6 +124,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ["job_facts", "classify", "evaluate", "stage", "upload", "load"],
     )
     assert_task_contract(
+        warehouse_classification_repair,
+        ["prepare", "replay", "stage", "upload", "load"],
+    )
+    assert_task_contract(
         publication,
         [
             "dbt_build",
@@ -159,6 +167,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("classification repair DAG must always be manual")
     if classification_repair.max_active_runs != 1:
         raise AssertionError("classification repair DAG must serialize historical loads")
+    if warehouse_classification_repair.schedule is not None:
+        raise AssertionError("warehouse classification repair DAG must always be manual")
+    if warehouse_classification_repair.max_active_runs != 1:
+        raise AssertionError("warehouse classification repair DAG must serialize loads")
     if publication.schedule is not None:
         raise AssertionError("publication DAG must always be trigger-only")
     if publication.max_active_runs != 1:
@@ -170,6 +182,8 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(lifecycle, "recheck", "wremotely_network")
     assert_pool(repair, "extract", "wremotely_network")
     assert_pool(classification_repair, "load", "wremotely_warehouse")
+    assert_pool(warehouse_classification_repair, "prepare", "wremotely_warehouse")
+    assert_pool(warehouse_classification_repair, "load", "wremotely_warehouse")
     for dag in (ingestion, lifecycle, repair):
         assert_pool(dag, "load" if dag is not lifecycle else "load_recheck", "wremotely_warehouse")
         assert_publication_trigger(dag)
@@ -228,6 +242,74 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     for task_id in classification_repair.task_ids:
         if classification_repair.get_task(task_id).execution_timeout != expected_replay_timeout:
             raise AssertionError(f"classification replay task {task_id} has no bounded timeout")
+
+    warehouse_replay_params = {"replay_label": "classification-v13"}
+    warehouse_rendered_commands = {
+        task_id: [
+            Environment().from_string(value).render(params=warehouse_replay_params)
+            for value in warehouse_classification_repair.get_task(task_id).command
+        ]
+        for task_id in warehouse_classification_repair.task_ids
+    }
+    prepare_command = warehouse_rendered_commands["prepare"]
+    if command_argument(prepare_command, "--step") != (
+        "prepare-classification-replay-from-warehouse"
+    ):
+        raise AssertionError("warehouse replay must prepare input from raw warehouse facts")
+    if command_argument(prepare_command, "--gcp-project") != os.environ["PROJECT_ID"]:
+        raise AssertionError("warehouse replay preparation must use the environment project")
+    if command_argument(prepare_command, "--raw-dataset") != os.environ["RAW_DATASET"]:
+        raise AssertionError("warehouse replay preparation must use the environment raw dataset")
+    if command_argument(prepare_command, "--bigquery-location") != os.environ[
+        "WREMOTELY_BIGQUERY_LOCATION"
+    ]:
+        raise AssertionError("warehouse replay preparation must use the environment location")
+
+    expected_prepare_run_id = "warehouse-classification-v13-input"
+    expected_classification_run_id = "warehouse-classification-v13-classify"
+    expected_warehouse_stage_run_id = "warehouse-classification-v13-stage"
+    if command_argument(prepare_command, "--run-id") != expected_prepare_run_id:
+        raise AssertionError("warehouse replay changed its stable preparation run ID")
+
+    replay_command = warehouse_rendered_commands["replay"]
+    if command_argument(replay_command, "--step") != "replay-classification":
+        raise AssertionError("warehouse replay must use the dedicated replay step")
+    if command_argument(replay_command, "--run-id") != expected_classification_run_id:
+        raise AssertionError("warehouse replay changed its stable classification run ID")
+    if (
+        command_argument(replay_command, "--classification-replay-input-run-id")
+        != expected_prepare_run_id
+    ):
+        raise AssertionError("warehouse replay does not consume its prepared input")
+    if command_argument(replay_command, "--work-arrangement-mode") != "raw_only":
+        raise AssertionError("warehouse replay must keep work arrangement inference disabled")
+    if command_argument(replay_command, "--country-eligibility-mode") != "raw_only":
+        raise AssertionError("warehouse replay must keep country inference disabled")
+
+    warehouse_stage_command = warehouse_rendered_commands["stage"]
+    if command_argument(warehouse_stage_command, "--stage-kind") != (
+        "warehouse_classification_replay"
+    ):
+        raise AssertionError("warehouse replay must stage only rebuilt classification artifacts")
+    if (
+        command_argument(warehouse_stage_command, "--classification-run-id")
+        != expected_classification_run_id
+    ):
+        raise AssertionError("warehouse replay stage uses the wrong classification run")
+    if command_argument(warehouse_stage_command, "--run-id") != expected_warehouse_stage_run_id:
+        raise AssertionError("warehouse replay changed its stable stage run ID")
+    for task_id in ("upload", "load"):
+        if (
+            command_argument(warehouse_rendered_commands[task_id], "--run-id")
+            != expected_warehouse_stage_run_id
+        ):
+            raise AssertionError(f"warehouse replay {task_id} uses the wrong stage run ID")
+    for task_id in warehouse_classification_repair.task_ids:
+        if (
+            warehouse_classification_repair.get_task(task_id).execution_timeout
+            != expected_replay_timeout
+        ):
+            raise AssertionError(f"warehouse replay task {task_id} has no bounded timeout")
 
     test_urls = [
         "https://company.example/jobs/one",

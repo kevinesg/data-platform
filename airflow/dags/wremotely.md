@@ -5,12 +5,13 @@
 `maintenance__wremotely_lifecycle` rechecks one stable active-job bucket, and
 `repair__wremotely_job_urls` performs bounded exact-URL repairs.
 `repair__wremotely_classifications` replays one completed historical extraction
-through raw classification load without crawling it again. Normal producers
-load raw data and trigger `publish__wremotely_serving`, which serializes the
-tested dbt build, publication hold, current serving snapshot, and publication
-signal. Airflow owns dependency order, retries, and timeouts only; the private
-runtime owns extract/load behavior and dbt owns transformation and blocking
-tests.
+through raw classification load without crawling it again, while
+`repair__wremotely_warehouse_classifications` rebuilds current classifications
+from exact-lineage raw warehouse facts. Normal producers load raw data and
+trigger `publish__wremotely_serving`, which serializes the tested dbt build,
+publication hold, current serving snapshot, and publication signal. Airflow
+owns dependency order, retries, and timeouts only; the private runtime owns
+extract/load behavior and dbt owns transformation and blocking tests.
 
 ## Runtime inputs
 
@@ -444,6 +445,22 @@ extraction runs oldest to newest, then trigger the serialized publication DAG
 once after the final load. Every task has an eight-hour execution timeout and
 the complete DAG has a 24-hour timeout.
 
+The manual warehouse-classification repair DAG runs:
+
+```text
+prepare
+  -> replay
+  -> stage
+  -> upload
+  -> load
+```
+
+It reads and repairs only the current environment's own raw warehouse facts.
+It never copies dev tables into QA or prod. It also stops before dbt and
+publication so operators can verify the raw load before triggering the
+serialized publication DAG. Every task has an eight-hour execution timeout and
+the complete DAG has a 24-hour timeout.
+
 The normal scheduled path does not acquire new sources. It starts from the
 approved source snapshot, selects unseen job URLs, loads raw BigQuery tables,
 and only then builds the dbt serving snapshot.
@@ -707,6 +724,96 @@ private runtime validates completed local/GCS/load artifacts and skips matching
 work. A changed classifier must use a new replay label. Do not clear an older
 repair into a newer raw history or process extraction runs out of order.
 
+## Warehouse classification reconciliation
+
+Use this procedure when retained local extraction artifacts do not cover the
+complete current warehouse population. This is an unscheduled repair. It
+rebuilds classification from exact-lineage latest raw job facts in the selected
+environment, stages only classification and country-eligibility observations,
+and appends them through the normal immutable upload/load contract.
+
+Prerequisites:
+
+1. Merge and deploy the reviewed private ETL image containing
+   `prepare-classification-replay-from-warehouse`,
+   `replay-classification`, and the
+   `warehouse_classification_replay` stage contract.
+2. Merge and deploy the data-platform Airflow image containing
+   `repair__wremotely_warehouse_classifications`.
+3. Start with dev. Do not use dev success as permission to copy dev raw, dbt,
+   handoff, serving, or publication tables into prod.
+4. Choose one stable classifier revision label, such as `classification-v13`.
+   Use that same label in dev and prod only when both environments run the same
+   immutable private ETL image.
+
+In the Airflow UI for dev:
+
+1. Pause `etl__wremotely`, `maintenance__wremotely_lifecycle`,
+   `repair__wremotely_job_urls`, and
+   `repair__wremotely_classifications`. Wait for every active wremotely
+   producer, cleanup, repair, or publication run to finish.
+2. Trigger `repair__wremotely_warehouse_classifications` with the chosen
+   `replay_label`. Wait for `prepare`, `replay`, `stage`, `upload`, and `load`
+   to succeed.
+3. Trigger `publish__wremotely_serving` once with a new
+   `publication_run_id`. Do not run dbt with `--full-refresh`; the incremental
+   serving model needs its prior rows to emit explicit suppression tombstones.
+4. Wait for all publication tasks to succeed. Verify that the serving worker
+   applies that exact publication ID and that the read-only checks below return
+   no contract failures before resuming the paused DAGs.
+
+Run these read-only checks against the same environment after `dbt_build`:
+
+```sql
+SELECT
+    COUNT(*) AS latest_job_fact_count
+    , COUNTIF(c.candidate_id IS NULL) AS missing_latest_classification_count
+    , COUNTIF(
+        c.latest_classification_source_content_sha256
+            IS DISTINCT FROM j.latest_job_fact_source_content_sha256
+        OR c.latest_classification_normalized_text_sha256
+            IS DISTINCT FROM j.latest_job_fact_normalized_text_sha256
+        OR c.latest_classification_jsonld_sha256
+            IS DISTINCT FROM j.latest_job_fact_jsonld_sha256
+    ) AS classification_lineage_mismatch_count
+FROM `<project>.intermediate.int_wremotely__latest_job_facts` AS j
+LEFT JOIN `<project>.intermediate.int_wremotely__latest_classifications` AS c
+    USING (candidate_id);
+
+SELECT
+    validated_country_eligibility_scope
+    , COUNT(*) AS candidate_count
+FROM `<project>.intermediate.int_wremotely__candidate_country_eligibility`
+GROUP BY validated_country_eligibility_scope
+ORDER BY validated_country_eligibility_scope;
+
+SELECT
+    latest_remote_scope
+    , COUNT(*) AS candidate_count
+FROM `<project>.intermediate.int_wremotely__latest_classifications`
+GROUP BY latest_remote_scope
+ORDER BY latest_remote_scope;
+
+SELECT
+    publication_status
+    , publication_status_reason
+    , COUNT(*) AS candidate_count
+FROM `<project>.intermediate.int_wremotely__job_publication_status`
+GROUP BY publication_status, publication_status_reason
+ORDER BY publication_status, candidate_count DESC;
+```
+
+The first query must report zero missing latest classifications and zero
+lineage mismatches. Review the complete scope, work-arrangement, and publication
+distributions against the dev validation record before promoting the immutable
+images.
+
+After dev succeeds, repeat the same pause, trigger, publication, validation, and
+resume sequence in prod. The prod DAG reads prod raw facts and generates a prod
+publication; it does not consume dev artifacts. Reusing the same replay label
+in the same environment verifies and skips matching local, GCS, and load
+artifacts. A classifier change requires a new label.
+
 ## Successful task clear and replay behavior
 
 Idempotency is defined against the same declared run ID, configuration, and
@@ -715,6 +822,7 @@ current-state handoff tables, nor does it provide disaster recovery after
 someone manually deletes verified external data.
 
 - `crawl`, `select`, `extract`, `job_facts`, `classify`, `evaluate`,
+  `prepare-classification-replay-from-warehouse`, `replay-classification`,
   `prepare_recheck`, `recheck`, `stage`, and `stage_recheck` verify their
   completed local artifacts and return without repeating successful work.
   Incomplete crawl/extract/recheck work resumes from committed checkpoints;
