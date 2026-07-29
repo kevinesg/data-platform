@@ -738,11 +738,13 @@ Prerequisites:
    `prepare-classification-replay-from-warehouse`,
    `replay-classification`, and the
    `warehouse_classification_replay` stage contract.
-2. Merge and deploy the data-platform Airflow image containing
+2. Merge and deploy the reviewed data-platform dbt image containing the
+   country-eligibility models and blocking tests validated for the replay.
+3. Merge and deploy the data-platform Airflow image containing
    `repair__wremotely_warehouse_classifications`.
-3. Start with dev. Do not use dev success as permission to copy dev raw, dbt,
+4. Start with dev. Do not use dev success as permission to copy dev raw, dbt,
    handoff, serving, or publication tables into prod.
-4. Choose one stable classifier revision label, such as `classification-v13`.
+5. Choose one stable classifier revision label, such as `classification-v13`.
    Use that same label in dev and prod only when both environments run the same
    immutable private ETL image.
 
