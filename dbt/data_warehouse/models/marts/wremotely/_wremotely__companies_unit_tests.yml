@@ -1,0 +1,50 @@
+version: 2
+
+unit_tests:
+  - name: test_companies_propagate_tombstone_watermarks
+    description: >
+      Excludes deleted jobs from public company aggregates while propagating
+      their newer dbt watermark when the company still has an active job.
+    model: wremotely__companies
+    given:
+      - input: ref('wremotely__serving_jobs')
+        rows:
+          - job_id: active-job
+            company_id: company-active
+            company_name: Active Company
+            company_identity_basis: company_source_domain_v1
+            company_identity_source_domain: active.example
+            source_publication_at: '2026-07-01T00:00:00+00:00'
+            latest_observed_at: '2026-07-02T00:00:00+00:00'
+            source_updated_at: '2026-07-02T00:00:00+00:00'
+            dbt_updated_at: '2026-07-02T00:00:00+00:00'
+            is_deleted: false
+          - job_id: deleted-job
+            company_id: company-active
+            company_name: Stale Company Name
+            company_identity_basis: company_source_domain_v1
+            company_identity_source_domain: stale.example
+            source_publication_at: '2026-06-01T00:00:00+00:00'
+            latest_observed_at: '2026-07-03T00:00:00+00:00'
+            source_updated_at: '2026-07-03T00:00:00+00:00'
+            dbt_updated_at: '2026-07-04T00:00:00+00:00'
+            is_deleted: true
+          - job_id: deleted-only-job
+            company_id: company-deleted-only
+            company_name: Deleted Company
+            company_identity_basis: company_source_domain_v1
+            company_identity_source_domain: deleted.example
+            source_publication_at: '2026-06-01T00:00:00+00:00'
+            latest_observed_at: '2026-06-02T00:00:00+00:00'
+            source_updated_at: '2026-06-02T00:00:00+00:00'
+            dbt_updated_at: '2026-07-04T00:00:00+00:00'
+            is_deleted: true
+    expect:
+      rows:
+        - company_id: company-active
+          company_name: Active Company
+          source_domain: active.example
+          open_job_count: 1
+          first_source_publication_at: '2026-07-01T00:00:00+00:00'
+          source_updated_at: '2026-07-02T00:00:00+00:00'
+          dbt_updated_at: '2026-07-04T00:00:00+00:00'

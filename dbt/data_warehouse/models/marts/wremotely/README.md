@@ -44,7 +44,9 @@ snapshot.
 `wremotely__companies` contains the public-safe company rows that support
 company pages. It includes only companies with currently publishable jobs and a
 stable `company_id`. Missing or unknown companies remain missing on job rows
-rather than being guessed.
+rather than being guessed. Public company fields aggregate only active jobs,
+while `dbt_updated_at` includes changes from linked tombstones so removing a job
+advances the company publication watermark.
 
 `wremotely__job_country_eligibility` contains the compact country bridge for
 explicit eligible countries and explicit exclusions. Global jobs stay compact on
