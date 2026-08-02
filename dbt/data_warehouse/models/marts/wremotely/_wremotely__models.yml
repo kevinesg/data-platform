@@ -164,6 +164,9 @@ models:
         data_tests:
           - not_null
       - name: dbt_updated_at
+        description: >
+          Latest dbt change watermark across all current jobs linked to the
+          company, including tombstones that change its active-job aggregate.
         data_tests:
           - not_null
 

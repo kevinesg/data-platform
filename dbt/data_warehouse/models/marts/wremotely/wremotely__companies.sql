@@ -12,9 +12,18 @@ company_job_facts AS (
         AND NOT is_deleted
 ),
 
-aggregated AS (
+company_change_watermarks AS (
     SELECT
         company_id
+        , MAX(dbt_updated_at) AS dbt_updated_at
+    FROM publishable_job_facts
+    WHERE company_id IS NOT NULL
+    GROUP BY company_id
+),
+
+aggregated AS (
+    SELECT
+        active.company_id
         , ARRAY_AGG(
             company_name
             ORDER BY latest_observed_at DESC, job_id DESC
@@ -35,9 +44,11 @@ aggregated AS (
         , MIN(latest_observed_at) AS first_observed_at
         , MAX(latest_observed_at) AS latest_observed_at
         , MAX(source_updated_at) AS source_updated_at
-        , MAX(dbt_updated_at) AS dbt_updated_at
-    FROM company_job_facts
-    GROUP BY company_id
+        , MAX(watermark.dbt_updated_at) AS dbt_updated_at
+    FROM company_job_facts AS active
+    INNER JOIN company_change_watermarks AS watermark
+        USING (company_id)
+    GROUP BY active.company_id
 ),
 
 final AS (
