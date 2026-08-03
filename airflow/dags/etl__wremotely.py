@@ -9,6 +9,7 @@ from _wremotely import (
     CRAWL_TASK_EXECUTION_TIMEOUT,
     ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
+    WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
@@ -24,7 +25,7 @@ from _wremotely import (
     wremotely_mounts,
 )
 
-BASE_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely"
+BASE_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely"
 SOURCE_CRAWL_RUN_ID = BASE_RUN_ID
 SELECTION_RUN_ID = BASE_RUN_ID
 EXTRACTION_RUN_ID = f"{BASE_RUN_ID}-extract"

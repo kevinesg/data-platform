@@ -7,6 +7,7 @@ from airflow.sdk import DAG, Param
 from _wremotely import (
     ENVIRONMENT,
     RECHECK_TASK_EXECUTION_TIMEOUT,
+    WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
@@ -22,13 +23,15 @@ from _wremotely import (
     wremotely_mounts,
 )
 
-BASE_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-lifecycle"
+BASE_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-lifecycle"
 PREPARE_RECHECK_RUN_ID = f"{BASE_RUN_ID}-prepare"
 RECHECK_RUN_ID = f"{BASE_RUN_ID}-recheck"
 RECHECK_STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
 PUBLICATION_RUN_ID = BASE_RUN_ID
 RECHECK_BUCKET_COUNT = "7"
-RECHECK_BUCKET_INDEX = "{{ ((dag_run.logical_date.timestamp() // 43200) % 7) | int }}"
+RECHECK_BUCKET_INDEX = (
+    "{{ (((dag_run.logical_date or dag_run.run_after).timestamp() // 43200) % 7) | int }}"
+)
 
 DAG_RUN_TIMEOUT = timedelta(hours=12)
 
