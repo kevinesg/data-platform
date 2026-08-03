@@ -49,6 +49,12 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+      - name: link_title_candidate_status
+        description: Producer decision for the bounded crawl-link title candidate.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['ACCEPTED', 'REJECTED_TOO_LONG', 'MISSING']
 
   - name: stg_wremotely__selected_job_urls
     description: Selected job URLs unpacked from the raw staged envelope.
@@ -114,6 +120,17 @@ models:
               arguments:
                 values: [true, false]
                 quote: false
+      - name: final_url_identity_status
+        description: Producer decision describing whether final_url is a usable job identity.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - MISSING
+                  - INVALID_REDIRECT
+                  - REQUESTED_JOB_URL
+                  - REDIRECTED_JOB_URL
+                  - UNUSABLE_REDIRECT
 
   - name: stg_wremotely__job_facts
     description: Job facts unpacked from retrieved job pages.
@@ -145,6 +162,17 @@ models:
       - name: job_fact_extractor_version
         data_tests:
           - not_null
+      - name: final_url_identity_status
+        description: Producer decision describing whether final_url is a usable job identity.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - MISSING
+                  - INVALID_REDIRECT
+                  - REQUESTED_JOB_URL
+                  - REDIRECTED_JOB_URL
+                  - UNUSABLE_REDIRECT
       - name: raw_work_arrangement
         data_tests:
           - accepted_values:

@@ -134,6 +134,31 @@ models:
         data_tests:
           - not_null
 
+  - name: int_wremotely__candidate_job_titles
+    description: >
+      One bounded trustworthy title per candidate, chosen from typed page
+      metadata before an explicitly accepted crawl-link title candidate.
+      Historic rows created before typed crawl-title evidence may use link text
+      only when all new producer fields are absent and the value is bounded.
+      Unbounded link text and generic HTML document titles are not promoted.
+    columns:
+      - name: candidate_id
+        data_tests:
+          - unique
+          - not_null
+      - name: title
+        description: Nullable title; missing trustworthy evidence fails publication closed.
+      - name: title_source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - JSONLD
+                  - HTML_META_OG_TITLE
+                  - HTML_META_TWITTER_TITLE
+                  - LINK_TITLE_CANDIDATE
+                  - LEGACY_BOUNDED_LINK_TEXT
+
   - name: int_wremotely__latest_classifications
     description: Latest classification result for each candidate_id.
     columns:
@@ -239,6 +264,35 @@ models:
       - name: url
         data_tests:
           - not_null
+      - name: title_source
+        description: Trustworthy typed evidence source selected for title.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - JSONLD
+                  - HTML_META_OG_TITLE
+                  - HTML_META_TWITTER_TITLE
+                  - LINK_TITLE_CANDIDATE
+                  - LEGACY_BOUNDED_LINK_TEXT
+      - name: job_identity_url
+        description: >
+          Validated job identity URL, falling back to the originally selected
+          job URL when historic producer evidence is unavailable.
+        data_tests:
+          - not_null
+      - name: final_url_identity_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - MISSING
+                  - INVALID_REDIRECT
+                  - REQUESTED_JOB_URL
+                  - REDIRECTED_JOB_URL
+                  - UNUSABLE_REDIRECT
+                  - SELECTED_JOB_URL_FALLBACK
       - name: has_extraction
         data_tests:
           - not_null

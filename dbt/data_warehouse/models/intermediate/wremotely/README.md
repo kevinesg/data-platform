@@ -11,18 +11,33 @@ The models keep one latest record per `candidate_id` for each fact type:
 - country eligibility extraction
 - lifecycle recheck
 
-Those five latest-record models are incremental merges keyed by `candidate_id`.
+Those six latest-record models are incremental merges keyed by `candidate_id`.
 An incremental run first identifies candidates with a newer source event, then
 rereads each changed candidate's complete source history before ranking. This
 preserves lifecycle predecessor checks and deterministic tie-breaking. New
 candidates are included even when their source timestamp predates the current
 global watermark.
 
-`int_wremotely__current_candidate_facts` joins those latest records together
-and incrementally merges changed candidates.
-It prefers extracted job facts for public job title, company, description,
-salary, employment type, source dates, and language metadata when those facts
-are available. It does not decide what to publish or how to publish it.
+`int_wremotely__candidate_job_titles` selects one trustworthy bounded title per
+candidate. Precedence is JSON-LD, Open Graph title, Twitter title, then a crawl
+link title that the producer explicitly accepted. Every selected value is
+limited to 500 characters. Historic rows created before typed crawl-title
+fields existed may use their link text only when all new producer fields are
+absent and the same 500-character bound passes. New rows require explicit
+producer acceptance. Unbounded link text and generic HTML document titles stay
+available for diagnosis but are never promoted. A candidate without trustworthy
+title evidence remains untitled and fails publication closed.
+
+`int_wremotely__current_candidate_facts` joins the latest records and resolved
+title together and incrementally merges changed candidates. It prefers
+extracted job facts for company, description, salary, employment type, source
+dates, and language metadata when those facts are available. The validated job
+identity URL is taken from extraction/job facts and falls back to the originally
+selected job URL for historic rows; an arbitrary redirect target is not a job
+identity. The first incremental run after these quality columns are introduced
+re-merges every current candidate once, then resumes watermark and derived-value
+change detection. This model does not decide what to publish or how to publish
+it.
 
 `int_wremotely__country_eligibility_evidence` maps raw country and region
 evidence from the matching latest classification run to reviewed country and
@@ -67,6 +82,12 @@ calendar date, while timestamp values use their exact instant.
 candidate marts can share the same job grain. It retains lifecycle-closed rows
 with `is_deleted` and `_updated_at` metadata; it does not drop them from the
 current-state contract.
+Its canonical URL is the validated job identity URL, with the selected source
+URL as the only fallback.
+When a formerly served row becomes non-publishable, the serving mart retains
+its previous descriptive fields on the tombstone and changes lifecycle state
+plus watermarks. Active-row title quality gates therefore do not rewrite
+historical tombstone content.
 It also derives nullable conservative company identity fields from source
 company name plus source domain. Known non-English rows are excluded from the
 serving set for MVP, while unknown-language rows remain eligible. Full job

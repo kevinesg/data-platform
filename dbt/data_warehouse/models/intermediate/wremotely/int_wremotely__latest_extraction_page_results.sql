@@ -60,6 +60,8 @@ final AS (
         , retrieved_at AS latest_retrieved_at
         , http_status AS latest_http_status
         , final_url AS latest_final_url
+        , job_identity_url AS latest_job_identity_url
+        , final_url_identity_status AS latest_final_url_identity_status
         , redirect_chain_json AS latest_redirect_chain_json
         , content_type AS latest_content_type
         , attempt_count AS latest_attempt_count

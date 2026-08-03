@@ -62,6 +62,8 @@ final AS (
         candidate_id
         , url
         , final_url AS latest_job_fact_final_url
+        , job_identity_url AS latest_job_fact_job_identity_url
+        , final_url_identity_status AS latest_job_fact_final_url_identity_status
         , source_domain AS latest_job_fact_source_domain
         , source_candidate_id AS latest_job_fact_source_candidate_id
         , source_url AS latest_job_fact_source_url

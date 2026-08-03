@@ -12,6 +12,10 @@ FROM {{ ref('wremotely__serving_jobs') }}
 WHERE canonical_url IS NULL
     OR source_url IS NULL
     OR title IS NULL
+    OR (
+        NOT is_deleted
+        AND CHAR_LENGTH(TRIM(title)) > 500
+    )
     OR remote_scope NOT IN ('REMOTE', 'HYBRID')
     OR country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
     OR (

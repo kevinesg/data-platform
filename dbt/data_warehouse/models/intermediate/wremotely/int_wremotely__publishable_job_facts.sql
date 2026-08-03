@@ -12,7 +12,7 @@ publishable_jobs AS (
 prepared AS (
     SELECT
         candidate_id AS job_id
-        , COALESCE(NULLIF(latest_final_url, ''), url) AS canonical_url
+        , COALESCE(NULLIF(TRIM(job_identity_url), ''), url) AS canonical_url
         , url AS source_url
         , title
         , NULLIF(TRIM(company_name), '') AS company_name

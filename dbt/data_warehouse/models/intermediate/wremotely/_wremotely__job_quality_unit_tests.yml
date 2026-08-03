@@ -1,0 +1,85 @@
+version: 2
+
+unit_tests:
+  - name: test_candidate_job_titles_require_bounded_typed_evidence
+    description: >
+      Prefers structured and social metadata in order, accepts only an
+      explicitly bounded crawl-link candidate, and rejects generic HTML titles
+      plus body-sized or rejected fallback text.
+    model: int_wremotely__candidate_job_titles
+    given:
+      - input: ref('int_wremotely__latest_job_facts')
+        format: sql
+        rows: |
+          SELECT
+              'candidate-jsonld' AS candidate_id
+              , [
+                  JSON_OBJECT('source', 'html_meta_og_title', 'value', 'OG Engineer')
+                  , JSON_OBJECT('source', 'jsonld', 'value', 'Structured Engineer')
+                ] AS latest_job_fact_raw_title_values
+          UNION ALL
+          SELECT
+              'candidate-og'
+              , [
+                  JSON_OBJECT('source', 'html_title', 'value', 'Generic ATS')
+                  , JSON_OBJECT('source', 'html_meta_twitter_title', 'value', 'Twitter Analyst')
+                  , JSON_OBJECT('source', 'html_meta_og_title', 'value', 'OG Analyst')
+                ]
+          UNION ALL
+          SELECT
+              'candidate-twitter'
+              , [JSON_OBJECT(
+                  'source', 'html_meta_twitter_title'
+                  , 'value', 'Twitter Designer'
+                )]
+          UNION ALL
+          SELECT
+              'candidate-oversized'
+              , [JSON_OBJECT('source', 'jsonld', 'value', REPEAT('x', 501))]
+          UNION ALL
+          SELECT
+              'candidate-html-only'
+              , [JSON_OBJECT('source', 'html_title', 'value', 'Generic ATS')]
+      - input: ref('int_wremotely__latest_selected_job_urls')
+        rows:
+          - {candidate_id: candidate-jsonld, source_link_title_candidate: Link Engineer, source_link_title_candidate_status: ACCEPTED}
+          - {candidate_id: candidate-og, source_link_title_candidate: Link Analyst, source_link_title_candidate_status: ACCEPTED}
+          - {candidate_id: candidate-twitter, source_link_title_candidate: Link Designer, source_link_title_candidate_status: ACCEPTED}
+          - {candidate_id: candidate-accepted-link, source_link_title_candidate: Platform Engineer, source_link_title_candidate_status: ACCEPTED}
+          - {candidate_id: candidate-rejected-link, source_link_title_candidate: Body-sized text, source_link_title_candidate_status: REJECTED_TOO_LONG}
+          - {candidate_id: candidate-legacy-link, source_link_text: Legacy Engineer}
+    expect:
+      rows:
+        - {candidate_id: candidate-jsonld, title: Structured Engineer, title_source: JSONLD}
+        - {candidate_id: candidate-og, title: OG Analyst, title_source: HTML_META_OG_TITLE}
+        - {candidate_id: candidate-twitter, title: Twitter Designer, title_source: HTML_META_TWITTER_TITLE}
+        - {candidate_id: candidate-oversized, title: null, title_source: null}
+        - {candidate_id: candidate-html-only, title: null, title_source: null}
+        - {candidate_id: candidate-accepted-link, title: Platform Engineer, title_source: LINK_TITLE_CANDIDATE}
+        - {candidate_id: candidate-rejected-link, title: null, title_source: null}
+        - {candidate_id: candidate-legacy-link, title: Legacy Engineer, title_source: LEGACY_BOUNDED_LINK_TEXT}
+
+  - name: test_publishable_job_facts_uses_validated_job_identity
+    description: >
+      Uses the validated job identity and falls back to the selected source URL
+      instead of promoting an unusable final redirect.
+    model: int_wremotely__publishable_job_facts
+    given:
+      - input: ref('int_wremotely__job_publication_status')
+        rows:
+          - candidate_id: candidate-validated-identity
+            publication_status: PUBLISHABLE
+            url: https://jobs.example.com/jobs/123
+            latest_final_url: https://jobs.example.com/error?error=true
+            job_identity_url: https://jobs.example.com/jobs/123
+            title: Data Engineer
+          - candidate_id: candidate-historic-fallback
+            publication_status: PUBLISHABLE
+            url: https://jobs.example.com/jobs/456
+            latest_final_url: https://jobs.example.com/error?error=true
+            job_identity_url: null
+            title: Analytics Engineer
+    expect:
+      rows:
+        - {job_id: candidate-validated-identity, canonical_url: https://jobs.example.com/jobs/123, source_url: https://jobs.example.com/jobs/123}
+        - {job_id: candidate-historic-fallback, canonical_url: https://jobs.example.com/jobs/456, source_url: https://jobs.example.com/jobs/456}
