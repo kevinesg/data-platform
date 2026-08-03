@@ -9,6 +9,11 @@
 
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+{% set quality_columns_ready = is_incremental()
+    and relation_has_columns(
+        this,
+        ['title_source', 'job_identity_url', 'final_url_identity_status']
+    ) %}
 
 WITH selected_job_urls AS (
     SELECT *
@@ -18,6 +23,11 @@ WITH selected_job_urls AS (
 job_facts AS (
     SELECT *
     FROM {{ ref('int_wremotely__latest_job_facts') }}
+),
+
+candidate_job_titles AS (
+    SELECT *
+    FROM {{ ref('int_wremotely__candidate_job_titles') }}
 ),
 
 candidate_keys AS (
@@ -34,10 +44,8 @@ candidate_base AS (
     SELECT
         k.candidate_id
         , COALESCE(jf.url, s.url) AS url
-        , COALESCE(
-            NULLIF(TRIM(jf.latest_job_fact_raw_title), '')
-            , NULLIF(TRIM(s.source_link_text), '')
-        ) AS title
+        , t.title
+        , t.title_source
         , NULLIF(TRIM(jf.latest_job_fact_raw_company_name), '') AS company_name
         , NULLIF(TRIM(jf.latest_job_fact_raw_job_location_text), '')
             AS candidate_required_location
@@ -57,6 +65,9 @@ candidate_base AS (
         , s.source_review_status AS selected_source_review_status
         , s.source_default_work_arrangement AS selected_source_default_work_arrangement
         , s.source_link_text AS selected_source_link_text
+        , s.source_link_text_char_count AS selected_source_link_text_char_count
+        , s.source_link_title_candidate AS selected_source_link_title_candidate
+        , s.source_link_title_candidate_status AS selected_source_link_title_candidate_status
         , s.source_link_rel AS selected_source_link_rel
         , s.source_job_url_discovery_reason AS selected_source_job_url_discovery_reason
         , s.selection_status
@@ -70,6 +81,8 @@ candidate_base AS (
         , s.latest_selection_source_record_index
         , s.latest_selection_artifact_sha256
         , jf.latest_job_fact_final_url
+        , jf.latest_job_fact_job_identity_url
+        , jf.latest_job_fact_final_url_identity_status
         , jf.latest_job_fact_source_domain
         , jf.latest_job_fact_source_candidate_id
         , jf.latest_job_fact_source_url
@@ -135,6 +148,8 @@ candidate_base AS (
         ON k.candidate_id = s.candidate_id
     LEFT JOIN job_facts AS jf
         ON k.candidate_id = jf.candidate_id
+    LEFT JOIN candidate_job_titles AS t
+        ON k.candidate_id = t.candidate_id
 ),
 
 extractions AS (
@@ -162,6 +177,7 @@ final AS (
         c.candidate_id
         , c.url
         , c.title
+        , c.title_source
         , c.company_name
         , c.candidate_required_location
         , c.publication_at
@@ -180,6 +196,9 @@ final AS (
         , c.selected_source_review_status
         , c.selected_source_default_work_arrangement
         , c.selected_source_link_text
+        , c.selected_source_link_text_char_count
+        , c.selected_source_link_title_candidate
+        , c.selected_source_link_title_candidate_status
         , c.selected_source_link_rel
         , c.selected_source_job_url_discovery_reason
         , c.selection_status
@@ -193,6 +212,8 @@ final AS (
         , c.latest_selection_source_record_index
         , c.latest_selection_artifact_sha256
         , c.latest_job_fact_final_url
+        , c.latest_job_fact_job_identity_url
+        , c.latest_job_fact_final_url_identity_status
         , c.latest_job_fact_source_domain
         , c.latest_job_fact_source_candidate_id
         , c.latest_job_fact_source_url
@@ -259,6 +280,16 @@ final AS (
         , e.latest_retrieved_at
         , e.latest_http_status
         , COALESCE(e.latest_final_url, c.latest_job_fact_final_url) AS latest_final_url
+        , COALESCE(
+            e.latest_job_identity_url
+            , c.latest_job_fact_job_identity_url
+            , c.url
+        ) AS job_identity_url
+        , COALESCE(
+            e.latest_final_url_identity_status
+            , c.latest_job_fact_final_url_identity_status
+            , 'SELECTED_JOB_URL_FALLBACK'
+        ) AS final_url_identity_status
         , e.latest_redirect_chain_json
         , e.latest_content_type
         , e.latest_attempt_count
@@ -396,6 +427,7 @@ FROM final
 {% if incremental_watermark_ready %}
 LEFT JOIN {{ this }} AS current_candidate
     ON final.candidate_id = current_candidate.candidate_id
+{% if quality_columns_ready %}
 WHERE final.latest_observed_at > (
     SELECT COALESCE(MAX(source_updated_at), TIMESTAMP '1970-01-01 00:00:00+00')
     FROM {{ this }}
@@ -403,6 +435,10 @@ WHERE final.latest_observed_at > (
     OR current_candidate.candidate_id IS NULL
     OR TO_JSON_STRING(STRUCT(
         final.validated_country_eligibility_scope AS validated_country_eligibility_scope
+        , final.title AS title
+        , final.title_source AS title_source
+        , final.job_identity_url AS job_identity_url
+        , final.final_url_identity_status AS final_url_identity_status
         , final.eligible_country_codes AS eligible_country_codes
         , final.excluded_country_codes AS excluded_country_codes
         , final.included_country_group_codes AS included_country_group_codes
@@ -416,6 +452,10 @@ WHERE final.latest_observed_at > (
     )) IS DISTINCT FROM TO_JSON_STRING(STRUCT(
         current_candidate.validated_country_eligibility_scope
             AS validated_country_eligibility_scope
+        , current_candidate.title AS title
+        , current_candidate.title_source AS title_source
+        , current_candidate.job_identity_url AS job_identity_url
+        , current_candidate.final_url_identity_status AS final_url_identity_status
         , current_candidate.eligible_country_codes AS eligible_country_codes
         , current_candidate.excluded_country_codes AS excluded_country_codes
         , current_candidate.included_country_group_codes AS included_country_group_codes
@@ -431,4 +471,5 @@ WHERE final.latest_observed_at > (
         , current_candidate.has_country_eligibility_evidence
             AS has_country_eligibility_evidence
     ))
+{% endif %}
 {% endif %}

@@ -21,6 +21,14 @@ typed columns. It does not decide whether a job is active, publishable, closed,
 or safe to serve. Those decisions belong in intermediate and mart models after
 the raw facts are parseable.
 
+Job URL selection rows preserve the original link text separately from the
+producer's bounded `link_title_candidate`, character count, and acceptance
+status. Null values for all three typed fields identify historic rows created
+before that producer contract existed; intermediate models own the bounded
+migration fallback. Extraction and job-fact rows preserve both the observed
+final URL and the producer's validated `job_identity_url` plus identity status.
+Staging does not reinterpret rejected title text or redirects.
+
 ## Environment variables
 
 Use the normal dbt environment from `dbt/README.md`. wremotely raw tables live

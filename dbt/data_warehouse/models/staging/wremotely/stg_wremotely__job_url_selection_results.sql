@@ -28,6 +28,11 @@ renamed AS (
         , JSON_VALUE(payload, '$.source_page_final_url') AS source_page_final_url
         , SAFE_CAST(JSON_VALUE(payload, '$.link_index') AS INT64) AS link_index
         , JSON_VALUE(payload, '$.link_text') AS link_text
+        , SAFE_CAST(JSON_VALUE(payload, '$.link_text_char_count') AS INT64)
+            AS link_text_char_count
+        , JSON_VALUE(payload, '$.link_title_candidate') AS link_title_candidate
+        , TRIM(UPPER(JSON_VALUE(payload, '$.link_title_candidate_status')))
+            AS link_title_candidate_status
         , JSON_VALUE(payload, '$.link_rel') AS link_rel
         , TRIM(UPPER(JSON_VALUE(payload, '$.discovery_reason'))) AS discovery_reason
         , JSON_VALUE(payload, '$.crawler_version') AS crawler_version

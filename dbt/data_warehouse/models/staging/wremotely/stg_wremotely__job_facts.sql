@@ -15,6 +15,9 @@ renamed AS (
         , JSON_VALUE(payload, '$.candidate_id') AS candidate_id
         , JSON_VALUE(payload, '$.url') AS url
         , JSON_VALUE(payload, '$.final_url') AS final_url
+        , JSON_VALUE(payload, '$.job_identity_url') AS job_identity_url
+        , TRIM(UPPER(JSON_VALUE(payload, '$.final_url_identity_status')))
+            AS final_url_identity_status
         , JSON_VALUE(payload, '$.source_domain') AS source_domain
         , JSON_VALUE(payload, '$.source_candidate_id') AS source_candidate_id
         , JSON_VALUE(payload, '$.source_url') AS source_url

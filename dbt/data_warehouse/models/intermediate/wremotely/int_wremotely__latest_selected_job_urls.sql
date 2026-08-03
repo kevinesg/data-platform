@@ -43,6 +43,9 @@ selected_with_result_context AS (
     SELECT
         s.*
         , r.link_text AS source_link_text
+        , r.link_text_char_count AS source_link_text_char_count
+        , r.link_title_candidate AS source_link_title_candidate
+        , r.link_title_candidate_status AS source_link_title_candidate_status
         , r.link_rel AS source_link_rel
         , r.discovery_reason AS source_job_url_discovery_reason
         , r.selection_status
@@ -89,6 +92,9 @@ final AS (
         , source_review_status
         , source_default_work_arrangement
         , source_link_text
+        , source_link_text_char_count
+        , source_link_title_candidate
+        , source_link_title_candidate_status
         , source_link_rel
         , source_job_url_discovery_reason
         , selection_status

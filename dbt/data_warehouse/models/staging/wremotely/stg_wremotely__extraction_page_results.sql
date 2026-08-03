@@ -18,6 +18,9 @@ renamed AS (
         , SAFE_CAST(JSON_VALUE(payload, '$.retrieved_at') AS TIMESTAMP) AS retrieved_at
         , SAFE_CAST(JSON_VALUE(payload, '$.http_status') AS INT64) AS http_status
         , JSON_VALUE(payload, '$.final_url') AS final_url
+        , JSON_VALUE(payload, '$.job_identity_url') AS job_identity_url
+        , TRIM(UPPER(JSON_VALUE(payload, '$.final_url_identity_status')))
+            AS final_url_identity_status
         , JSON_QUERY_ARRAY(payload, '$.redirect_chain') AS redirect_chain_json
         , JSON_VALUE(payload, '$.content_type') AS content_type
         , SAFE_CAST(JSON_VALUE(payload, '$.attempt_count') AS INT64) AS attempt_count
