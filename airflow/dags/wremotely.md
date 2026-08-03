@@ -56,6 +56,15 @@ promotes the same manifest entry. The private GHCR package must grant
 `kevinesg/data-platform` read access under **Manage Actions access** so the
 deployment workflows can verify and pull it without making the package public.
 
+Timestamped wremotely run IDs use the DagRun logical date when one exists, so
+scheduled replay identities remain tied to their data interval. Airflow 3 manual
+DagRuns may have no logical date; those runs use `run_after` instead. Scheduled
+timestamps keep the existing `YYYYMMDDTHHMMSSZ` format, while manual timestamps
+retain microseconds as `YYYYMMDDTHHMMSSffffffZ` so separately triggered runs do
+not share an artifact identity. Lifecycle bucket selection uses the same
+resolved timestamp. Do not substitute task start time or wall-clock retry time,
+because retries and task clears must keep one artifact identity and bucket.
+
 The reviewed approved-source registry is bundled at
 `/app/source_registry/approved_sources.jsonl` in that immutable private image.
 The private runtime records its actual checksum in completed artifacts. Do not
@@ -587,10 +596,12 @@ policy, prompt, runtime, or model changes do not reevaluate an existing verdict.
 The lifecycle DAG reads the current serving handoff plus raw selected-job
 metadata and lifecycle history. The private selector removes `is_deleted=true`
 rows before assigning active `job_id` values to seven stable hash buckets.
-Airflow derives one bucket index from the 12-hour logical date and processes the
-complete bucket with no scheduled row cap. Seven successful runs therefore
-cover every currently active serving job over 3.5 days without one growing
-all-at-once fetch burst. It completes successfully with an empty bucket.
+Airflow derives one bucket index from the resolved DagRun timestamp and
+processes the complete bucket with no scheduled row cap. Scheduled runs use
+their 12-hour logical date; manual runs use `run_after`. Seven successful
+scheduled runs therefore cover every currently active serving job over 3.5 days
+without one growing all-at-once fetch burst. It completes successfully with an
+empty bucket.
 Explicit closed-page evidence sets `is_deleted`; terminal HTTP outcomes require
 two consecutive rechecks. The workflow loads lifecycle events before triggering
 the serialized publication DAG, and dbt retains rows with `is_deleted = true`

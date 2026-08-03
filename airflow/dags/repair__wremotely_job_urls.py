@@ -7,6 +7,7 @@ from airflow.sdk import DAG, Param
 from _wremotely import (
     ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
+    WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
@@ -21,7 +22,7 @@ from _wremotely import (
     wremotely_mounts,
 )
 
-BASE_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-repair"
+BASE_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-repair"
 SELECTION_RUN_ID = BASE_RUN_ID
 EXTRACTION_RUN_ID = f"{BASE_RUN_ID}-extract"
 JOB_FACTS_RUN_ID = f"{BASE_RUN_ID}-job-facts"
@@ -36,7 +37,7 @@ DAG_RUN_TIMEOUT = timedelta(hours=24)
 # list. JSON-quoted Param values therefore remain individual URL arguments.
 REPAIR_SELECT_COMMAND = """[
     "--step", "select",
-    "--run-id", "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-repair",
+    "--run-id", "BASE_RUN_ID_VALUE",
     "--output-root", "/artifacts/wremotely-etl",
     "--gcp-project", "PROJECT_ID_VALUE",
     "--raw-dataset", "RAW_DATASET_VALUE",
@@ -47,7 +48,9 @@ REPAIR_SELECT_COMMAND = """[
 {% for url in params.reprocess_urls %}
     "--reprocess-url", {{ url | tojson }},
 {% endfor %}
-]""".replace("PROJECT_ID_VALUE", required_env("PROJECT_ID")).replace(
+]""".replace("BASE_RUN_ID_VALUE", BASE_RUN_ID).replace(
+    "PROJECT_ID_VALUE", required_env("PROJECT_ID")
+).replace(
     "RAW_DATASET_VALUE", required_env("RAW_DATASET")
 ).replace(
     "HANDOFF_DATASET_VALUE", required_env("WREMOTELY_HANDOFF_DATASET")

@@ -6,6 +6,7 @@ from airflow.sdk import DAG
 
 from _wremotely import (
     ENVIRONMENT,
+    WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
@@ -18,7 +19,7 @@ from _wremotely import (
     wremotely_mounts,
 )
 
-CLEANUP_RUN_ID = "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') }}-wremotely-cleanup"
+CLEANUP_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-cleanup"
 CLEANUP_MIN_AGE_DAYS = "3"
 CLEANUP_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 DAG_RUN_TIMEOUT = timedelta(hours=12)

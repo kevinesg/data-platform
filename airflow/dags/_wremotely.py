@@ -28,6 +28,11 @@ SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publication"
 WREMOTELY_NETWORK_POOL = "wremotely_network"
 WREMOTELY_WAREHOUSE_POOL = "wremotely_warehouse"
 WREMOTELY_PUBLICATION_DAG_ID = "publish__wremotely_serving"
+WREMOTELY_DAG_RUN_TIMESTAMP = (
+    "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') "
+    "if dag_run.logical_date "
+    "else dag_run.run_after.strftime('%Y%m%dT%H%M%S%fZ') }}"
+)
 
 
 def required_env(name: str) -> str:

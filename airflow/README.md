@@ -216,8 +216,9 @@ serving-table mutations;
 `publish__wremotely_serving.max_active_runs=1` additionally serializes the
 complete multi-task publication chain.
 The packaged `validate_dags.py` command is the reusable CI contract check for
-DAG imports, required task edges, pool assignments, repair-URL rendering, and
-classification-replay command rendering.
+DAG imports, required task edges, pool assignments, scheduled and manual run
+identity rendering, repair-URL rendering, and classification-replay command
+rendering.
 
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs

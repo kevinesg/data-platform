@@ -213,6 +213,12 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     if "--source-registry-input-sha256" in crawl_command:
         raise AssertionError("crawl must not depend on an external registry checksum")
 
+    validate_wremotely_run_identity_contract(
+        ingestion,
+        artifact_cleanup,
+        lifecycle,
+        repair,
+    )
     validate_lifecycle_bucket_contract(lifecycle)
     validate_artifact_cleanup_contract(artifact_cleanup)
 
@@ -311,29 +317,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ):
             raise AssertionError(f"warehouse replay task {task_id} has no bounded timeout")
 
-    test_urls = [
-        "https://company.example/jobs/one",
-        "https://company.example/jobs/two?name=O'Reilly",
-    ]
-    select_command = repair.get_task("select").command
-    if not isinstance(select_command, str):
-        raise AssertionError("repair select command must be a templated string")
-    rendered_command = Environment().from_string(select_command).render(
-        dag_run=SimpleNamespace(logical_date=datetime(2026, 1, 2, tzinfo=UTC)),
-        params={"reprocess_urls": test_urls},
-    )
-    repair_argv = DockerOperator.format_command(rendered_command)
-    if not isinstance(repair_argv, list):
-        raise AssertionError("repair select command did not render to an argv list")
-    rendered_urls = [
-        repair_argv[index + 1]
-        for index, value in enumerate(repair_argv)
-        if value == "--reprocess-url"
-    ]
-    if rendered_urls != test_urls:
-        raise AssertionError("repair select command changed the declared URL list")
-
-
 def require_dag(modules: dict[str, ModuleType], module_name: str) -> DAG:
     module = modules.get(module_name)
     dag = getattr(module, "dag", None) if module else None
@@ -404,6 +387,115 @@ def assert_publication_hold_environment(publication: DAG) -> None:
             raise AssertionError(f"serving snapshot unexpectedly receives {secret_name}")
 
 
+def validate_wremotely_run_identity_contract(
+    ingestion: DAG,
+    artifact_cleanup: DAG,
+    lifecycle: DAG,
+    repair: DAG,
+) -> None:
+    scheduled_logical_date = datetime(2026, 8, 3, 0, 15, tzinfo=UTC)
+    manual_run_after = datetime(2026, 8, 3, 4, 6, 15, 123456, tzinfo=UTC)
+    cases = [
+        (
+            "scheduled",
+            SimpleNamespace(
+                logical_date=scheduled_logical_date,
+                run_after=manual_run_after,
+            ),
+            "20260803T001500Z",
+        ),
+        (
+            "manual",
+            SimpleNamespace(logical_date=None, run_after=manual_run_after),
+            "20260803T040615123456Z",
+        ),
+    ]
+    command_contracts = [
+        (ingestion, "crawl", "-wremotely"),
+        (artifact_cleanup, "cleanup", "-wremotely-cleanup"),
+        (lifecycle, "prepare_recheck", "-wremotely-lifecycle-prepare"),
+    ]
+    publication_contracts = [
+        (ingestion, "-wremotely"),
+        (lifecycle, "-wremotely-lifecycle"),
+        (repair, "-wremotely-repair"),
+    ]
+    environment = Environment()
+
+    for case_name, dag_run, expected_timestamp in cases:
+        for dag, task_id, run_id_suffix in command_contracts:
+            command = dag.get_task(task_id).command
+            if not isinstance(command, list):
+                raise AssertionError(
+                    f"{dag.dag_id}.{task_id} command must be an argv list"
+                )
+            rendered_command = [
+                environment.from_string(value).render(
+                    dag_run=dag_run,
+                    params={"recheck_limit": 0},
+                )
+                for value in command
+            ]
+            expected_run_id = f"{expected_timestamp}{run_id_suffix}"
+            if command_argument(rendered_command, "--run-id") != expected_run_id:
+                raise AssertionError(
+                    f"{dag.dag_id} changed its {case_name} run identity"
+                )
+
+        for dag, run_id_suffix in publication_contracts:
+            publication_conf = dag.get_task("trigger_publication").conf
+            publication_run_id = publication_conf.get("publication_run_id")
+            if not isinstance(publication_run_id, str):
+                raise AssertionError(
+                    f"{dag.dag_id} publication run ID must be templated"
+                )
+            rendered_publication_run_id = environment.from_string(
+                publication_run_id
+            ).render(dag_run=dag_run)
+            if rendered_publication_run_id != f"{expected_timestamp}{run_id_suffix}":
+                raise AssertionError(
+                    f"{dag.dag_id} changed its {case_name} publication identity"
+                )
+
+        validate_repair_command(
+            repair,
+            dag_run,
+            f"{expected_timestamp}-wremotely-repair",
+            environment,
+        )
+
+
+def validate_repair_command(
+    repair: DAG,
+    dag_run: SimpleNamespace,
+    expected_run_id: str,
+    environment: Environment,
+) -> None:
+    test_urls = [
+        "https://company.example/jobs/one",
+        "https://company.example/jobs/two?name=O'Reilly",
+    ]
+    select_command = repair.get_task("select").command
+    if not isinstance(select_command, str):
+        raise AssertionError("repair select command must be a templated string")
+    rendered_command = environment.from_string(select_command).render(
+        dag_run=dag_run,
+        params={"reprocess_urls": test_urls},
+    )
+    repair_argv = DockerOperator.format_command(rendered_command)
+    if not isinstance(repair_argv, list):
+        raise AssertionError("repair select command did not render to an argv list")
+    if command_argument(repair_argv, "--run-id") != expected_run_id:
+        raise AssertionError("repair select command changed its run identity")
+    rendered_urls = [
+        repair_argv[index + 1]
+        for index, value in enumerate(repair_argv)
+        if value == "--reprocess-url"
+    ]
+    if rendered_urls != test_urls:
+        raise AssertionError("repair select command changed the declared URL list")
+
+
 def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
     prepare_command = lifecycle.get_task("prepare_recheck").command
     recheck_command = lifecycle.get_task("recheck").command
@@ -428,7 +520,10 @@ def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
     for offset in range(8):
         logical_date = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=12 * offset)
         context = {
-            "dag_run": SimpleNamespace(logical_date=logical_date),
+            "dag_run": SimpleNamespace(
+                logical_date=logical_date,
+                run_after=logical_date + timedelta(minutes=5),
+            ),
             "params": {"recheck_limit": 0},
         }
         bucket_indexes.append(int(environment.from_string(bucket_template).render(**context)))
@@ -438,6 +533,17 @@ def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
             raise AssertionError("scheduled recheck does not accept the complete bucket")
     if set(bucket_indexes[:7]) != set(range(7)) or bucket_indexes[7] != bucket_indexes[0]:
         raise AssertionError("12-hour lifecycle runs do not cover exactly seven stable buckets")
+
+    manual_run_after = datetime(2026, 8, 3, 4, 6, 15, 123456, tzinfo=UTC)
+    manual_bucket_index = int(
+        environment.from_string(bucket_template).render(
+            dag_run=SimpleNamespace(logical_date=None, run_after=manual_run_after),
+            params={"recheck_limit": 12},
+        )
+    )
+    expected_manual_bucket_index = int((manual_run_after.timestamp() // 43200) % 7)
+    if manual_bucket_index != expected_manual_bucket_index:
+        raise AssertionError("manual lifecycle run does not derive its bucket from run_after")
 
 
 def validate_artifact_cleanup_contract(artifact_cleanup: DAG) -> None:
