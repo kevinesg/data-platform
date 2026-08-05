@@ -74,22 +74,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "repair__wremotely_warehouse_classifications",
     )
 
-    assert_task_contract(
-        ingestion,
-        [
-            "crawl",
-            "publish_handoff",
-            "select",
-            "extract",
-            "job_facts",
-            "classify",
-            "evaluate",
-            "stage",
-            "upload",
-            "load",
-            "trigger_publication",
-        ],
-    )
+    assert_ingestion_task_contract(ingestion)
     assert_task_contract(
         artifact_cleanup,
         ["cleanup"],
@@ -204,11 +189,9 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("serving snapshot must not depend on an external registry checksum")
 
     crawl_command = ingestion.get_task("crawl").command
-    if not isinstance(crawl_command, list):
-        raise AssertionError("crawl command must be an argv list")
-    if command_argument(crawl_command, "--source-registry-input") != (
-        "/app/source_registry/approved_sources.jsonl"
-    ):
+    if not isinstance(crawl_command, str):
+        raise AssertionError("crawl command must be a templated argv string")
+    if "/app/source_registry/approved_sources.jsonl" not in crawl_command:
         raise AssertionError("crawl must use the image-bundled approved registry")
     if "--source-registry-input-sha256" in crawl_command:
         raise AssertionError("crawl must not depend on an external registry checksum")
@@ -219,6 +202,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         lifecycle,
         repair,
     )
+    validate_ingestion_refresh_contract(ingestion, modules["etl__wremotely"])
     validate_lifecycle_bucket_contract(lifecycle)
     validate_artifact_cleanup_contract(artifact_cleanup)
 
@@ -336,6 +320,62 @@ def assert_task_contract(dag: DAG, expected_chain: list[str]) -> None:
             )
 
 
+def assert_ingestion_task_contract(ingestion: DAG) -> None:
+    core_steps = [
+        "crawl",
+        "publish_handoff",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "evaluate",
+        "stage",
+        "upload",
+        "load",
+    ]
+    refresh_boundaries = [
+        "crawl",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "evaluate",
+        "stage",
+    ]
+    expected_task_ids = {
+        "read_refresh_request",
+        "choose_refresh_start",
+        "acknowledge_refresh_request",
+        "trigger_publication",
+        *(f"refresh_start_{step}" for step in core_steps),
+        *core_steps,
+    }
+    if set(ingestion.task_ids) != expected_task_ids:
+        raise AssertionError(f"{ingestion.dag_id} task set does not match its contract")
+    if ingestion.get_task("read_refresh_request").downstream_task_ids != {
+        "choose_refresh_start"
+    }:
+        raise AssertionError("refresh request must be read before branch selection")
+    if ingestion.get_task("choose_refresh_start").downstream_task_ids != {
+        f"refresh_start_{step}" for step in refresh_boundaries
+    }:
+        raise AssertionError("refresh branch must select a dedicated EL start gate")
+    for upstream_task_id, downstream_task_id in zip(core_steps, core_steps[1:]):
+        if downstream_task_id not in ingestion.get_task(upstream_task_id).downstream_task_ids:
+            raise AssertionError(
+                f"{ingestion.dag_id} is missing edge {upstream_task_id} -> {downstream_task_id}"
+            )
+    for step in core_steps:
+        if step not in ingestion.get_task(f"refresh_start_{step}").downstream_task_ids:
+            raise AssertionError(f"refresh gate does not precede {step}")
+    if "trigger_publication" not in ingestion.get_task("load").downstream_task_ids:
+        raise AssertionError("ingestion load must trigger publication")
+    if ingestion.get_task("trigger_publication").downstream_task_ids != {
+        "acknowledge_refresh_request"
+    }:
+        raise AssertionError("refresh request must be acknowledged after publication")
+
+
 def assert_pool(dag: DAG, task_id: str, expected_pool: str) -> None:
     actual_pool = dag.get_task(task_id).pool
     if actual_pool != expected_pool:
@@ -411,12 +451,10 @@ def validate_wremotely_run_identity_contract(
         ),
     ]
     command_contracts = [
-        (ingestion, "crawl", "-wremotely"),
         (artifact_cleanup, "cleanup", "-wremotely-cleanup"),
         (lifecycle, "prepare_recheck", "-wremotely-lifecycle-prepare"),
     ]
     publication_contracts = [
-        (ingestion, "-wremotely"),
         (lifecycle, "-wremotely-lifecycle"),
         (repair, "-wremotely-repair"),
     ]
@@ -463,6 +501,124 @@ def validate_wremotely_run_identity_contract(
             f"{expected_timestamp}-wremotely-repair",
             environment,
         )
+
+
+def validate_ingestion_refresh_contract(ingestion: DAG, ingestion_module: ModuleType) -> None:
+    steps = tuple(ingestion_module.WREMOTELY_REFRESH_STEPS)
+    boundaries = tuple(ingestion_module.WREMOTELY_REFRESH_BOUNDARIES)
+    if steps != (
+        "crawl",
+        "publish_handoff",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "evaluate",
+        "stage",
+        "upload",
+        "load",
+    ):
+        raise AssertionError("wremotely refresh steps changed without validator review")
+    if boundaries != (
+        "crawl",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "evaluate",
+        "stage",
+    ):
+        raise AssertionError("wremotely refresh boundaries changed without validator review")
+    for task_id in (*steps, "trigger_publication"):
+        if ingestion.get_task(task_id).trigger_rule != "none_failed_min_one_success":
+            raise AssertionError(
+                f"{ingestion.dag_id}.{task_id} cannot cross skipped upstream tasks"
+            )
+
+    environment = Environment()
+    logical_date = datetime(2026, 8, 3, 0, 15, tzinfo=UTC)
+    run_after = datetime(2026, 8, 3, 4, 6, 15, 123456, tzinfo=UTC)
+    dag_run = SimpleNamespace(logical_date=logical_date, run_after=run_after)
+
+    def render_request(raw_request: object) -> tuple[dict[str, object], SimpleNamespace]:
+        request = ingestion_module.normalize_wremotely_refresh_request(
+            raw_request,
+            logical_date=logical_date,
+            run_after=run_after,
+        )
+        ti = SimpleNamespace(xcom_pull=lambda task_ids: request)
+        return request, ti
+
+    def render_command(task_id: str, ti: SimpleNamespace) -> list[str]:
+        command = ingestion.get_task(task_id).command
+        if not isinstance(command, str):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} must use a templated argv string")
+        rendered = environment.from_string(command).render(dag_run=dag_run, ti=ti)
+        argv = DockerOperator.format_command(rendered)
+        if not isinstance(argv, list):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} did not render an argv list")
+        return argv
+
+    normal_request, normal_ti = render_request(None)
+    if normal_request["base_run_id"] != "20260803T001500Z-wremotely":
+        raise AssertionError("normal ingestion changed its scheduled run identity")
+    normal_crawl = render_command("crawl", normal_ti)
+    if "--full-refresh" in normal_crawl:
+        raise AssertionError("normal ingestion unexpectedly requested a full refresh")
+    if command_argument(normal_crawl, "--run-id") != "20260803T001500Z-wremotely":
+        raise AssertionError("normal ingestion changed its crawl run identity")
+
+    refresh_request, refresh_ti = render_request(
+        {
+            "refresh_id": "ats-parser-20260805",
+            "from_step": "classify",
+            "input_run_id": "20260803T001500Z-wremotely",
+        }
+    )
+    if refresh_request["base_run_id"] != "refresh-ats-parser-20260805-wremotely":
+        raise AssertionError("refresh identity is not stable")
+    if refresh_request["run_ids"]["extract"] != "20260803T001500Z-wremotely-extract":
+        raise AssertionError("downstream refresh changed retained extraction lineage")
+    if "--full-refresh" in render_command("extract", refresh_ti):
+        raise AssertionError("skipped extraction must not receive a refresh flag")
+    classify_command = render_command("classify", refresh_ti)
+    if "--full-refresh" not in classify_command:
+        raise AssertionError("refresh boundary did not receive --full-refresh")
+    if command_argument(classify_command, "--run-id") != (
+        "refresh-ats-parser-20260805-wremotely-classify"
+    ):
+        raise AssertionError("refresh boundary did not receive the stable refresh run ID")
+    if command_argument(classify_command, "--extraction-run-id") != (
+        "20260803T001500Z-wremotely-extract"
+    ):
+        raise AssertionError("classification refresh did not reuse retained extraction evidence")
+    if "--full-refresh" not in render_command("evaluate", refresh_ti):
+        raise AssertionError("refresh descendants did not receive --full-refresh")
+
+    for boundary in boundaries:
+        boundary_index = steps.index(boundary)
+        _, ti = render_request(
+            {
+                "refresh_id": f"boundary-{boundary_index}",
+                "from_step": boundary,
+                "input_run_id": "20260803T001500Z-wremotely",
+            }
+        )
+        for step_index, task_id in enumerate(steps):
+            has_refresh_flag = "--full-refresh" in render_command(task_id, ti)
+            if has_refresh_flag != (step_index >= boundary_index):
+                raise AssertionError(
+                    f"refresh from {boundary} propagated incorrectly to {task_id}"
+                )
+
+    try:
+        render_request(
+            {"refresh_id": "missing-input", "from_step": "classify"}
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("downstream refresh without input_run_id must fail closed")
 
 
 def validate_repair_command(

@@ -65,6 +65,51 @@ not share an artifact identity. Lifecycle bucket selection uses the same
 resolved timestamp. Do not substitute task start time or wall-clock retry time,
 because retries and task clears must keep one artifact identity and bucket.
 
+### Durable logical refresh requests
+
+The normal ingestion DAG reads one optional Airflow Variable named
+`wremotely_refresh_request` before selecting its first EL task. An absent
+variable keeps the scheduled path unchanged. A request is a JSON object with:
+
+```json
+{
+  "refresh_id": "ats-parser-20260805",
+  "from_step": "extract",
+  "input_run_id": "20260803T001500Z-wremotely"
+}
+```
+
+`from_step` must be one of `crawl`, `select`, `extract`, `job_facts`, `classify`,
+`evaluate`, or `stage`. The DAG
+skips earlier tasks, reuses their retained artifacts from `input_run_id`, and
+passes `--full-refresh` only to the declared step and its descendants. An
+`input_run_id` is required for every boundary after `crawl`; it is the complete
+base run whose compatible artifacts are being reused, not a parser version or
+Git SHA. Use `crawl` when no retained input is needed.
+
+The refresh run uses the stable identity
+`refresh-<refresh_id>-wremotely`, so retries and a later scheduled retry of a
+failed request reuse the same artifact generation. `publish_handoff` follows a
+`crawl` boundary, while `upload` and `load` are transport descendants of a
+`stage` boundary; they are not valid logical refresh boundaries because their
+CLI contract has no separate retained-input run ID. The DAG acknowledges and
+deletes the Variable only after the serialized serving publication succeeds. A
+failed run, or a request changed while a run is active, leaves the request in
+place for operator review and a later retry.
+
+To queue one reviewed refresh, use the Airflow UI Variables screen or the
+equivalent CLI inside the deployed Airflow container after the environment
+setup in this runbook is complete:
+
+```bash
+airflow variables set wremotely_refresh_request \
+  '{"refresh_id":"ats-parser-20260805","from_step":"extract","input_run_id":"20260803T001500Z-wremotely"}'
+```
+
+Do not use this request for the lifecycle maintenance DAG. Do not map it to
+dbt's command-level `--full-refresh`; the protected serving model must retain
+prior rows so closure and suppression tombstones remain publishable.
+
 The reviewed approved-source registry is bundled at
 `/app/source_registry/approved_sources.jsonl` in that immutable private image.
 The private runtime records its actual checksum in completed artifacts. Do not
@@ -399,7 +444,9 @@ The ingestion DAG loads new-job data before triggering the serialized
 publication DAG:
 
 ```text
-crawl
+read_refresh_request
+  -> choose_refresh_start
+  -> crawl
   -> publish_handoff
   -> select
   -> extract
@@ -410,7 +457,13 @@ crawl
   -> upload
   -> load
   -> trigger_publication
+  -> acknowledge_refresh_request
 ```
+
+`choose_refresh_start` branches to one dedicated start gate per core EL task.
+The selected gate and its descendants use `none_failed_min_one_success` so
+skipped upstream tasks do not block a downstream-only rebuild; the linear edges
+still preserve normal execution order.
 
 The independent lifecycle DAG runs:
 
