@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from datetime import timedelta
+from typing import Any
 
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import BranchPythonOperator, PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sdk import Variable, get_current_context
 from docker.types import Mount
 
 from _alerting import send_failure_alert
@@ -28,6 +34,34 @@ SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publication"
 WREMOTELY_NETWORK_POOL = "wremotely_network"
 WREMOTELY_WAREHOUSE_POOL = "wremotely_warehouse"
 WREMOTELY_PUBLICATION_DAG_ID = "publish__wremotely_serving"
+WREMOTELY_REFRESH_REQUEST_VARIABLE = "wremotely_refresh_request"
+WREMOTELY_REFRESH_REQUEST_TASK_ID = "read_refresh_request"
+WREMOTELY_REFRESH_BRANCH_TASK_ID = "choose_refresh_start"
+WREMOTELY_REFRESH_ACK_TASK_ID = "acknowledge_refresh_request"
+WREMOTELY_REFRESH_GATE_PREFIX = "refresh_start_"
+WREMOTELY_REFRESH_STEPS = (
+    "crawl",
+    "publish_handoff",
+    "select",
+    "extract",
+    "job_facts",
+    "classify",
+    "evaluate",
+    "stage",
+    "upload",
+    "load",
+)
+WREMOTELY_REFRESH_BOUNDARIES = (
+    "crawl",
+    "select",
+    "extract",
+    "job_facts",
+    "classify",
+    "evaluate",
+    "stage",
+)
+_REFRESH_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 WREMOTELY_DAG_RUN_TIMESTAMP = (
     "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') "
     "if dag_run.logical_date "
@@ -81,6 +115,7 @@ def docker_task(
     network_mode: str | None = None,
     entrypoint: list[str] | None = None,
     pool: str | None = None,
+    trigger_rule: str | None = None,
 ) -> DockerOperator:
     operator_options = {"pool": pool} if pool else {}
     return DockerOperator(
@@ -99,6 +134,7 @@ def docker_task(
         retry_delay=TASK_RETRY_DELAY,
         network_mode=network_mode,
         entrypoint=entrypoint,
+        trigger_rule=trigger_rule or "all_success",
         on_failure_callback=send_failure_alert,
         **operator_options,
     )
@@ -106,6 +142,213 @@ def docker_task(
 
 def etl_command(*args: str) -> list[str]:
     return list(args)
+
+
+def refreshable_etl_command(step: str, *args: str) -> str:
+    """Render an argv list with a refresh flag only for the affected descendants."""
+    if step not in WREMOTELY_REFRESH_STEPS:
+        raise ValueError(f"unsupported wremotely refresh step: {step}")
+    serialized = json.dumps(list(args))
+    condition = (
+        f"'{step}' in "
+        "(ti.xcom_pull(task_ids='read_refresh_request') or {}).get('full_refresh_steps', [])"
+    )
+    return (
+        f"{serialized[:-1]}"
+        f"{{% if {condition} %}}, \"--full-refresh\"{{% endif %}}]"
+    )
+
+
+def _run_timestamp(logical_date: Any, run_after: Any) -> str:
+    if logical_date is not None:
+        return logical_date.strftime("%Y%m%dT%H%M%SZ")
+    if run_after is None:
+        raise ValueError("wremotely DAG run has neither logical_date nor run_after")
+    return run_after.strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _validate_run_id(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not _RUN_ID_PATTERN.fullmatch(value):
+        raise ValueError(
+            f"wremotely refresh request {field_name} must match "
+            "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        )
+    return value
+
+
+def normalize_wremotely_refresh_request(
+    raw_request: Any,
+    *,
+    logical_date: Any,
+    run_after: Any,
+) -> dict[str, Any]:
+    """Validate one durable request and derive all stable run identities."""
+    timestamp = _run_timestamp(logical_date, run_after)
+    if raw_request in (None, "", {}):
+        base_run_id = f"{timestamp}-wremotely"
+        return {
+            "refresh": False,
+            "refresh_id": None,
+            "from_step": "crawl",
+            "input_base_run_id": base_run_id,
+            "base_run_id": base_run_id,
+            "full_refresh_steps": [],
+            "run_ids": {
+                step: f"{base_run_id}{_run_id_suffix(step)}"
+                for step in WREMOTELY_REFRESH_STEPS
+            },
+            "declaration": None,
+        }
+    if not isinstance(raw_request, dict):
+        raise ValueError(
+            f"{WREMOTELY_REFRESH_REQUEST_VARIABLE} must contain a JSON object"
+        )
+    if set(raw_request) - {"refresh_id", "from_step", "input_run_id"}:
+        raise ValueError(
+            f"{WREMOTELY_REFRESH_REQUEST_VARIABLE} contains unsupported fields"
+        )
+    refresh_id = raw_request.get("refresh_id")
+    if not isinstance(refresh_id, str) or not _REFRESH_ID_PATTERN.fullmatch(refresh_id):
+        raise ValueError(
+            "wremotely refresh request refresh_id must match "
+            "^[a-z0-9][a-z0-9._-]{0,63}$"
+        )
+    from_step = raw_request.get("from_step")
+    if from_step not in WREMOTELY_REFRESH_BOUNDARIES:
+        raise ValueError(
+            "wremotely refresh request from_step must be one of "
+            + ", ".join(WREMOTELY_REFRESH_BOUNDARIES)
+        )
+    step_index = WREMOTELY_REFRESH_STEPS.index(from_step)
+    input_base_run_id = raw_request.get("input_run_id")
+    if step_index > 0:
+        input_base_run_id = _validate_run_id(input_base_run_id, "input_run_id")
+    elif input_base_run_id is not None:
+        input_base_run_id = _validate_run_id(input_base_run_id, "input_run_id")
+    else:
+        input_base_run_id = f"{timestamp}-wremotely"
+
+    base_run_id = f"refresh-{refresh_id}-wremotely"
+    full_refresh_steps = list(WREMOTELY_REFRESH_STEPS[step_index:])
+    run_ids = {
+        step: (
+            f"{input_base_run_id}{_run_id_suffix(step)}"
+            if index < step_index
+            else f"{base_run_id}{_run_id_suffix(step)}"
+        )
+        for index, step in enumerate(WREMOTELY_REFRESH_STEPS)
+    }
+    return {
+        "refresh": True,
+        "refresh_id": refresh_id,
+        "from_step": from_step,
+        "input_base_run_id": input_base_run_id,
+        "base_run_id": base_run_id,
+        "full_refresh_steps": full_refresh_steps,
+        "run_ids": run_ids,
+        "declaration": dict(raw_request),
+    }
+
+
+def _run_id_suffix(step: str) -> str:
+    return {
+        "crawl": "",
+        "publish_handoff": "",
+        "select": "",
+        "extract": "-extract",
+        "job_facts": "-job-facts",
+        "classify": "-classify",
+        "evaluate": "-evaluate",
+        "stage": "-stage",
+        "upload": "-stage",
+        "load": "-stage",
+    }[step]
+
+
+def read_wremotely_refresh_request() -> dict[str, Any]:
+    context = get_current_context()
+    dag_run = context["dag_run"]
+    raw_request = Variable.get(
+        WREMOTELY_REFRESH_REQUEST_VARIABLE,
+        default_var=None,
+        deserialize_json=True,
+    )
+    return normalize_wremotely_refresh_request(
+        raw_request,
+        logical_date=dag_run.logical_date,
+        run_after=dag_run.run_after,
+    )
+
+
+def choose_wremotely_refresh_start() -> str:
+    context = get_current_context()
+    request = context["ti"].xcom_pull(task_ids=WREMOTELY_REFRESH_REQUEST_TASK_ID)
+    if (
+        not isinstance(request, dict)
+        or request.get("from_step") not in WREMOTELY_REFRESH_BOUNDARIES
+    ):
+        raise RuntimeError("refresh request task did not return a validated request")
+    return f"{WREMOTELY_REFRESH_GATE_PREFIX}{request['from_step']}"
+
+
+def acknowledge_wremotely_refresh_request() -> None:
+    context = get_current_context()
+    request = context["ti"].xcom_pull(task_ids=WREMOTELY_REFRESH_REQUEST_TASK_ID)
+    if not isinstance(request, dict) or not request.get("refresh"):
+        return
+    current = Variable.get(
+        WREMOTELY_REFRESH_REQUEST_VARIABLE,
+        default_var=None,
+        deserialize_json=True,
+    )
+    if current != request.get("declaration"):
+        raise RuntimeError(
+            "wremotely refresh request changed during the run; leaving the newer request "
+            "unacknowledged"
+        )
+    Variable.delete(WREMOTELY_REFRESH_REQUEST_VARIABLE)
+
+
+def create_wremotely_refresh_request_task() -> PythonOperator:
+    return PythonOperator(
+        task_id=WREMOTELY_REFRESH_REQUEST_TASK_ID,
+        python_callable=read_wremotely_refresh_request,
+        execution_timeout=timedelta(minutes=5),
+        retries=TASK_RETRIES,
+        retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
+    )
+
+
+def create_wremotely_refresh_branch_task() -> BranchPythonOperator:
+    return BranchPythonOperator(
+        task_id=WREMOTELY_REFRESH_BRANCH_TASK_ID,
+        python_callable=choose_wremotely_refresh_start,
+        execution_timeout=timedelta(minutes=5),
+        retries=TASK_RETRIES,
+        retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
+    )
+
+
+def create_wremotely_refresh_ack_task() -> PythonOperator:
+    return PythonOperator(
+        task_id=WREMOTELY_REFRESH_ACK_TASK_ID,
+        python_callable=acknowledge_wremotely_refresh_request,
+        execution_timeout=timedelta(minutes=5),
+        retries=TASK_RETRIES,
+        retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
+    )
+
+
+def create_wremotely_refresh_gate_task(step: str) -> EmptyOperator:
+    if step not in WREMOTELY_REFRESH_STEPS:
+        raise ValueError(f"unsupported wremotely refresh step: {step}")
+    return EmptyOperator(
+        task_id=f"{WREMOTELY_REFRESH_GATE_PREFIX}{step}",
+        execution_timeout=timedelta(minutes=5),
+    )
 
 
 ENVIRONMENT = optional_env("ENVIRONMENT", "dev")
@@ -329,7 +572,11 @@ def create_publication_signal_task(snapshot_run_id: str) -> DockerOperator:
     )
 
 
-def create_publication_trigger_task(publication_run_id: str) -> TriggerDagRunOperator:
+def create_publication_trigger_task(
+    publication_run_id: str,
+    *,
+    trigger_rule: str = "all_success",
+) -> TriggerDagRunOperator:
     return TriggerDagRunOperator(
         task_id="trigger_publication",
         trigger_dag_id=WREMOTELY_PUBLICATION_DAG_ID,
@@ -339,6 +586,7 @@ def create_publication_trigger_task(publication_run_id: str) -> TriggerDagRunOpe
         wait_for_completion=True,
         poke_interval=30,
         deferrable=True,
+        trigger_rule=trigger_rule,
         execution_timeout=PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT,
         retries=TASK_RETRIES,
         retry_delay=TASK_RETRY_DELAY,

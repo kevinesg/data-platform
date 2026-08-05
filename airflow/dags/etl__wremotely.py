@@ -9,31 +9,42 @@ from _wremotely import (
     CRAWL_TASK_EXECUTION_TIMEOUT,
     ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
-    WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+    WREMOTELY_REFRESH_BOUNDARIES,
+    WREMOTELY_REFRESH_STEPS,
     WREMOTELY_WAREHOUSE_POOL,
     create_publication_trigger_task,
+    create_wremotely_refresh_ack_task,
+    create_wremotely_refresh_branch_task,
+    create_wremotely_refresh_gate_task,
+    create_wremotely_refresh_request_task,
     dag_schedule,
     docker_task,
-    etl_command,
+    normalize_wremotely_refresh_request,
     optional_env,
     required_env,
+    refreshable_etl_command,
     wremotely_environment,
     wremotely_mounts,
 )
 
-BASE_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely"
-SOURCE_CRAWL_RUN_ID = BASE_RUN_ID
-SELECTION_RUN_ID = BASE_RUN_ID
-EXTRACTION_RUN_ID = f"{BASE_RUN_ID}-extract"
-JOB_FACTS_RUN_ID = f"{BASE_RUN_ID}-job-facts"
-CLASSIFICATION_RUN_ID = f"{BASE_RUN_ID}-classify"
+BASE_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['base_run_id'] }}"
+SOURCE_CRAWL_RUN_ID = (
+    "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['crawl'] }}"
+)
+PUBLISH_HANDOFF_RUN_ID = (
+    "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['publish_handoff'] }}"
+)
+SELECTION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['select'] }}"
+EXTRACTION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['extract'] }}"
+JOB_FACTS_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['job_facts'] }}"
+CLASSIFICATION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['classify'] }}"
 PUBLICATION_RUN_ID = BASE_RUN_ID
-EVALUATION_RUN_ID = f"{BASE_RUN_ID}-evaluate"
-STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
+EVALUATION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['evaluate'] }}"
+STAGE_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['stage'] }}"
 
 DAG_RUN_TIMEOUT = timedelta(hours=24)
 with DAG(
@@ -46,10 +57,18 @@ with DAG(
     dagrun_timeout=DAG_RUN_TIMEOUT,
     tags=["wremotely", "elt"],
 ) as dag:
+    read_refresh_request = create_wremotely_refresh_request_task()
+    choose_refresh_start = create_wremotely_refresh_branch_task()
+    refresh_gates = {
+        step: create_wremotely_refresh_gate_task(step)
+        for step in WREMOTELY_REFRESH_STEPS
+    }
+
     crawl = docker_task(
         task_id="crawl",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "crawl",
             "--step",
             "crawl",
             "--run-id",
@@ -80,16 +99,18 @@ with DAG(
         execution_timeout=CRAWL_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_NETWORK_POOL,
+        trigger_rule="none_failed_min_one_success",
     )
 
     publish_handoff = docker_task(
         task_id="publish_handoff",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "publish_handoff",
             "--step",
             "publish-handoff",
             "--run-id",
-            SOURCE_CRAWL_RUN_ID,
+            PUBLISH_HANDOFF_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
             "--gcp-project",
@@ -103,12 +124,14 @@ with DAG(
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
+        trigger_rule="none_failed_min_one_success",
     )
 
     select = docker_task(
         task_id="select",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "select",
             "--step",
             "select",
             "--run-id",
@@ -131,12 +154,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     extract = docker_task(
         task_id="extract",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "extract",
             "--step",
             "extract",
             "--run-id",
@@ -171,12 +196,14 @@ with DAG(
         execution_timeout=EXTRACT_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_NETWORK_POOL,
+        trigger_rule="none_failed_min_one_success",
     )
 
     job_facts = docker_task(
         task_id="job_facts",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "job_facts",
             "--step",
             "job-facts",
             "--run-id",
@@ -189,12 +216,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     classify = docker_task(
         task_id="classify",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "classify",
             "--step",
             "classify",
             "--run-id",
@@ -213,12 +242,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     evaluate = docker_task(
         task_id="evaluate",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "evaluate",
             "--step",
             "evaluate",
             "--run-id",
@@ -237,12 +268,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     stage = docker_task(
         task_id="stage",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "stage",
             "--step",
             "stage",
             "--run-id",
@@ -265,12 +298,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     upload = docker_task(
         task_id="upload",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "upload",
             "--step",
             "upload",
             "--run-id",
@@ -287,12 +322,14 @@ with DAG(
         environment=wremotely_environment,
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        trigger_rule="none_failed_min_one_success",
     )
 
     load = docker_task(
         task_id="load",
         image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
+        command=refreshable_etl_command(
+            "load",
             "--step",
             "load",
             "--run-id",
@@ -310,9 +347,14 @@ with DAG(
         mounts=wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
+        trigger_rule="none_failed_min_one_success",
     )
 
-    trigger_publication = create_publication_trigger_task(PUBLICATION_RUN_ID)
+    trigger_publication = create_publication_trigger_task(
+        PUBLICATION_RUN_ID,
+        trigger_rule="none_failed_min_one_success",
+    )
+    acknowledge_refresh_request = create_wremotely_refresh_ack_task()
 
     core_load_chain = (
         crawl
@@ -327,3 +369,8 @@ with DAG(
         >> load
     )
     core_load_chain >> trigger_publication
+    trigger_publication >> acknowledge_refresh_request
+    choose_refresh_start >> [refresh_gates[step] for step in WREMOTELY_REFRESH_BOUNDARIES]
+    for step, gate in refresh_gates.items():
+        gate >> dag.get_task(step)
+    read_refresh_request >> choose_refresh_start
