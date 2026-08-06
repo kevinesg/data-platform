@@ -13,7 +13,6 @@ from _wremotely import (
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-    WREMOTELY_REFRESH_BOUNDARIES,
     WREMOTELY_REFRESH_STEPS,
     WREMOTELY_WAREHOUSE_POOL,
     create_publication_trigger_task,
@@ -370,7 +369,7 @@ with DAG(
     )
     core_load_chain >> trigger_publication
     trigger_publication >> acknowledge_refresh_request
-    choose_refresh_start >> [refresh_gates[step] for step in WREMOTELY_REFRESH_BOUNDARIES]
+    choose_refresh_start >> [refresh_gates[step] for step in WREMOTELY_REFRESH_STEPS]
     for step, gate in refresh_gates.items():
         gate >> dag.get_task(step)
     read_refresh_request >> choose_refresh_start
