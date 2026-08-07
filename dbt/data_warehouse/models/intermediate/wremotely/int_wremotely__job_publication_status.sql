@@ -23,7 +23,7 @@ evaluated AS (
         END AS has_expired_valid_through
         , COALESCE((
             latest_job_posting_type = 'JOB'
-            AND latest_remote_scope IN ('REMOTE', 'HYBRID')
+            AND latest_remote_scope IN ('REMOTE', 'HYBRID', 'ONSITE')
             AND validated_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
             AND (
                 validated_country_eligibility_scope != 'SPECIFIC'
@@ -58,7 +58,7 @@ final AS (
         , CASE
             WHEN latest_job_posting_type != 'JOB' OR latest_job_posting_type IS NULL
                 THEN 'NOT_JOB'
-            WHEN latest_remote_scope NOT IN ('REMOTE', 'HYBRID')
+            WHEN latest_remote_scope NOT IN ('REMOTE', 'HYBRID', 'ONSITE')
                 OR latest_remote_scope IS NULL
                 THEN 'WORK_ARRANGEMENT'
             WHEN validated_country_eligibility_scope

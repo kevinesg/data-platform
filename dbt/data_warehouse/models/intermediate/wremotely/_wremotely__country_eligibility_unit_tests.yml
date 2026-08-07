@@ -424,7 +424,7 @@ unit_tests:
             can_restrict: false
       - input: ref('int_wremotely__latest_classifications')
         rows:
-          - {candidate_id: candidate-jersey-city, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-jersey-city, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
       - input: ref('wremotely__countries')
         rows:
           - {country_code: JE, country_name: Jersey, alpha_3_code: JEY}
@@ -446,3 +446,43 @@ unit_tests:
         - {source_evidence_index: 1, matched_country_code: null, match_source: AMBIGUOUS_COUNTRY_ALIAS}
         - {source_evidence_index: 2, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
         - {source_evidence_index: 3, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+
+  - name: test_onsite_job_location_can_establish_default_country
+    description: >
+      An explicitly onsite structured country location may establish the
+      default office country, while this exception remains tied to the latest
+      classification arrangement.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - candidate_id: candidate-onsite-location
+            stage_run_id: stage-1
+            classification_run_id: classification-1
+            source_record_index: 1
+            source_evidence_index: 1
+            country_field_role: JOB_LOCATION
+            raw_country_eligibility_scope: RESTRICTED
+            raw_value: US
+            json_path: $.documents[0].jobLocation.address.addressCountry
+            can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - candidate_id: candidate-onsite-location
+            latest_classification_stage_run_id: stage-1
+            latest_classification_run_id: classification-1
+            latest_remote_scope: ONSITE
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows: []
+      - input: ref('wremotely__country_cldr_aliases')
+        rows: []
+      - input: ref('wremotely__country_subdivisions')
+        rows: []
+      - input: ref('wremotely__country_group_aliases')
+        rows: []
+    expect:
+      rows:
+        - {candidate_id: candidate-onsite-location, evidence_direction: INCLUDED, matched_country_code: US, match_source: ATOMIC_COUNTRY_ALIAS}

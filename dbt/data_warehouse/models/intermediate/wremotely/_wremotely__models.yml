@@ -351,13 +351,17 @@ models:
       visible for QA/RCA rather than being silently promoted. Structured country
       fields disambiguate aliases whose conflicting subcountry usage dominates
       supporting country usage, but never create applicant-eligibility evidence.
-      Unmatched heuristic Remote/Hybrid location labels remain UNKNOWN rather
-      than blocking publication; recognized taxonomy matches from those labels
-      remain restrictive.
+      Unmatched heuristic Remote/Hybrid/Onsite location labels remain UNKNOWN
+      rather than blocking publication; recognized taxonomy matches from those
+      labels remain restrictive. Onsite structured country or region locations
+      may provide the default office country, while city-only values remain
+      unknown.
     columns:
       - name: candidate_id
         data_tests:
           - not_null
+      - name: classification_remote_scope
+        description: Latest classification work arrangement used to gate onsite job-location evidence.
       - name: evidence_direction
         data_tests:
           - not_null
@@ -452,7 +456,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['REMOTE', 'HYBRID']
+                values: ['REMOTE', 'HYBRID', 'ONSITE']
       - name: raw_work_arrangement
         description: Raw structured or source-derived work arrangement evidence when available.
         data_tests:
