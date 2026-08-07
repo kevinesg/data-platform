@@ -270,7 +270,7 @@ def read_wremotely_refresh_request() -> dict[str, Any]:
     dag_run = context["dag_run"]
     raw_request = Variable.get(
         WREMOTELY_REFRESH_REQUEST_VARIABLE,
-        default_var=None,
+        default=None,
         deserialize_json=True,
     )
     return normalize_wremotely_refresh_request(
@@ -298,7 +298,7 @@ def acknowledge_wremotely_refresh_request() -> None:
         return
     current = Variable.get(
         WREMOTELY_REFRESH_REQUEST_VARIABLE,
-        default_var=None,
+        default=None,
         deserialize_json=True,
     )
     if current != request.get("declaration"):

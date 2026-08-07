@@ -13,7 +13,7 @@ from _wremotely import (
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_NETWORK_POOL,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-    WREMOTELY_REFRESH_BOUNDARIES,
+    WREMOTELY_REFRESH_BOUNDARIES as _WREMOTELY_REFRESH_BOUNDARIES,
     WREMOTELY_REFRESH_STEPS,
     WREMOTELY_WAREHOUSE_POOL,
     create_publication_trigger_task,
@@ -45,6 +45,8 @@ CLASSIFICATION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_i
 PUBLICATION_RUN_ID = BASE_RUN_ID
 EVALUATION_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['evaluate'] }}"
 STAGE_RUN_ID = "{{ ti.xcom_pull(task_ids='read_refresh_request')['run_ids']['stage'] }}"
+# Keep the validator's inspected DAG module contract explicit.
+WREMOTELY_REFRESH_BOUNDARIES = _WREMOTELY_REFRESH_BOUNDARIES
 
 DAG_RUN_TIMEOUT = timedelta(hours=24)
 with DAG(
@@ -370,7 +372,7 @@ with DAG(
     )
     core_load_chain >> trigger_publication
     trigger_publication >> acknowledge_refresh_request
-    choose_refresh_start >> [refresh_gates[step] for step in WREMOTELY_REFRESH_BOUNDARIES]
+    choose_refresh_start >> [refresh_gates[step] for step in WREMOTELY_REFRESH_STEPS]
     for step, gate in refresh_gates.items():
         gate >> dag.get_task(step)
     read_refresh_request >> choose_refresh_start

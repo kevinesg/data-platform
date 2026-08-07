@@ -1,5 +1,7 @@
 WITH raw_evidence AS (
-    SELECT raw.*
+    SELECT
+        raw.*
+        , latest.latest_remote_scope AS classification_remote_scope
     FROM {{ ref('stg_wremotely__country_eligibility_extractions') }} AS raw
     INNER JOIN {{ ref('int_wremotely__latest_classifications') }} AS latest
         ON raw.candidate_id = latest.candidate_id
@@ -252,6 +254,11 @@ prepared AS (
             , ''
         ) AS location_object_path
         , CASE
+            WHEN country_field_role = 'JOB_LOCATION'
+                AND classification_remote_scope = 'ONSITE'
+                AND raw_country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT')
+                AND COALESCE(can_restrict, FALSE)
+                THEN 'INCLUDED'
             WHEN country_field_role = 'JOB_LOCATION' THEN 'UNKNOWN'
             WHEN raw_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT')
                 AND country_field_role IN (
@@ -278,6 +285,13 @@ prepared AS (
             ELSE 'UNKNOWN'
         END AS evidence_direction
         , CASE
+            WHEN country_field_role = 'JOB_LOCATION'
+                AND classification_remote_scope = 'ONSITE'
+                AND REGEXP_CONTAINS(LOWER(COALESCE(json_path, '')), r'\.addresscountry$')
+                THEN 'ATOMIC'
+            WHEN country_field_role = 'JOB_LOCATION'
+                AND classification_remote_scope = 'ONSITE'
+                THEN 'TEXT'
             WHEN country_field_role IN (
                 'APPLICANT_LOCATION_REQUIREMENTS'
                 , 'LLM_EXCLUDED_COUNTRY'
@@ -288,6 +302,13 @@ prepared AS (
             ELSE 'NONE'
         END AS country_match_mode
         , CASE
+            WHEN country_field_role = 'JOB_LOCATION'
+                AND classification_remote_scope = 'ONSITE'
+                AND REGEXP_CONTAINS(LOWER(COALESCE(json_path, '')), r'\.addresscountry$')
+                THEN 'ATOMIC'
+            WHEN country_field_role = 'JOB_LOCATION'
+                AND classification_remote_scope = 'ONSITE'
+                THEN 'TEXT'
             WHEN country_field_role IN (
                 'APPLICANT_LOCATION_REQUIREMENTS'
                 , 'LLM_EXCLUDED_GROUP'

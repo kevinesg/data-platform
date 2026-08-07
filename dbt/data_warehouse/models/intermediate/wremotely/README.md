@@ -55,9 +55,12 @@ Ireland`. Standalone subdivision names remain unmatched because CLDR uniqueness
 does not distinguish an administrative division from an identically named city,
 street, timezone, or colloquial region. Unknown, invalid, ambiguous,
 context-conflicting, and unmatched evidence remains visible for QA/RCA instead
-of being silently promoted. Physical job-location evidence stays
-non-restrictive; applicant eligibility must come from applicant-location or
-role-level evidence.
+of being silently promoted. Physical job-location evidence remains
+non-restrictive for remote and hybrid jobs. For an explicitly classified onsite
+job, a structured country or region job location may establish the default
+office country when the value is a validated country or subdivision match; a
+city-only value remains unknown. Applicant eligibility must still come from
+applicant-location or role-level evidence for remote and hybrid jobs.
 Structured country fields are used only to disambiguate those existing
 eligibility signals. An alias observed as a subcountry location under a
 different structured country more often than it is observed with its own

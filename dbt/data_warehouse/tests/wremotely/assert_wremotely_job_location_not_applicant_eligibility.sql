@@ -6,4 +6,5 @@ SELECT
     , match_source
 FROM {{ ref('int_wremotely__country_eligibility_evidence') }}
 WHERE country_field_role = 'JOB_LOCATION'
+    AND COALESCE(classification_remote_scope, '') != 'ONSITE'
     AND evidence_direction != 'UNKNOWN'

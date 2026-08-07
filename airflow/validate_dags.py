@@ -333,15 +333,6 @@ def assert_ingestion_task_contract(ingestion: DAG) -> None:
         "upload",
         "load",
     ]
-    refresh_boundaries = [
-        "crawl",
-        "select",
-        "extract",
-        "job_facts",
-        "classify",
-        "evaluate",
-        "stage",
-    ]
     expected_task_ids = {
         "read_refresh_request",
         "choose_refresh_start",
@@ -357,9 +348,9 @@ def assert_ingestion_task_contract(ingestion: DAG) -> None:
     }:
         raise AssertionError("refresh request must be read before branch selection")
     if ingestion.get_task("choose_refresh_start").downstream_task_ids != {
-        f"refresh_start_{step}" for step in refresh_boundaries
+        f"refresh_start_{step}" for step in core_steps
     }:
-        raise AssertionError("refresh branch must select a dedicated EL start gate")
+        raise AssertionError("refresh branch must control every EL step gate")
     for upstream_task_id, downstream_task_id in zip(core_steps, core_steps[1:]):
         if downstream_task_id not in ingestion.get_task(upstream_task_id).downstream_task_ids:
             raise AssertionError(
