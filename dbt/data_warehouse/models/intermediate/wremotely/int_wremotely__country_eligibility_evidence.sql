@@ -227,6 +227,86 @@ country_group_match_phrases AS (
         AND alias_rank = 1
 ),
 
+prepared_roles AS (
+    SELECT
+        *
+        , country_field_role IN (
+            'JOB_LOCATION'
+            , 'PLATFORM_JOB_LOCATION'
+            , 'BAMBOOHR_CAREERS_LIST'
+            , 'BREEZY_META'
+            , 'GREENHOUSE_REMIX'
+            , 'JAZZHR_VISIBLE_HTML'
+            , 'JOBVITE_PRELOADED_DATA'
+            , 'NEXTJS'
+            , 'PERSONIO_VISIBLE_HTML'
+            , 'SMARTRECRUITERS_MICRODATA'
+            , 'WORKABLE_WIDGET'
+        ) AS is_location_evidence_role
+        , (
+            country_field_role = 'PLATFORM_JOB_LOCATION'
+            AND LOWER(COALESCE(source_platform_guess, '')) IN (
+                'ashby'
+                , 'bamboohr'
+                , 'breezy'
+                , 'greenhouse'
+                , 'jazzhr'
+                , 'jobvite'
+                , 'lever'
+                , 'personio'
+                , 'rippling'
+                , 'smartrecruiters'
+                , 'workable'
+            )
+        ) OR (
+            country_field_role = country_field_source_system
+            AND country_field_role IN (
+                'BAMBOOHR_CAREERS_LIST'
+                , 'BREEZY_META'
+                , 'GREENHOUSE_REMIX'
+                , 'JAZZHR_VISIBLE_HTML'
+                , 'JOBVITE_PRELOADED_DATA'
+                , 'NEXTJS'
+                , 'PERSONIO_VISIBLE_HTML'
+                , 'SMARTRECRUITERS_MICRODATA'
+                , 'WORKABLE_WIDGET'
+            )
+        ) AS is_reviewed_platform_location_role
+    FROM raw_evidence
+),
+
+prepared_inputs AS (
+    SELECT
+        *
+        , raw_country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT')
+            AND (
+                (
+                    country_field_role = 'JOB_LOCATION'
+                    AND classification_remote_scope = 'ONSITE'
+                )
+                OR (
+                    COALESCE(can_restrict, FALSE)
+                    AND (
+                        is_reviewed_platform_location_role
+                        OR (
+                            country_field_role = 'JOB_LOCATION'
+                            AND (
+                                (
+                                    classification_remote_scope IN ('REMOTE', 'HYBRID')
+                                    AND LOWER(COALESCE(source_platform_guess, '')) = 'lever'
+                                )
+                                OR (
+                                    classification_remote_scope IN ('REMOTE', 'HYBRID')
+                                    AND LOWER(COALESCE(source_platform_guess, '')) = 'workday'
+                                )
+                            )
+                        )
+                    )
+                )
+            ) AS is_restricting_location_evidence
+    FROM prepared_roles
+),
+
 prepared AS (
     SELECT
         *
@@ -254,12 +334,8 @@ prepared AS (
             , ''
         ) AS location_object_path
         , CASE
-            WHEN country_field_role = 'JOB_LOCATION'
-                AND classification_remote_scope = 'ONSITE'
-                AND raw_country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT')
-                AND COALESCE(can_restrict, FALSE)
-                THEN 'INCLUDED'
-            WHEN country_field_role = 'JOB_LOCATION' THEN 'UNKNOWN'
+            WHEN is_restricting_location_evidence THEN 'INCLUDED'
+            WHEN is_location_evidence_role THEN 'UNKNOWN'
             WHEN raw_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT')
                 AND country_field_role IN (
                     'APPLICANT_LOCATION_REQUIREMENTS'
@@ -285,13 +361,11 @@ prepared AS (
             ELSE 'UNKNOWN'
         END AS evidence_direction
         , CASE
-            WHEN country_field_role = 'JOB_LOCATION'
-                AND classification_remote_scope = 'ONSITE'
+            WHEN is_restricting_location_evidence
+                AND country_field_role = 'JOB_LOCATION'
                 AND REGEXP_CONTAINS(LOWER(COALESCE(json_path, '')), r'\.addresscountry$')
                 THEN 'ATOMIC'
-            WHEN country_field_role = 'JOB_LOCATION'
-                AND classification_remote_scope = 'ONSITE'
-                THEN 'TEXT'
+            WHEN is_restricting_location_evidence THEN 'TEXT'
             WHEN country_field_role IN (
                 'APPLICANT_LOCATION_REQUIREMENTS'
                 , 'LLM_EXCLUDED_COUNTRY'
@@ -302,13 +376,11 @@ prepared AS (
             ELSE 'NONE'
         END AS country_match_mode
         , CASE
-            WHEN country_field_role = 'JOB_LOCATION'
-                AND classification_remote_scope = 'ONSITE'
+            WHEN is_restricting_location_evidence
+                AND country_field_role = 'JOB_LOCATION'
                 AND REGEXP_CONTAINS(LOWER(COALESCE(json_path, '')), r'\.addresscountry$')
                 THEN 'ATOMIC'
-            WHEN country_field_role = 'JOB_LOCATION'
-                AND classification_remote_scope = 'ONSITE'
-                THEN 'TEXT'
+            WHEN is_restricting_location_evidence THEN 'TEXT'
             WHEN country_field_role IN (
                 'APPLICANT_LOCATION_REQUIREMENTS'
                 , 'LLM_EXCLUDED_GROUP'
@@ -318,7 +390,7 @@ prepared AS (
             WHEN country_field_role = 'NORMALIZED_TEXT' THEN 'TEXT'
             ELSE 'NONE'
         END AS country_group_match_mode
-    FROM raw_evidence
+    FROM prepared_inputs
 ),
 
 structured_country_context AS (
@@ -779,6 +851,9 @@ SELECT * EXCEPT (
     , location_object_path
     , country_match_mode
     , country_group_match_mode
+    , is_location_evidence_role
+    , is_reviewed_platform_location_role
+    , is_restricting_location_evidence
     , duplicate_rank
 )
 FROM deduplicated

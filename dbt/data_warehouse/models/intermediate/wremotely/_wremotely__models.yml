@@ -354,8 +354,11 @@ models:
       Unmatched heuristic Remote/Hybrid/Onsite location labels remain UNKNOWN
       rather than blocking publication; recognized taxonomy matches from those
       labels remain restrictive. Onsite structured country or region locations
-      may provide the default office country, while city-only values remain
-      unknown.
+      may provide the default office country. Explicitly restricting work-
+      location evidence from reviewed ATS platform roles may apply to any work
+      arrangement. Generic remote/hybrid physical locations remain non-
+      restricting except for reviewed Lever and Workday remote/hybrid role
+      locations. City-only values remain unknown.
     columns:
       - name: candidate_id
         data_tests:

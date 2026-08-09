@@ -55,12 +55,19 @@ Ireland`. Standalone subdivision names remain unmatched because CLDR uniqueness
 does not distinguish an administrative division from an identically named city,
 street, timezone, or colloquial region. Unknown, invalid, ambiguous,
 context-conflicting, and unmatched evidence remains visible for QA/RCA instead
-of being silently promoted. Physical job-location evidence remains
+of being silently promoted. Generic physical job-location evidence remains
 non-restrictive for remote and hybrid jobs. For an explicitly classified onsite
 job, a structured country or region job location may establish the default
-office country when the value is a validated country or subdivision match; a
-city-only value remains unknown. Applicant eligibility must still come from
-applicant-location or role-level evidence for remote and hybrid jobs.
+office country when the value is a validated country or subdivision match.
+Reviewed ATS platform work-location evidence may restrict any arrangement only
+when the producer marks it as restricting; canonical platform roles require a
+reviewed platform identity and legacy parser-specific roles require an exact
+role/source-system match. Explicitly classified onsite rows may use a mappable
+generic structured job location even when an older producer did not set that
+flag. Lever and Workday remote or hybrid JSON-LD job locations are the reviewed
+generic-role exceptions and still require producer restriction
+evidence. A city-only value remains unknown. Other remote and hybrid applicant
+eligibility must still come from applicant-location or role-level evidence.
 Structured country fields are used only to disambiguate those existing
 eligibility signals. An alias observed as a subcountry location under a
 different structured country more often than it is observed with its own

@@ -536,3 +536,65 @@ unit_tests:
       rows:
         - {candidate_id: candidate-onsite-composite-locality, evidence_direction: INCLUDED, matched_country_code: PH, match_source: COUNTRY_TEXT_ALIAS}
         - {candidate_id: candidate-onsite-city-only, evidence_direction: UNKNOWN, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+
+  - name: test_reviewed_platform_location_roles_are_consumed
+    description: >
+      Consumes explicitly restricting canonical and legacy ATS work-location
+      roles, accepts mappable generic onsite evidence, preserves the narrow
+      Lever and Workday JSON-LD exceptions, and keeps unrelated or unflagged
+      remote physical office locations non-restricting.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
+          - {candidate_id: canonical-workable, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 1, source_evidence_index: 1, country_field_role: PLATFORM_JOB_LOCATION, country_field_source_system: WORKABLE_WIDGET, source_platform_guess: workable, raw_country_eligibility_scope: RESTRICTED, raw_value: Singapore, can_restrict: true}
+          - {candidate_id: legacy-smartrecruiters, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 2, source_evidence_index: 1, country_field_role: SMARTRECRUITERS_MICRODATA, country_field_source_system: SMARTRECRUITERS_MICRODATA, source_platform_guess: smartrecruiters, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, can_restrict: true}
+          - {candidate_id: legacy-bamboohr, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 3, source_evidence_index: 1, country_field_role: BAMBOOHR_CAREERS_LIST, country_field_source_system: BAMBOOHR_CAREERS_LIST, source_platform_guess: bamboohr, raw_country_eligibility_scope: RESTRICTED, raw_value: Canada, can_restrict: true}
+          - {candidate_id: jobvite-nonrestricting, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 4, source_evidence_index: 1, country_field_role: JOBVITE_PRELOADED_DATA, country_field_source_system: JOBVITE_PRELOADED_DATA, source_platform_guess: jobvite, raw_country_eligibility_scope: UNKNOWN, raw_value: United States, can_restrict: false}
+          - {candidate_id: generic-remote-office, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 5, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: greenhouse, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+          - {candidate_id: lever-remote-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 6, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: lever, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+          - {candidate_id: generic-onsite-unflagged, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 7, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: greenhouse, raw_country_eligibility_scope: UNKNOWN, raw_value: Canada, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: false}
+          - {candidate_id: lever-hybrid-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 8, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: lever, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+          - {candidate_id: workday-remote-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 9, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: RESTRICTED, raw_value: Germany, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+          - {candidate_id: workday-remote-unflagged, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 10, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: UNKNOWN, raw_value: Germany, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: false}
+          - {candidate_id: workday-hybrid-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 11, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: RESTRICTED, raw_value: Canada, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: canonical-workable, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: legacy-smartrecruiters, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: ONSITE}
+          - {candidate_id: legacy-bamboohr, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
+          - {candidate_id: jobvite-nonrestricting, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: generic-remote-office, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: lever-remote-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: generic-onsite-unflagged, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: ONSITE}
+          - {candidate_id: lever-hybrid-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
+          - {candidate_id: workday-remote-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: workday-remote-unflagged, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
+          - {candidate_id: workday-hybrid-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: CA, country_name: Canada, alpha_3_code: CAN}
+          - {country_code: DE, country_name: Germany, alpha_3_code: DEU}
+          - {country_code: SG, country_name: Singapore, alpha_3_code: SGP}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows: []
+      - input: ref('wremotely__country_cldr_aliases')
+        rows: []
+      - input: ref('wremotely__country_subdivisions')
+        rows: []
+      - input: ref('wremotely__country_group_aliases')
+        rows: []
+    expect:
+      rows:
+        - {candidate_id: canonical-workable, evidence_direction: INCLUDED, matched_country_code: SG, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: legacy-smartrecruiters, evidence_direction: INCLUDED, matched_country_code: US, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: legacy-bamboohr, evidence_direction: INCLUDED, matched_country_code: CA, match_source: COUNTRY_TEXT_ALIAS}
+        - {candidate_id: jobvite-nonrestricting, evidence_direction: UNKNOWN, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+        - {candidate_id: generic-remote-office, evidence_direction: UNKNOWN, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+        - {candidate_id: lever-remote-location, evidence_direction: INCLUDED, matched_country_code: US, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: generic-onsite-unflagged, evidence_direction: INCLUDED, matched_country_code: CA, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: lever-hybrid-location, evidence_direction: INCLUDED, matched_country_code: US, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: workday-remote-location, evidence_direction: INCLUDED, matched_country_code: DE, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: workday-remote-unflagged, evidence_direction: UNKNOWN, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
+        - {candidate_id: workday-hybrid-location, evidence_direction: INCLUDED, matched_country_code: CA, match_source: ATOMIC_COUNTRY_ALIAS}
