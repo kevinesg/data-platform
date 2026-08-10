@@ -62,6 +62,46 @@ seeds:
               arguments:
                 values: ['exact_code', 'phrase']
 
+  - name: wremotely__location_country_aliases
+    description: >
+      Reviewed exact whole-location aliases for country mapping after
+      punctuation, case, and whitespace normalization. Rows may optionally be
+      scoped to one lowercase ATS platform. These aliases never match
+      substrings and do not replace the country or subdivision taxonomies.
+    columns:
+      - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+      - name: location_alias
+        data_tests:
+          - not_null
+      - name: source_platform_guess
+        description: Optional lowercase ATS platform scope for a location alias.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['ashby', 'bamboohr', 'jobvite', 'lever', 'smartrecruiters', 'workday']
+
+  - name: wremotely__global_location_aliases
+    description: >
+      Reviewed exact whole-location aliases that explicitly declare global
+      applicant eligibility. Rows are scoped to one lowercase ATS platform and
+      never match substrings.
+    columns:
+      - name: location_alias
+        data_tests:
+          - not_null
+      - name: source_platform_guess
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ashby']
+
   - name: wremotely__country_cldr_aliases
     description: >
       English country display names and alternatives generated from the stable

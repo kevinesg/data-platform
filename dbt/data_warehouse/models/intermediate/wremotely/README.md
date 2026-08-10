@@ -55,17 +55,35 @@ Ireland`. Standalone subdivision names remain unmatched because CLDR uniqueness
 does not distinguish an administrative division from an identically named city,
 street, timezone, or colloquial region. Unknown, invalid, ambiguous,
 context-conflicting, and unmatched evidence remains visible for QA/RCA instead
-of being silently promoted. Physical job-location evidence remains
+of being silently promoted. Generic physical job-location evidence remains
 non-restrictive for remote and hybrid jobs. For an explicitly classified onsite
 job, a structured country or region job location may establish the default
-office country when the value is a validated country or subdivision match; a
-city-only value remains unknown. Applicant eligibility must still come from
-applicant-location or role-level evidence for remote and hybrid jobs.
-Structured country fields are used only to disambiguate those existing
-eligibility signals. An alias observed as a subcountry location under a
+office country when the value is a validated country or subdivision match.
+Reviewed ATS platform work-location evidence may restrict any arrangement only
+when the producer marks it as restricting; canonical platform roles require a
+reviewed platform identity and legacy parser-specific roles require an exact
+role/source-system match. Explicitly classified onsite rows may use a mappable
+generic structured job location even when an older producer did not set that
+flag. Lever and Workday remote or hybrid JSON-LD job locations are the reviewed
+generic-role exceptions and still require producer restriction
+evidence. A city-only value remains unknown. Other remote and hybrid applicant
+eligibility must still come from applicant-location or role-level evidence.
+Reviewed exact-location aliases cover measured ATS formats such as full
+subdivision names, `city, subdivision-code` composites, and explicitly reviewed
+city labels. They match the complete normalized location value, may be scoped
+to one ATS platform, and never make standalone code fragments such as `NY`
+globally meaningful. Globally unambiguous subdivision names also map through
+the complete subdivision taxonomy when they are a terminal component preceded
+by another location component in explicitly restricting evidence. Bare
+subdivision names and country-colliding names remain unmatched unless reviewed
+as exact aliases. Raw location text remains available for later city and region
+serving fields. Structured country fields are used only to disambiguate those
+existing eligibility signals. An alias observed as a subcountry location under a
 different structured country more often than it is observed with its own
 country context is left unmatched unless the candidate has structured context
 supporting the country interpretation.
+Explicit reviewed global location labels are matched separately and produce
+global eligibility rather than a synthetic country.
 
 `int_wremotely__candidate_country_eligibility` keeps the validated eligibility
 contract compact at candidate grain. Global jobs are represented by scope and
