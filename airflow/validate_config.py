@@ -135,6 +135,7 @@ def validate_values(values: dict[str, str]) -> str | None:
         return error
 
     for name in (
+        "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS",
         "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT",
         "WREMOTELY_EXTRACT_WORKER_COUNT",
         "WREMOTELY_PLATFORM_WORKER_COUNT",
@@ -147,6 +148,9 @@ def validate_values(values: dict[str, str]) -> str | None:
     ):
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
+
+    if int(values["WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"]) > 1200:
+        return "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS must be no greater than 1200"
 
     if int(values["WREMOTELY_SOURCE_CRAWL_WORKER_COUNT"]) > 32:
         return "WREMOTELY_SOURCE_CRAWL_WORKER_COUNT must be no greater than 32"

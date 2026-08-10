@@ -176,6 +176,18 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
 
+    dbt_build = publication.get_task("dbt_build")
+    if dbt_build.execution_timeout != timedelta(minutes=20):
+        raise AssertionError(
+            "publish__wremotely_serving.dbt_build must have a 20-minute timeout"
+        )
+    if dbt_build.environment.get("DBT_JOB_EXECUTION_TIMEOUT_SECONDS") != os.environ[
+        "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
+    ]:
+        raise AssertionError(
+            "serving dbt build must pass its configured BigQuery job timeout"
+        )
+
     assert_publication_hold_environment(publication)
 
     serving_snapshot_command = publication.get_task("publish_serving_snapshot").command

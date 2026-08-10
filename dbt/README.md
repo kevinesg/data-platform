@@ -171,6 +171,12 @@ The committed profile defines `dev`, `qa`, and `prod` targets. Local dev uses
 `DBT_TARGET=dev`; deployed environments set `DBT_TARGET` to their environment
 name and use the profile embedded in the published dbt image.
 
+BigQuery query execution waits default to 300 seconds. A caller may set
+`DBT_JOB_EXECUTION_TIMEOUT_SECONDS` to a positive integer when one bounded
+workload needs a larger per-query wait. The wremotely serving DAG owns that
+override and passes 600 seconds from its Airflow environment; this adapter
+setting does not replace the DAG task's separate total execution timeout.
+
 ## End-To-End Dev Setup
 
 This section sets up the dbt component from workspace provisioning through

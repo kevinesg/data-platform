@@ -26,7 +26,7 @@ CRAWL_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
-DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
+SERVING_DBT_TASK_EXECUTION_TIMEOUT = timedelta(minutes=20)
 PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
@@ -401,6 +401,9 @@ dbt_environment = {
     "DBT_GOOGLE_APPLICATION_CREDENTIALS": DBT_CREDENTIALS_CONTAINER_PATH,
     "BIGQUERY_LOCATION": required_env("BIGQUERY_LOCATION"),
     "DBT_THREADS": optional_env("DBT_THREADS", "4"),
+    "DBT_JOB_EXECUTION_TIMEOUT_SECONDS": required_env(
+        "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
+    ),
 }
 
 wremotely_mounts = [
@@ -471,7 +474,7 @@ def create_dbt_build_task() -> DockerOperator:
         ],
         environment=dbt_environment,
         mounts=dbt_mounts,
-        execution_timeout=DBT_TASK_EXECUTION_TIMEOUT,
+        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
