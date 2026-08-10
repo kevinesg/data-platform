@@ -4,6 +4,7 @@ WITH publishable_jobs AS (
     SELECT
         job_id
         , country_eligibility_scope
+        , is_deleted
         , source_updated_at
         , dbt_updated_at
     FROM {{ ref('wremotely__serving_jobs') }}
@@ -25,6 +26,7 @@ prepared AS (
     FROM job_country_eligibility AS jce
     INNER JOIN publishable_jobs AS pj
         ON jce.job_id = pj.job_id
+    WHERE NOT pj.is_deleted
 ),
 
 final AS (

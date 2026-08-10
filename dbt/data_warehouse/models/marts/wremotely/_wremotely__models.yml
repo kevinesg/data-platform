@@ -173,8 +173,9 @@ models:
   - name: wremotely__job_country_eligibility
     description: >
       Compact serving bridge for explicit eligible countries and explicit
-      exclusions. Global jobs are represented by the job-level scope rather than
-      one bridge row per country.
+      exclusions on active jobs. Deleted job tombstones have no bridge rows.
+      Global jobs are represented by the job-level scope rather than one bridge
+      row per country.
     columns:
       - name: job_id
         data_tests:

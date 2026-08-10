@@ -49,7 +49,9 @@ while `dbt_updated_at` includes changes from linked tombstones so removing a job
 advances the company publication watermark.
 
 `wremotely__job_country_eligibility` contains the compact country bridge for
-explicit eligible countries and explicit exclusions. Global jobs stay compact on
+explicit eligible countries and explicit exclusions for active jobs. Deleted
+job tombstones remain only in `wremotely__serving_jobs`; they do not retain
+country bridge rows. Global jobs stay compact on
 `wremotely__serving_jobs.country_eligibility_scope`; they are not exploded to
 one row per country.
 
