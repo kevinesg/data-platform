@@ -1,12 +1,10 @@
 version: 2
 
 unit_tests:
-  - name: test_country_and_subdivision_text_disambiguation
+  - name: test_country_and_subdivision_text_disambiguation_for_country_name_collisions
     description: >
       Maps subdivision phrases containing conflicting country aliases to their
-      parent country, requires parent-country context for other subdivision
-      names, requires complete subdivision codes, preserves separate country
-      mentions, and does not reinterpret country names as subdivisions.
+      parent country while preserving an explicit country mention.
     model: int_wremotely__country_eligibility_evidence
     given:
       - input: ref('stg_wremotely__country_eligibility_extractions')
@@ -41,6 +39,47 @@ unit_tests:
             raw_value: Remote in Mexico
             json_path: null
             can_restrict: true
+      - input: ref('int_wremotely__latest_classifications')
+        rows:
+          - {candidate_id: candidate-new-jersey, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-new-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+          - {candidate_id: candidate-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
+      - input: ref('wremotely__countries')
+        rows:
+          - {country_code: JE, country_name: Jersey, alpha_3_code: JEY}
+          - {country_code: MX, country_name: Mexico, alpha_3_code: MEX}
+          - {country_code: US, country_name: United States, alpha_3_code: USA}
+      - input: ref('wremotely__country_aliases')
+        rows:
+          - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
+      - input: ref('wremotely__country_cldr_aliases')
+        rows:
+          - {country_code: CZ, alias: Czech Republic, match_kind: phrase}
+      - input: ref('wremotely__country_subdivisions')
+        rows:
+          - {subdivision_code: US-NJ, country_code: US, subdivision_name: New Jersey}
+          - {subdivision_code: US-NM, country_code: US, subdivision_name: New Mexico}
+      - input: ref('wremotely__country_group_aliases')
+        rows:
+          - {country_group_code: EU, alias: European Union}
+    expect:
+      rows:
+        - {candidate_id: candidate-new-jersey, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-new-mexico, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: candidate-mexico, matched_country_code: MX, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
+
+  - name: test_country_and_subdivision_text_disambiguation_for_parent_context
+    description: >
+      Requires parent-country context for subdivision names, preserves separate
+      country mentions, and does not reinterpret country names as subdivisions.
+    model: int_wremotely__country_eligibility_evidence
+    given:
+      - input: ref('stg_wremotely__country_eligibility_extractions')
+        rows:
           - candidate_id: candidate-ireland
             stage_run_id: stage-1
             classification_run_id: classification-1
@@ -73,9 +112,6 @@ unit_tests:
             can_restrict: true
       - input: ref('int_wremotely__latest_classifications')
         rows:
-          - {candidate_id: candidate-new-jersey, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
-          - {candidate_id: candidate-new-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
-          - {candidate_id: candidate-mexico, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
           - {candidate_id: candidate-ireland, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
           - {candidate_id: candidate-luxembourg, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
           - {candidate_id: candidate-ontario, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1}
@@ -85,13 +121,14 @@ unit_tests:
           - {country_code: CA, country_name: Canada, alpha_3_code: CAN}
           - {country_code: GB, country_name: United Kingdom, alpha_3_code: GBR}
           - {country_code: IE, country_name: Ireland, alpha_3_code: IRL}
-          - {country_code: JE, country_name: Jersey, alpha_3_code: JEY}
           - {country_code: LU, country_name: Luxembourg, alpha_3_code: LUX}
-          - {country_code: MX, country_name: Mexico, alpha_3_code: MEX}
-          - {country_code: US, country_name: United States, alpha_3_code: USA}
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows:
           - {country_code: CZ, alias: Czech Republic, match_kind: phrase}
@@ -100,16 +137,11 @@ unit_tests:
           - {subdivision_code: BE-WLX, country_code: BE, subdivision_name: Luxembourg}
           - {subdivision_code: CA-ON, country_code: CA, subdivision_name: Ontario}
           - {subdivision_code: GB-NIR, country_code: GB, subdivision_name: Northern Ireland}
-          - {subdivision_code: US-NJ, country_code: US, subdivision_name: New Jersey}
-          - {subdivision_code: US-NM, country_code: US, subdivision_name: New Mexico}
       - input: ref('wremotely__country_group_aliases')
         rows:
           - {country_group_code: EU, alias: European Union}
     expect:
       rows:
-        - {candidate_id: candidate-new-jersey, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
-        - {candidate_id: candidate-new-mexico, matched_country_code: US, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
-        - {candidate_id: candidate-mexico, matched_country_code: MX, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
         - {candidate_id: candidate-ireland, matched_country_code: GB, matched_country_group_code: null, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
         - {candidate_id: candidate-ireland, matched_country_code: IE, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
         - {candidate_id: candidate-luxembourg, matched_country_code: LU, matched_country_group_code: null, match_source: COUNTRY_TEXT_ALIAS}
@@ -200,6 +232,10 @@ unit_tests:
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows:
           - {country_code: CZ, alias: Czech Republic, match_kind: phrase}
@@ -260,6 +296,10 @@ unit_tests:
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows:
           - {country_code: US, alias: U.S., match_kind: phrase}
@@ -362,6 +402,10 @@ unit_tests:
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows:
           - {country_code: US, alias: U.S., match_kind: phrase}
@@ -432,6 +476,10 @@ unit_tests:
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: US, alias: United States of America, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows:
           - {country_code: US, alias: US, match_kind: exact_code}
@@ -476,6 +524,10 @@ unit_tests:
         rows:
           - {country_code: US, country_name: United States, alpha_3_code: USA}
       - input: ref('wremotely__country_aliases')
+        rows: []
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
         rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows: []
@@ -526,6 +578,10 @@ unit_tests:
       - input: ref('wremotely__country_aliases')
         rows:
           - {country_code: PH, alias: Philippines, match_kind: phrase}
+      - input: ref('wremotely__location_country_aliases')
+        rows: []
+      - input: ref('wremotely__global_location_aliases')
+        rows: []
       - input: ref('wremotely__country_cldr_aliases')
         rows: []
       - input: ref('wremotely__country_subdivisions')
@@ -546,43 +602,94 @@ unit_tests:
     model: int_wremotely__country_eligibility_evidence
     given:
       - input: ref('stg_wremotely__country_eligibility_extractions')
-        rows:
-          - {candidate_id: canonical-workable, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 1, source_evidence_index: 1, country_field_role: PLATFORM_JOB_LOCATION, country_field_source_system: WORKABLE_WIDGET, source_platform_guess: workable, raw_country_eligibility_scope: RESTRICTED, raw_value: Singapore, can_restrict: true}
-          - {candidate_id: legacy-smartrecruiters, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 2, source_evidence_index: 1, country_field_role: SMARTRECRUITERS_MICRODATA, country_field_source_system: SMARTRECRUITERS_MICRODATA, source_platform_guess: smartrecruiters, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, can_restrict: true}
-          - {candidate_id: legacy-bamboohr, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 3, source_evidence_index: 1, country_field_role: BAMBOOHR_CAREERS_LIST, country_field_source_system: BAMBOOHR_CAREERS_LIST, source_platform_guess: bamboohr, raw_country_eligibility_scope: RESTRICTED, raw_value: Canada, can_restrict: true}
-          - {candidate_id: jobvite-nonrestricting, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 4, source_evidence_index: 1, country_field_role: JOBVITE_PRELOADED_DATA, country_field_source_system: JOBVITE_PRELOADED_DATA, source_platform_guess: jobvite, raw_country_eligibility_scope: UNKNOWN, raw_value: United States, can_restrict: false}
-          - {candidate_id: generic-remote-office, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 5, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: greenhouse, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
-          - {candidate_id: lever-remote-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 6, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: lever, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
-          - {candidate_id: generic-onsite-unflagged, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 7, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: greenhouse, raw_country_eligibility_scope: UNKNOWN, raw_value: Canada, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: false}
-          - {candidate_id: lever-hybrid-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 8, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: lever, raw_country_eligibility_scope: RESTRICTED, raw_value: United States, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
-          - {candidate_id: workday-remote-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 9, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: RESTRICTED, raw_value: Germany, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
-          - {candidate_id: workday-remote-unflagged, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 10, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: UNKNOWN, raw_value: Germany, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: false}
-          - {candidate_id: workday-hybrid-location, stage_run_id: stage-1, classification_run_id: classification-1, source_record_index: 11, source_evidence_index: 1, country_field_role: JOB_LOCATION, country_field_source_system: JSONLD, source_platform_guess: workday, raw_country_eligibility_scope: RESTRICTED, raw_value: Canada, json_path: '$.documents[0].jobLocation.address.addressCountry', can_restrict: true}
+        format: sql
+        rows: |
+          SELECT
+              candidate_id
+              , 'stage-1' AS stage_run_id
+              , 'classification-1' AS classification_run_id
+              , source_record_index
+              , 1 AS source_evidence_index
+              , country_field_role
+              , country_field_source_system
+              , source_platform_guess
+              , raw_country_eligibility_scope
+              , raw_value
+              , json_path
+              , CAST(NULL AS STRING) AS rule
+              , can_restrict
+          FROM UNNEST([
+              STRUCT('canonical-workable' AS candidate_id, 1 AS source_record_index, 'PLATFORM_JOB_LOCATION' AS country_field_role, 'WORKABLE_WIDGET' AS country_field_source_system, 'workable' AS source_platform_guess, 'RESTRICTED' AS raw_country_eligibility_scope, 'Singapore' AS raw_value, CAST(NULL AS STRING) AS json_path, TRUE AS can_restrict)
+              , STRUCT('legacy-smartrecruiters', 2, 'SMARTRECRUITERS_MICRODATA', 'SMARTRECRUITERS_MICRODATA', 'smartrecruiters', 'RESTRICTED', 'United States', CAST(NULL AS STRING), TRUE)
+              , STRUCT('legacy-bamboohr', 3, 'BAMBOOHR_CAREERS_LIST', 'BAMBOOHR_CAREERS_LIST', 'bamboohr', 'RESTRICTED', 'Canada', CAST(NULL AS STRING), TRUE)
+              , STRUCT('jobvite-nonrestricting', 4, 'JOBVITE_PRELOADED_DATA', 'JOBVITE_PRELOADED_DATA', 'jobvite', 'UNKNOWN', 'United States', CAST(NULL AS STRING), FALSE)
+              , STRUCT('generic-remote-office', 5, 'JOB_LOCATION', 'JSONLD', 'greenhouse', 'RESTRICTED', 'United States', '$.documents[0].jobLocation.address.addressCountry', TRUE)
+              , STRUCT('lever-remote-location', 6, 'JOB_LOCATION', 'JSONLD', 'lever', 'RESTRICTED', 'United States', '$.documents[0].jobLocation.address.addressCountry', TRUE)
+              , STRUCT('generic-onsite-unflagged', 7, 'JOB_LOCATION', 'JSONLD', 'greenhouse', 'UNKNOWN', 'Canada', '$.documents[0].jobLocation.address.addressCountry', FALSE)
+              , STRUCT('lever-hybrid-location', 8, 'JOB_LOCATION', 'JSONLD', 'lever', 'RESTRICTED', 'United States', '$.documents[0].jobLocation.address.addressCountry', TRUE)
+              , STRUCT('workday-remote-location', 9, 'JOB_LOCATION', 'JSONLD', 'workday', 'RESTRICTED', 'Germany', '$.documents[0].jobLocation.address.addressCountry', TRUE)
+              , STRUCT('workday-remote-unflagged', 10, 'JOB_LOCATION', 'JSONLD', 'workday', 'UNKNOWN', 'Germany', '$.documents[0].jobLocation.address.addressCountry', FALSE)
+              , STRUCT('workday-hybrid-location', 11, 'JOB_LOCATION', 'JSONLD', 'workday', 'RESTRICTED', 'Canada', '$.documents[0].jobLocation.address.addressCountry', TRUE)
+              , STRUCT('jobvite-new-york', 12, 'PLATFORM_JOB_LOCATION', 'JOBVITE_PRELOADED_DATA', 'jobvite', 'RESTRICTED', 'New York, NY', CAST(NULL AS STRING), TRUE)
+              , STRUCT('lever-san-francisco', 13, 'JOB_LOCATION', 'JSONLD', 'lever', 'RESTRICTED', 'San Francisco', CAST(NULL AS STRING), TRUE)
+              , STRUCT('unreviewed-city-platform', 14, 'PLATFORM_JOB_LOCATION', 'WORKABLE_WIDGET', 'workable', 'RESTRICTED', 'San Francisco', CAST(NULL AS STRING), TRUE)
+              , STRUCT('standalone-ny', 15, 'PLATFORM_JOB_LOCATION', 'JOBVITE_PRELOADED_DATA', 'jobvite', 'RESTRICTED', 'NY', CAST(NULL AS STRING), TRUE)
+              , STRUCT('terminal-subdivision', 16, 'PLATFORM_JOB_LOCATION', 'BAMBOOHR_CAREERS_LIST', 'bamboohr', 'RESTRICTED', 'Carrollton, Texas', CAST(NULL AS STRING), TRUE)
+              , STRUCT('country-colliding-subdivision', 17, 'PLATFORM_JOB_LOCATION', 'BAMBOOHR_CAREERS_LIST', 'bamboohr', 'RESTRICTED', 'Macon, Georgia', CAST(NULL AS STRING), TRUE)
+              , STRUCT('bare-subdivision-name', 18, 'PLATFORM_JOB_LOCATION', 'BAMBOOHR_CAREERS_LIST', 'bamboohr', 'RESTRICTED', 'Texas', CAST(NULL AS STRING), TRUE)
+              , STRUCT('reviewed-global-location', 19, 'PLATFORM_JOB_LOCATION', 'ASHBY_POSTING_API', 'ashby', 'RESTRICTED', 'Remote - Global', CAST(NULL AS STRING), TRUE)
+          ])
       - input: ref('int_wremotely__latest_classifications')
-        rows:
-          - {candidate_id: canonical-workable, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: legacy-smartrecruiters, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: ONSITE}
-          - {candidate_id: legacy-bamboohr, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
-          - {candidate_id: jobvite-nonrestricting, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: generic-remote-office, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: lever-remote-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: generic-onsite-unflagged, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: ONSITE}
-          - {candidate_id: lever-hybrid-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
-          - {candidate_id: workday-remote-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: workday-remote-unflagged, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: REMOTE}
-          - {candidate_id: workday-hybrid-location, latest_classification_stage_run_id: stage-1, latest_classification_run_id: classification-1, latest_remote_scope: HYBRID}
+        format: sql
+        rows: |
+          SELECT
+              candidate_id
+              , 'stage-1' AS latest_classification_stage_run_id
+              , 'classification-1' AS latest_classification_run_id
+              , latest_remote_scope
+          FROM UNNEST([
+              STRUCT('canonical-workable' AS candidate_id, 'REMOTE' AS latest_remote_scope)
+              , STRUCT('legacy-smartrecruiters', 'ONSITE')
+              , STRUCT('legacy-bamboohr', 'HYBRID')
+              , STRUCT('jobvite-nonrestricting', 'REMOTE')
+              , STRUCT('generic-remote-office', 'REMOTE')
+              , STRUCT('lever-remote-location', 'REMOTE')
+              , STRUCT('generic-onsite-unflagged', 'ONSITE')
+              , STRUCT('lever-hybrid-location', 'HYBRID')
+              , STRUCT('workday-remote-location', 'REMOTE')
+              , STRUCT('workday-remote-unflagged', 'REMOTE')
+              , STRUCT('workday-hybrid-location', 'HYBRID')
+              , STRUCT('jobvite-new-york', 'ONSITE')
+              , STRUCT('lever-san-francisco', 'REMOTE')
+              , STRUCT('unreviewed-city-platform', 'ONSITE')
+              , STRUCT('standalone-ny', 'ONSITE')
+              , STRUCT('terminal-subdivision', 'ONSITE')
+              , STRUCT('country-colliding-subdivision', 'ONSITE')
+              , STRUCT('bare-subdivision-name', 'ONSITE')
+              , STRUCT('reviewed-global-location', 'REMOTE')
+          ])
       - input: ref('wremotely__countries')
         rows:
           - {country_code: CA, country_name: Canada, alpha_3_code: CAN}
           - {country_code: DE, country_name: Germany, alpha_3_code: DEU}
+          - {country_code: GE, country_name: Georgia, alpha_3_code: GEO}
           - {country_code: SG, country_name: Singapore, alpha_3_code: SGP}
           - {country_code: US, country_name: United States, alpha_3_code: USA}
       - input: ref('wremotely__country_aliases')
         rows: []
+      - input: ref('wremotely__location_country_aliases')
+        rows:
+          - {country_code: US, location_alias: 'New York, NY', source_platform_guess: null}
+          - {country_code: US, location_alias: San Francisco, source_platform_guess: lever}
+      - input: ref('wremotely__global_location_aliases')
+        rows:
+          - {location_alias: Remote - Global, source_platform_guess: ashby}
       - input: ref('wremotely__country_cldr_aliases')
         rows: []
       - input: ref('wremotely__country_subdivisions')
-        rows: []
+        rows:
+          - {subdivision_code: US-GA, country_code: US, subdivision_name: Georgia}
+          - {subdivision_code: US-TX, country_code: US, subdivision_name: Texas}
       - input: ref('wremotely__country_group_aliases')
         rows: []
     expect:
@@ -598,3 +705,11 @@ unit_tests:
         - {candidate_id: workday-remote-location, evidence_direction: INCLUDED, matched_country_code: DE, match_source: ATOMIC_COUNTRY_ALIAS}
         - {candidate_id: workday-remote-unflagged, evidence_direction: UNKNOWN, matched_country_code: null, match_source: UNKNOWN_OR_INVALID}
         - {candidate_id: workday-hybrid-location, evidence_direction: INCLUDED, matched_country_code: CA, match_source: ATOMIC_COUNTRY_ALIAS}
+        - {candidate_id: jobvite-new-york, evidence_direction: INCLUDED, matched_country_code: US, match_source: REVIEWED_LOCATION_COUNTRY_ALIAS}
+        - {candidate_id: lever-san-francisco, evidence_direction: INCLUDED, matched_country_code: US, match_source: REVIEWED_LOCATION_COUNTRY_ALIAS}
+        - {candidate_id: unreviewed-city-platform, evidence_direction: INCLUDED, matched_country_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: standalone-ny, evidence_direction: INCLUDED, matched_country_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: terminal-subdivision, evidence_direction: INCLUDED, matched_country_code: US, match_source: COUNTRY_SUBDIVISION_TEXT_ALIAS}
+        - {candidate_id: country-colliding-subdivision, evidence_direction: INCLUDED, matched_country_code: null, match_source: AMBIGUOUS_COUNTRY_ALIAS}
+        - {candidate_id: bare-subdivision-name, evidence_direction: INCLUDED, matched_country_code: null, match_source: UNMATCHED_RESTRICTIVE_EVIDENCE}
+        - {candidate_id: reviewed-global-location, evidence_direction: GLOBAL, matched_country_code: null, match_source: REVIEWED_GLOBAL_LOCATION_ALIAS}

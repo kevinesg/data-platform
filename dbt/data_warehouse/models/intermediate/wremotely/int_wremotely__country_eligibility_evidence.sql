@@ -95,6 +95,45 @@ country_text_match_phrases AS (
     WHERE country.match_kind = 'phrase'
 ),
 
+normalized_reviewed_location_country_aliases AS (
+    SELECT
+        country_code
+        , LOWER(NULLIF(TRIM(source_platform_guess), '')) AS source_platform_guess
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE_AND_CASEFOLD(location_alias, NFKD)
+                , r'[^\p{L}\p{N}]+'
+                , ' '
+            )
+        ) AS alias_search_text
+    FROM {{ ref('wremotely__location_country_aliases') }}
+    WHERE NULLIF(TRIM(location_alias), '') IS NOT NULL
+),
+
+reviewed_location_country_aliases AS (
+    SELECT DISTINCT
+        country_code
+        , source_platform_guess
+        , alias_search_text
+    FROM normalized_reviewed_location_country_aliases
+    WHERE alias_search_text != ''
+),
+
+reviewed_global_location_aliases AS (
+    SELECT DISTINCT
+        LOWER(TRIM(source_platform_guess)) AS source_platform_guess
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE_AND_CASEFOLD(location_alias, NFKD)
+                , r'[^\p{L}\p{N}]+'
+                , ' '
+            )
+        ) AS alias_search_text
+    FROM {{ ref('wremotely__global_location_aliases') }}
+    WHERE NULLIF(TRIM(location_alias), '') IS NOT NULL
+        AND NULLIF(TRIM(source_platform_guess), '') IS NOT NULL
+),
+
 country_subdivision_alias_candidates AS (
     SELECT
         subdivision_code
@@ -182,6 +221,18 @@ unambiguous_subdivision_match_phrases AS (
     WHERE country.alias_search_text IS NULL
 ),
 
+country_alias_subdivision_collisions AS (
+    SELECT DISTINCT
+        country.country_code
+        , country.alias_search_text
+    FROM country_match_phrases AS country
+    INNER JOIN subdivision_match_phrases AS subdivision
+        ON country.alias_search_text = subdivision.alias_search_text
+        AND country.match_kind = subdivision.match_kind
+        AND country.country_code != subdivision.country_code
+    WHERE country.match_kind = 'phrase'
+),
+
 normalized_country_group_aliases AS (
     SELECT
         country_group_code
@@ -230,6 +281,25 @@ country_group_match_phrases AS (
 prepared_roles AS (
     SELECT
         *
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE_AND_CASEFOLD(COALESCE(raw_value, ''), NFKD)
+                , r'[^\p{L}\p{N}]+'
+                , ' '
+            )
+        ) AS normalized_raw_value
+        , TRIM(
+            REGEXP_REPLACE(
+                NORMALIZE(COALESCE(raw_value, ''), NFKD)
+                , r'[^A-Za-z0-9]+'
+                , ' '
+            )
+        ) AS case_sensitive_search_text
+        , REGEXP_REPLACE(
+            LOWER(COALESCE(json_path, ''))
+            , r'(\.address)?\.(addresscountry|addressregion|addresslocality|name)$'
+            , ''
+        ) AS location_object_path
         , country_field_role IN (
             'JOB_LOCATION'
             , 'PLATFORM_JOB_LOCATION'
@@ -277,27 +347,34 @@ prepared_roles AS (
 
 prepared_inputs AS (
     SELECT
-        *
-        , raw_country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT')
+        prepared_roles.*
+        , global_alias.alias_search_text IS NOT NULL AS is_reviewed_global_location
+        , prepared_roles.raw_country_eligibility_scope NOT IN ('GLOBAL', 'GLOBAL_EXCEPT')
             AND (
                 (
-                    country_field_role = 'JOB_LOCATION'
-                    AND classification_remote_scope = 'ONSITE'
+                    prepared_roles.country_field_role = 'JOB_LOCATION'
+                    AND prepared_roles.classification_remote_scope = 'ONSITE'
                 )
                 OR (
-                    COALESCE(can_restrict, FALSE)
+                    COALESCE(prepared_roles.can_restrict, FALSE)
                     AND (
-                        is_reviewed_platform_location_role
+                        prepared_roles.is_reviewed_platform_location_role
                         OR (
-                            country_field_role = 'JOB_LOCATION'
+                            prepared_roles.country_field_role = 'JOB_LOCATION'
                             AND (
                                 (
-                                    classification_remote_scope IN ('REMOTE', 'HYBRID')
-                                    AND LOWER(COALESCE(source_platform_guess, '')) = 'lever'
+                                    prepared_roles.classification_remote_scope
+                                        IN ('REMOTE', 'HYBRID')
+                                    AND LOWER(COALESCE(
+                                        prepared_roles.source_platform_guess, ''
+                                    )) = 'lever'
                                 )
                                 OR (
-                                    classification_remote_scope IN ('REMOTE', 'HYBRID')
-                                    AND LOWER(COALESCE(source_platform_guess, '')) = 'workday'
+                                    prepared_roles.classification_remote_scope
+                                        IN ('REMOTE', 'HYBRID')
+                                    AND LOWER(COALESCE(
+                                        prepared_roles.source_platform_guess, ''
+                                    )) = 'workday'
                                 )
                             )
                         )
@@ -305,35 +382,22 @@ prepared_inputs AS (
                 )
             ) AS is_restricting_location_evidence
     FROM prepared_roles
+    LEFT JOIN reviewed_global_location_aliases AS global_alias
+        ON global_alias.source_platform_guess
+            = LOWER(COALESCE(prepared_roles.source_platform_guess, ''))
+        AND global_alias.alias_search_text = prepared_roles.normalized_raw_value
 ),
 
 prepared AS (
     SELECT
         *
         , CONCAT(
-            stage_run_id, '|', classification_run_id, '|', CAST(source_record_index AS STRING), '|'
+            candidate_id, '|', stage_run_id, '|', classification_run_id, '|'
+            , CAST(source_record_index AS STRING), '|'
             , CAST(COALESCE(source_evidence_index, 0) AS STRING)
         ) AS evidence_id
-        , TRIM(
-            REGEXP_REPLACE(
-                NORMALIZE_AND_CASEFOLD(COALESCE(raw_value, ''), NFKD)
-                , r'[^\p{L}\p{N}]+'
-                , ' '
-            )
-        ) AS normalized_raw_value
-        , TRIM(
-            REGEXP_REPLACE(
-                NORMALIZE(COALESCE(raw_value, ''), NFKD)
-                , r'[^A-Za-z0-9]+'
-                , ' '
-            )
-        ) AS case_sensitive_search_text
-        , REGEXP_REPLACE(
-            LOWER(COALESCE(json_path, ''))
-            , r'(\.address)?\.(addresscountry|addressregion|addresslocality|name)$'
-            , ''
-        ) AS location_object_path
         , CASE
+            WHEN is_reviewed_global_location THEN 'GLOBAL'
             WHEN is_restricting_location_evidence THEN 'INCLUDED'
             WHEN is_location_evidence_role THEN 'UNKNOWN'
             WHEN raw_country_eligibility_scope IN ('GLOBAL', 'GLOBAL_EXCEPT')
@@ -456,6 +520,29 @@ observed_context_conflicting_country_aliases AS (
     ))
 ),
 
+conflicting_country_aliases AS (
+    SELECT
+        country_code
+        , alias_search_text
+        , LOGICAL_AND(location_only) AS location_only
+    FROM (
+        SELECT
+            country_code
+            , alias_search_text
+            , FALSE AS location_only
+        FROM observed_context_conflicting_country_aliases
+
+        UNION ALL
+
+        SELECT
+            country_code
+            , alias_search_text
+            , TRUE AS location_only
+        FROM country_alias_subdivision_collisions
+    )
+    GROUP BY country_code, alias_search_text
+),
+
 context_conflicting_country_matches AS (
     SELECT DISTINCT
         p.evidence_id
@@ -475,7 +562,7 @@ context_conflicting_country_matches AS (
                 , CONCAT(' ', a.alias_search_text, ' ')
             ) > 0
         )
-    INNER JOIN observed_context_conflicting_country_aliases AS conflict
+    INNER JOIN conflicting_country_aliases AS conflict
         ON a.country_code = conflict.country_code
         AND a.alias_search_text = conflict.alias_search_text
     LEFT JOIN structured_country_context AS supporting_context
@@ -489,6 +576,7 @@ context_conflicting_country_matches AS (
         )
     WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
         AND supporting_context.candidate_id IS NULL
+        AND (NOT conflict.location_only OR p.is_location_evidence_role)
 ),
 
 global_or_unknown_evidence AS (
@@ -496,7 +584,11 @@ global_or_unknown_evidence AS (
         *
         , CAST(NULL AS STRING) AS matched_country_code
         , CAST(NULL AS STRING) AS matched_country_group_code
-        , IF(evidence_direction = 'GLOBAL', 'GLOBAL_SCOPE', 'UNKNOWN_OR_INVALID') AS match_source
+        , IF(
+            is_reviewed_global_location
+            , 'REVIEWED_GLOBAL_LOCATION_ALIAS'
+            , IF(evidence_direction = 'GLOBAL', 'GLOBAL_SCOPE', 'UNKNOWN_OR_INVALID')
+        ) AS match_source
     FROM prepared
     WHERE evidence_direction IN ('GLOBAL', 'UNKNOWN')
 ),
@@ -656,6 +748,20 @@ subdivision_text_matches AS (
             candidate.matched_alias_kind = 'exact_code'
             OR context.has_parent_country_context
             OR context.contains_country_name
+            OR (
+                candidate.matched_alias_kind = 'phrase'
+                AND candidate.is_restricting_location_evidence
+                AND candidate.case_sensitive_search_text
+                    != candidate.matched_alias_case_sensitive_text
+                AND REGEXP_CONTAINS(
+                    candidate.case_sensitive_search_text
+                    , CONCAT(
+                        r'(^| )'
+                        , candidate.matched_alias_case_sensitive_text
+                        , r'$'
+                    )
+                )
+            )
         )
 ),
 
@@ -762,6 +868,23 @@ country_group_text_evidence AS (
         AND p.country_group_match_mode = 'TEXT'
 ),
 
+reviewed_location_country_evidence AS (
+    SELECT
+        p.*
+        , alias.country_code AS matched_country_code
+        , CAST(NULL AS STRING) AS matched_country_group_code
+        , 'REVIEWED_LOCATION_COUNTRY_ALIAS' AS match_source
+    FROM prepared AS p
+    INNER JOIN reviewed_location_country_aliases AS alias
+        ON p.normalized_raw_value = alias.alias_search_text
+        AND (
+            alias.source_platform_guess IS NULL
+            OR alias.source_platform_guess = LOWER(COALESCE(p.source_platform_guess, ''))
+        )
+    WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
+        AND p.is_restricting_location_evidence
+),
+
 matched_restrictive_evidence AS (
     SELECT * FROM atomic_country_evidence
     UNION ALL
@@ -772,38 +895,32 @@ matched_restrictive_evidence AS (
     SELECT * FROM atomic_country_group_evidence
     UNION ALL
     SELECT * FROM country_group_text_evidence
-),
-
-unmatched_location_label_evidence AS (
-    SELECT
-        p.* REPLACE ('UNKNOWN' AS evidence_direction)
-        , CAST(NULL AS STRING) AS matched_country_code
-        , CAST(NULL AS STRING) AS matched_country_group_code
-        , 'UNMATCHED_LOCATION_LABEL' AS match_source
-    FROM prepared AS p
-    LEFT JOIN matched_restrictive_evidence AS matched
-        ON matched.evidence_id = p.evidence_id
-    LEFT JOIN (
-        SELECT DISTINCT evidence_id
-        FROM context_conflicting_country_matches
-    ) AS conflict
-        ON conflict.evidence_id = p.evidence_id
-    WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
-        AND p.rule = 'location_shaped_remote_label'
-        AND matched.evidence_id IS NULL
-        AND conflict.evidence_id IS NULL
+    UNION ALL
+    SELECT * FROM reviewed_location_country_evidence
 ),
 
 unmatched_restrictive_evidence AS (
     SELECT
-        p.*
+        p.* REPLACE (
+            IF(
+                (
+                    p.country_field_role = 'JOB_LOCATION'
+                    OR COALESCE(p.rule, '') = 'location_shaped_remote_label'
+                )
+                AND conflict.evidence_id IS NULL
+                , 'UNKNOWN'
+                , p.evidence_direction
+            ) AS evidence_direction
+        )
         , CAST(NULL AS STRING) AS matched_country_code
         , CAST(NULL AS STRING) AS matched_country_group_code
-        , IF(
-            conflict.evidence_id IS NOT NULL
-            , 'AMBIGUOUS_COUNTRY_ALIAS'
-            , 'UNMATCHED_RESTRICTIVE_EVIDENCE'
-        ) AS match_source
+        , CASE
+            WHEN conflict.evidence_id IS NOT NULL THEN 'AMBIGUOUS_COUNTRY_ALIAS'
+            WHEN p.country_field_role = 'JOB_LOCATION' THEN 'UNKNOWN_OR_INVALID'
+            WHEN COALESCE(p.rule, '') = 'location_shaped_remote_label'
+                THEN 'UNMATCHED_LOCATION_LABEL'
+            ELSE 'UNMATCHED_RESTRICTIVE_EVIDENCE'
+        END AS match_source
     FROM prepared AS p
     LEFT JOIN matched_restrictive_evidence AS matched
         ON matched.evidence_id = p.evidence_id
@@ -814,18 +931,12 @@ unmatched_restrictive_evidence AS (
         ON conflict.evidence_id = p.evidence_id
     WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
         AND matched.evidence_id IS NULL
-        AND NOT (
-            COALESCE(p.rule, '') = 'location_shaped_remote_label'
-            AND conflict.evidence_id IS NULL
-        )
 ),
 
 combined AS (
     SELECT * FROM global_or_unknown_evidence
     UNION ALL
     SELECT * FROM matched_restrictive_evidence
-    UNION ALL
-    SELECT * FROM unmatched_location_label_evidence
     UNION ALL
     SELECT * FROM unmatched_restrictive_evidence
 ),
@@ -853,6 +964,7 @@ SELECT * EXCEPT (
     , country_group_match_mode
     , is_location_evidence_role
     , is_reviewed_platform_location_role
+    , is_reviewed_global_location
     , is_restricting_location_evidence
     , duplicate_rank
 )

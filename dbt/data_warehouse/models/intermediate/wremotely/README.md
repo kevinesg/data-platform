@@ -68,11 +68,22 @@ flag. Lever and Workday remote or hybrid JSON-LD job locations are the reviewed
 generic-role exceptions and still require producer restriction
 evidence. A city-only value remains unknown. Other remote and hybrid applicant
 eligibility must still come from applicant-location or role-level evidence.
-Structured country fields are used only to disambiguate those existing
-eligibility signals. An alias observed as a subcountry location under a
+Reviewed exact-location aliases cover measured ATS formats such as full
+subdivision names, `city, subdivision-code` composites, and explicitly reviewed
+city labels. They match the complete normalized location value, may be scoped
+to one ATS platform, and never make standalone code fragments such as `NY`
+globally meaningful. Globally unambiguous subdivision names also map through
+the complete subdivision taxonomy when they are a terminal component preceded
+by another location component in explicitly restricting evidence. Bare
+subdivision names and country-colliding names remain unmatched unless reviewed
+as exact aliases. Raw location text remains available for later city and region
+serving fields. Structured country fields are used only to disambiguate those
+existing eligibility signals. An alias observed as a subcountry location under a
 different structured country more often than it is observed with its own
 country context is left unmatched unless the candidate has structured context
 supporting the country interpretation.
+Explicit reviewed global location labels are matched separately and produce
+global eligibility rather than a synthetic country.
 
 `int_wremotely__candidate_country_eligibility` keeps the validated eligibility
 contract compact at candidate grain. Global jobs are represented by scope and
