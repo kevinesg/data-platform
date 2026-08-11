@@ -21,8 +21,11 @@ running Docker:
 - `WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS`: service-account JSON for the
   private extract/load runtime.
 - `DBT_GOOGLE_APPLICATION_CREDENTIALS`: service-account JSON for dbt.
+- `WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS`: maximum time dbt waits for one
+  BigQuery job-creation request in the serving build. Configure `60` seconds
+  in dev, QA, and prod; the serving DAG passes it only to its dbt container.
 - `WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS`: maximum time dbt waits for
-  one submitted BigQuery job in the serving build. Configure `600` seconds in
+  one submitted BigQuery job in the serving build. Configure `900` seconds in
   dev, QA, and prod; the serving DAG passes it to the dbt container without
   changing other Airflow dbt tasks.
 - `WREMOTELY_ETL_ARTIFACTS_DIR`: durable local artifact directory mounted into
@@ -916,11 +919,17 @@ someone manually deletes verified external data.
 - `dbt_build` rebuilds deterministic tables from warehouse state visible when
   it runs. It is repeatable while raw inputs are unchanged, but an old task
   cleared after newer raw loads consumes the newer warehouse state. It is not a
-  run-pinned historical reconstruction. The serving build has a 20-minute
-  Airflow execution timeout per attempt. Individual BigQuery jobs use
-  `WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS`; exceeding either bound fails
-  the attempt, stops and removes the task container, and preserves the last
-  complete downstream serving publication.
+  run-pinned historical reconstruction. dbt unit tests must pass against dev
+  before the immutable image is published but are excluded from this
+  production-data build; all selected data tests remain blocking. The serving
+  build has a 30-minute Airflow execution timeout per attempt. BigQuery job
+  creation and execution
+  use `WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS` and
+  `WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS`. Exceeding a bound fails the
+  attempt, stops and removes the task container, and preserves the last
+  complete downstream serving publication. If Docker has already removed the
+  container, timeout cleanup treats that absence as an idempotent no-op so the
+  original Airflow timeout remains the reported failure.
 - `publish_serving_snapshot` is content-addressed. Replaying the same completed
   run verifies the bundled approved-source checksum recorded by the private
   runtime and the source-coverage aggregate before returning its publication
