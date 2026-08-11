@@ -50,7 +50,8 @@ jobs:
       DBT_DATASET: dbt_ci
       DBT_GOOGLE_APPLICATION_CREDENTIALS: /tmp/data-platform-dbt-ci-service-account.json
       DBT_THREADS: "4"
-      DBT_JOB_EXECUTION_TIMEOUT_SECONDS: "600"
+      DBT_JOB_CREATION_TIMEOUT_SECONDS: "60"
+      DBT_JOB_EXECUTION_TIMEOUT_SECONDS: "900"
       BIGQUERY_LOCATION: US
 
     steps:

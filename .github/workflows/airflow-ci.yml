@@ -85,7 +85,8 @@ jobs:
               -e DBT_TARGET=dev \
               -e DBT_DATASET=dbt_ci \
               -e DBT_THREADS=4 \
-              -e WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS=600 \
+              -e WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS=60 \
+              -e WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS=900 \
               -e BIGQUERY_LOCATION=US \
               -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
               -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \

@@ -197,10 +197,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dbt-bigquery" },
+    { name = "dbt-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbt-bigquery", specifier = ">=1.11.1,<2" }]
+requires-dist = [
+    { name = "dbt-bigquery", specifier = ">=1.12.0,<2" },
+    { name = "dbt-core", specifier = ">=1.12.0,<1.13" },
+]
 
 [[package]]
 name = "db-dtypes"
@@ -219,7 +223,7 @@ wheels = [
 
 [[package]]
 name = "dbt-adapters"
-version = "1.24.2"
+version = "1.24.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agate" },
@@ -230,14 +234,14 @@ dependencies = [
     { name = "pytz" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/46/6c/65190ca22dea211471275355c69fd84925d2e1712993c5868352234cb084/dbt_adapters-1.24.2.tar.gz", hash = "sha256:fb27141acdfad1188bcb584e9b9b1976cb9ae718618fcac132660fdaeb9b11a4", size = 143779, upload-time = "2026-05-21T10:36:02.862Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/d4/bea32dd730def5b875a76c05d281d397ed720b9184d936cc4cedac605948/dbt_adapters-1.24.5.tar.gz", hash = "sha256:87de096a0d5b219905f1079b002f13e3447ffb63558f4f3c5b7278670d198acb", size = 146532, upload-time = "2026-07-15T07:18:49.036Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/d5/e1f3d6a1bfa472ea00c3caa76301b73ec0e4f87b32468111ae7d31c16efa/dbt_adapters-1.24.2-py3-none-any.whl", hash = "sha256:f6afcef287165984d6e785bf1661473fdfbb6d2e723eaebd00355df2985124da", size = 176555, upload-time = "2026-05-21T10:36:00.965Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/c0/07f0e315458128c6ef246ba9698dc0f5e9333394ab8844508adac468c617/dbt_adapters-1.24.5-py3-none-any.whl", hash = "sha256:32345118b921160722a13f12c3e369b9d59a0fb8fb9b3297e29d8cd53f973411", size = 177259, upload-time = "2026-07-15T07:18:47.314Z" },
 ]
 
 [[package]]
 name = "dbt-bigquery"
-version = "1.11.1"
+version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dbt-adapters" },
@@ -251,9 +255,9 @@ dependencies = [
     { name = "google-cloud-storage" },
     { name = "nbformat" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/15/8becb292fe176a730c4b92dee22a17048379cc3cbbd06b8d02fde96c5469/dbt_bigquery-1.11.1.tar.gz", hash = "sha256:e0a4b67b6670cf1a23d53cc6701d3d1192ab49ba72b0f4784b16330fdd9b3898", size = 164123, upload-time = "2026-03-03T20:43:34.834Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/32/c7328651d7ef71b5458d47a1838f8608e6e874b0497df83b5ecdcb96f68a/dbt_bigquery-1.12.0.tar.gz", hash = "sha256:088373ddd10af352457b484aa979ab2eecbecb13a7c1e3f5df41fd7d4e387800", size = 206770, upload-time = "2026-07-16T15:57:54.127Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/e5/2f22192541ed1d1dd01f6df7574fc5d7520d60c5db8fb9db67234fca9ab3/dbt_bigquery-1.11.1-py3-none-any.whl", hash = "sha256:4f53155366b4bcf1a38bbf9247589e3e18812ed2468e56c14676c649782eae5d", size = 103321, upload-time = "2026-03-03T20:43:33.485Z" },
+    { url = "https://files.pythonhosted.org/packages/04/a5/2f8f6af5419e6b066d9e1ca0503f7bd35a889d6e3cd7a164df82f0e2fab9/dbt_bigquery-1.12.0-py3-none-any.whl", hash = "sha256:5fb87abffbd9a175a75cc85e4d1d21c5d63c3d9a7030b293901fa584f8315af4", size = 114053, upload-time = "2026-07-16T15:57:52.618Z" },
 ]
 
 [[package]]
@@ -282,7 +286,7 @@ wheels = [
 
 [[package]]
 name = "dbt-core"
-version = "1.11.11"
+version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agate" },
@@ -290,17 +294,19 @@ dependencies = [
     { name = "daff" },
     { name = "dbt-adapters" },
     { name = "dbt-common" },
+    { name = "dbt-core-experimental-parser" },
     { name = "dbt-extractor" },
     { name = "dbt-protos" },
-    { name = "dbt-semantic-interfaces" },
     { name = "jinja2" },
     { name = "jsonschema" },
     { name = "mashumaro", extra = ["msgpack"] },
+    { name = "metricflow" },
     { name = "networkx" },
     { name = "packaging" },
     { name = "pathspec" },
     { name = "protobuf" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "pytz" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -308,10 +314,16 @@ dependencies = [
     { name = "sqlparse" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/62/af8f4ab1e3e979b5677e876444f3a9c1b1021c2d4e77143e80f421bdc1f7/dbt_core-1.11.11.tar.gz", hash = "sha256:e53cfccc8c9c13a082e518bf80cf3bb33c2f1fdc3cab48ec822ef93737eccb81", size = 973079, upload-time = "2026-05-20T11:10:01.8Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/a8/da65cff9c221b944040b35122ffcbaf0e7b583c6f0729a473c63d15536c5/dbt_core-1.12.0.tar.gz", hash = "sha256:f7d6a34f6600a371b8771e813f6b1566ab6d1fb8cea691619c791f527b1f8d7e", size = 1027023, upload-time = "2026-07-16T13:57:34.041Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/d2/9e1eb5d3c8f375d4e5523b9123b2ae25ea21d85abb044db2eff2e3ee9c1d/dbt_core-1.11.11-py3-none-any.whl", hash = "sha256:7f9e11f3f5400e20f40f544440800ace23fa0755086f87b08e9446181f8720e1", size = 1061938, upload-time = "2026-05-20T11:09:59.856Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/88/ebcb8fa7f2fd8e82ed1bbbd0950fe3717101f1c16d10ee3aa33fac520ed2/dbt_core-1.12.0-py3-none-any.whl", hash = "sha256:8a91ec6aabaf329efc603330b629e72551ea6be8321483d7c284c598541faaab", size = 1123180, upload-time = "2026-07-16T13:57:32.277Z" },
 ]
+
+[[package]]
+name = "dbt-core-experimental-parser"
+version = "2.0.0b1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/38/8a427d213b87eb2f6567840417251023196d9dd0b9a6b765ef3be7e90fdb/dbt_core_experimental_parser-2.0.0b1.tar.gz", hash = "sha256:72dda4c1269607934dc0fa24dc0495d74c508ecb3fdb3dbe01fac37d6c4b23de", size = 4469, upload-time = "2026-08-10T15:37:02.22Z" }
 
 [[package]]
 name = "dbt-extractor"
@@ -346,26 +358,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/91/42/95900473fad036d813da7785c33a27d5ccca9f0eae1065364cabbc1e40d1/dbt_protos-1.0.514.tar.gz", hash = "sha256:4429a8b0675140467206aaaf9d9468e619a9697f443e4b3921f297d01e4a77a0", size = 166219, upload-time = "2026-05-28T23:43:10.215Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/37/38/f56efc438ebbed7a3030c2b120f64ab40ca00185d0ae77c9adff88663555/dbt_protos-1.0.514-py3-none-any.whl", hash = "sha256:824c442f3be40d1048ac3969bda04564906c7103e20a0f3991a52e7b7d8b87cc", size = 238730, upload-time = "2026-05-28T23:43:08.76Z" },
-]
-
-[[package]]
-name = "dbt-semantic-interfaces"
-version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "importlib-metadata" },
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "more-itertools" },
-    { name = "pydantic" },
-    { name = "python-dateutil" },
-    { name = "pyyaml" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/91/c702d8fb143541fda10f5eb7a7a89f34bda38ee043ecb3e3653363d0c5a0/dbt_semantic_interfaces-0.9.0.tar.gz", hash = "sha256:5c921257dce8bb51c9ffb5479f2bdd959e16ebfb98ee833de6daa70788c47271", size = 93865, upload-time = "2025-07-09T20:06:30.454Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/82/41708b2b69d5fead88dea5ca0d863d6291da83ca6f1bd19246842d397e2b/dbt_semantic_interfaces-0.9.0-py3-none-any.whl", hash = "sha256:1b54c06ba89190a47a7f0563360930a0cce869e55b484ca09d261ade0e319155", size = 147008, upload-time = "2025-07-09T20:06:32.466Z" },
 ]
 
 [[package]]
@@ -851,6 +843,29 @@ msgpack = [
 ]
 
 [[package]]
+name = "metricflow"
+version = "0.211.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-metadata" },
+    { name = "jinja2" },
+    { name = "jsonschema" },
+    { name = "more-itertools" },
+    { name = "pydantic" },
+    { name = "python-dateutil" },
+    { name = "pyyaml" },
+    { name = "rapidfuzz" },
+    { name = "referencing" },
+    { name = "sqlglot" },
+    { name = "tabulate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4d/1c/2303b109a1e02216615d5c01cccf61a12d133f326388b9c881d32d00d182/metricflow-0.211.0.tar.gz", hash = "sha256:e15d0c24647f4498fa0926e87c61dd23b15205c9577566bcf848460d58f48bec", size = 1549648, upload-time = "2026-05-11T21:53:51.895Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/b7/de51d5d04ac43aeecbfea7741bf29da84fd5a04995e25a2b85abaa6ee807/metricflow-0.211.0-py3-none-any.whl", hash = "sha256:9cb83ccaa0c47363482fcc5cb57944a3f1af17ca948d90805524161f4e03d600", size = 1914356, upload-time = "2026-05-11T21:53:49.225Z" },
+]
+
+[[package]]
 name = "more-itertools"
 version = "10.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1177,6 +1192,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
+]
+
+[[package]]
 name = "python-slugify"
 version = "8.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1222,6 +1246,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/74/93/7baea19427dcfbe1e5a372d81473250b379f04b1bd3c4c5ff825e2327202/pyyaml-6.0.3-cp312-cp312-win32.whl", hash = "sha256:96b533f0e99f6579b3d4d4995707cf36df9100d67e0c8303a0c55b27b5f99bc5", size = 137658, upload-time = "2025-09-25T21:32:20.209Z" },
     { url = "https://files.pythonhosted.org/packages/86/bf/899e81e4cce32febab4fb42bb97dcdf66bc135272882d1987881a4b519e9/pyyaml-6.0.3-cp312-cp312-win_amd64.whl", hash = "sha256:5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b", size = 154003, upload-time = "2025-09-25T21:32:21.167Z" },
     { url = "https://files.pythonhosted.org/packages/1a/08/67bd04656199bbb51dbed1439b7f27601dfb576fb864099c7ef0c3e55531/pyyaml-6.0.3-cp312-cp312-win_arm64.whl", hash = "sha256:64386e5e707d03a7e172c0701abfb7e10f0fb753ee1d773128192742712a98fd", size = 140344, upload-time = "2025-09-25T21:32:22.617Z" },
+]
+
+[[package]]
+name = "rapidfuzz"
+version = "3.14.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/21/ef6157213316e85790041254259907eb722e00b03480256c0545d98acd33/rapidfuzz-3.14.5.tar.gz", hash = "sha256:ba10ac57884ce82112f7ed910b67e7fb6072d8ef2c06e30dc63c0f604a112e0e", size = 57901753, upload-time = "2026-04-07T11:16:31.931Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/e3/574435c6aafb80254c191ef40d7aca2cb2bb97a095ec9395e9fa59ac307a/rapidfuzz-3.14.5-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:0d3378f471ef440473a396ce2f8e97ee12f89a78b495540e0a5617bbfe895638", size = 1944601, upload-time = "2026-04-07T11:14:18.771Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/1f/fbad3102a255ecc112ce9a7e779bacab7fd14398217be8868dc9082ba363/rapidfuzz-3.14.5-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:1e910eebca9fd0eba245c0555e764597e8a0cccb673a92da2dc2397050725f48", size = 1164293, upload-time = "2026-04-07T11:14:20.534Z" },
+    { url = "https://files.pythonhosted.org/packages/88/37/a3eb7ff6121ed3a5f199a8c38cc86c8e481816f879cb0e0b738b078c9a7e/rapidfuzz-3.14.5-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:01550fe5f60fd176aa66b7611289d46dc4aa4b1b904874c7b6d1d54e581c5ec1", size = 1371999, upload-time = "2026-04-07T11:14:22.63Z" },
+    { url = "https://files.pythonhosted.org/packages/79/72/97a9728c711c7c1b06e107d3f0623880fb4ef90e147ed13c551a1730e7cc/rapidfuzz-3.14.5-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:48bee0b91bebfaec41e1081e351000659ab7570cc4598d617aa04d5bf827f9e6", size = 3145715, upload-time = "2026-04-07T11:14:24.508Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/54/d5caabbea233ac90c286c87c260e49d7641467e87438a18d858e41c82e91/rapidfuzz-3.14.5-cp312-cp312-manylinux_2_39_riscv64.whl", hash = "sha256:7e580cb04ad849ae9b786fa21383c6b994b6e6c1444ad1cb9f22392759d72741", size = 1456304, upload-time = "2026-04-07T11:14:26.515Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/a7/2d1a81250ac8c01a0100c026018e76f0e7a097ff63e4c553e02a6938c6fb/rapidfuzz-3.14.5-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:09d6c9ba091854f07817055d795d604179c12a8f308ba4c7d56f3719dfea1646", size = 2389089, upload-time = "2026-04-07T11:14:28.635Z" },
+    { url = "https://files.pythonhosted.org/packages/65/0d/c47c3872203ae88e6506997c0b576ad731f5261daa25d559be09c9756658/rapidfuzz-3.14.5-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:1e989f86113be66574113b9c7bdf4793f3f863d248e47d911b355e05ca6b6b10", size = 2493404, upload-time = "2026-04-07T11:14:30.577Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/2f/71e0a5a3130792146c8a200a2dd1e52aa16f7c1074012e17f2601eea9a90/rapidfuzz-3.14.5-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:0ebd1a18e2e47bc0b292a07e6ed9c3642f8aaa672d12253885f599b50807a4f9", size = 4251709, upload-time = "2026-04-07T11:14:32.451Z" },
+    { url = "https://files.pythonhosted.org/packages/86/45/d39874901abacef325adb5b34ae416817c8486dfb4fb87c7a9b74ec5b072/rapidfuzz-3.14.5-cp312-cp312-win32.whl", hash = "sha256:9981d38a703b86f0e315a3cd229fd1906fe1d91c989ed121fb975b3c849f89f5", size = 1710069, upload-time = "2026-04-07T11:14:34.37Z" },
+    { url = "https://files.pythonhosted.org/packages/85/0b/f65572c53de8a1c704bda707f63a447b67bdbe95d7cdc70d18885e191df5/rapidfuzz-3.14.5-cp312-cp312-win_amd64.whl", hash = "sha256:d8375e3da319593389727c3187ccaf3e0e84199accc530866b8e0f2b79af05e9", size = 1540630, upload-time = "2026-04-07T11:14:36.287Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/c3/143be3a578f989758cae516f3270d5cbb49783a7bfdf57cc27a670e00456/rapidfuzz-3.14.5-cp312-cp312-win_arm64.whl", hash = "sha256:478b59bb018a6780d73f33e38d0b3ec5e968a6c1ed42876b993dd456b7aa20e8", size = 813137, upload-time = "2026-04-07T11:14:38.289Z" },
 ]
 
 [[package]]
@@ -1330,12 +1373,30 @@ wheels = [
 ]
 
 [[package]]
+name = "sqlglot"
+version = "30.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/42/97ae59ab9479f345f97db948792b41bdaf51c38589f994ab97014ffae2b9/sqlglot-30.16.0.tar.gz", hash = "sha256:26abd1ef583fbecde24931eb56a5df4a086ba50ba0b36738233da9da16ffea13", size = 5984853, upload-time = "2026-08-10T15:43:47.176Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c8/bc/c92985806306174ae08ca84576a62659e8a406d7f670d2b2bc1a96340f87/sqlglot-30.16.0-py3-none-any.whl", hash = "sha256:f14f119e87bb1397316ab2b3c1f12dddd3b098921185dc69935952111be91788", size = 737757, upload-time = "2026-08-10T15:43:45.331Z" },
+]
+
+[[package]]
 name = "sqlparse"
 version = "0.5.5"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/90/76/437d71068094df0726366574cf3432a4ed754217b436eb7429415cf2d480/sqlparse-0.5.5.tar.gz", hash = "sha256:e20d4a9b0b8585fdf63b10d30066c7c94c5d7a7ec47c889a2d83a3caa93ff28e", size = 120815, upload-time = "2025-12-19T07:17:45.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/4b/359f28a903c13438ef59ebeee215fb25da53066db67b305c125f1c6d2a25/sqlparse-0.5.5-py3-none-any.whl", hash = "sha256:12a08b3bf3eec877c519589833aed092e2444e68240a3577e8e26148acc7b1ba", size = 46138, upload-time = "2025-12-19T07:17:46.573Z" },
+]
+
+[[package]]
+name = "tabulate"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
 ]
 
 [[package]]

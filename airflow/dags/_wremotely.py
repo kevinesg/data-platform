@@ -11,6 +11,7 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import BranchPythonOperator, PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable, get_current_context
+from docker.errors import NotFound as DockerNotFound
 from docker.types import Mount
 
 from _alerting import send_failure_alert
@@ -26,7 +27,7 @@ CRAWL_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
-SERVING_DBT_TASK_EXECUTION_TIMEOUT = timedelta(minutes=20)
+SERVING_DBT_TASK_EXECUTION_TIMEOUT = timedelta(minutes=30)
 PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
@@ -88,6 +89,16 @@ def required_host_path_env(name: str) -> str:
     return value
 
 
+class WremotelyDockerOperator(DockerOperator):
+    """Keep a task timeout authoritative when Docker already removed its container."""
+
+    def on_kill(self) -> None:
+        try:
+            super().on_kill()
+        except DockerNotFound:
+            self.log.info("Docker container was already absent during task shutdown")
+
+
 def dag_schedule(environment: str, schedule_env_name: str) -> str | None:
     if environment != "prod":
         return None
@@ -116,9 +127,9 @@ def docker_task(
     entrypoint: list[str] | None = None,
     pool: str | None = None,
     trigger_rule: str | None = None,
-) -> DockerOperator:
+) -> WremotelyDockerOperator:
     operator_options = {"pool": pool} if pool else {}
-    return DockerOperator(
+    return WremotelyDockerOperator(
         task_id=task_id,
         image=image,
         command=command,
@@ -401,6 +412,9 @@ dbt_environment = {
     "DBT_GOOGLE_APPLICATION_CREDENTIALS": DBT_CREDENTIALS_CONTAINER_PATH,
     "BIGQUERY_LOCATION": required_env("BIGQUERY_LOCATION"),
     "DBT_THREADS": optional_env("DBT_THREADS", "4"),
+    "DBT_JOB_CREATION_TIMEOUT_SECONDS": required_env(
+        "WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"
+    ),
     "DBT_JOB_EXECUTION_TIMEOUT_SECONDS": required_env(
         "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
     ),
@@ -471,6 +485,8 @@ def create_dbt_build_task() -> DockerOperator:
             "path:models/intermediate/wremotely",
             "path:models/marts/wremotely",
             "path:tests/wremotely",
+            "--exclude-resource-type",
+            "unit_test",
         ],
         environment=dbt_environment,
         mounts=dbt_mounts,

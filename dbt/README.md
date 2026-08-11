@@ -171,11 +171,16 @@ The committed profile defines `dev`, `qa`, and `prod` targets. Local dev uses
 `DBT_TARGET=dev`; deployed environments set `DBT_TARGET` to their environment
 name and use the profile embedded in the published dbt image.
 
-BigQuery query execution waits default to 300 seconds. A caller may set
-`DBT_JOB_EXECUTION_TIMEOUT_SECONDS` to a positive integer when one bounded
-workload needs a larger per-query wait. The wremotely serving DAG owns that
-override and passes 600 seconds from its Airflow environment; this adapter
-setting does not replace the DAG task's separate total execution timeout.
+BigQuery job creation waits default to 60 seconds and query execution waits
+default to 300 seconds. The locked dbt-bigquery 1.12 runtime submits each query
+with a stable job ID and attaches to that existing job when a repeated
+submission receives `409 Already Exists`, so a lost creation acknowledgement
+does not duplicate or abandon the accepted query. A caller may set
+`DBT_JOB_CREATION_TIMEOUT_SECONDS` and `DBT_JOB_EXECUTION_TIMEOUT_SECONDS` to
+positive integers when one bounded workload needs larger waits. The wremotely
+serving DAG owns those overrides and passes 60 seconds for job creation and
+900 seconds for execution from its Airflow environment; these adapter settings
+do not replace the DAG task's separate total execution timeout.
 
 ## End-To-End Dev Setup
 
@@ -666,6 +671,51 @@ uv run dbt run \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "+$DBT_MART_SELECTOR"
 ```
+
+### Validate the Wremotely serving build
+
+Complete the dev environment, profile, authentication, and `dbt debug` steps
+above first. Run the Wremotely unit tests against dev before the
+production-shaped graph. They are development checks that require BigQuery and
+cannot run in the credential-free CI job.
+
+```bash
+set -a
+. "$DATA_PLATFORM_ENV_FILE"
+set +a
+
+export DBT_JOB_CREATION_TIMEOUT_SECONDS="$WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"
+export DBT_JOB_EXECUTION_TIMEOUT_SECONDS="$WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
+
+time uv run dbt test \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --target "$DBT_TARGET" \
+  --resource-type unit_test \
+  --select \
+    path:models/staging/wremotely \
+    path:models/intermediate/wremotely \
+    path:models/marts/wremotely
+
+time uv run dbt build \
+  --project-dir data_warehouse \
+  --profiles-dir "$DBT_PROFILES_DIR" \
+  --target "$DBT_TARGET" \
+  --select \
+    path:seeds/wremotely \
+    path:models/staging/wremotely \
+    path:models/intermediate/wremotely \
+    path:models/marts/wremotely \
+    path:tests/wremotely \
+  --exclude-resource-type unit_test
+```
+
+The second command mirrors the Airflow production-data build: it retains every
+selected data test while excluding unit tests already exercised by the first
+command. Treat any warning, error, skipped node, or duration at or above 30
+minutes as a failed gate. Record both commands' final `PASS`, `WARN`, `ERROR`,
+`SKIP`, and total elapsed values before changing the Airflow task budget or
+promoting an image.
 
 ## Docker Runtime
 

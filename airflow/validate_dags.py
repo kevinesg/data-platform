@@ -7,10 +7,12 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import DAG
+from docker.errors import NotFound as DockerNotFound
 from jinja2 import Environment
 
 EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
@@ -60,6 +62,25 @@ def assert_all_tasks_have_execution_timeouts(modules: dict[str, ModuleType]) -> 
         for task in dag.tasks:
             if task.execution_timeout is None:
                 raise AssertionError(f"{dag.dag_id}.{task.task_id} has no bounded timeout")
+
+
+def assert_idempotent_docker_timeout_cleanup(task: DockerOperator) -> None:
+    with patch.object(
+        DockerOperator,
+        "on_kill",
+        side_effect=DockerNotFound("container already absent"),
+    ):
+        task.on_kill()
+
+    sentinel = RuntimeError("non-Docker cleanup failure")
+    with patch.object(DockerOperator, "on_kill", side_effect=sentinel):
+        try:
+            task.on_kill()
+        except RuntimeError as exc:
+            if exc is not sentinel:
+                raise AssertionError("Docker cleanup changed an unrelated failure") from exc
+        else:
+            raise AssertionError("Docker cleanup swallowed an unrelated failure")
 
 
 def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
@@ -177,9 +198,15 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
 
     dbt_build = publication.get_task("dbt_build")
-    if dbt_build.execution_timeout != timedelta(minutes=20):
+    if dbt_build.execution_timeout != timedelta(minutes=30):
         raise AssertionError(
-            "publish__wremotely_serving.dbt_build must have a 20-minute timeout"
+            "publish__wremotely_serving.dbt_build must have a 30-minute timeout"
+        )
+    if dbt_build.environment.get("DBT_JOB_CREATION_TIMEOUT_SECONDS") != os.environ[
+        "WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"
+    ]:
+        raise AssertionError(
+            "serving dbt build must pass its configured BigQuery job-creation timeout"
         )
     if dbt_build.environment.get("DBT_JOB_EXECUTION_TIMEOUT_SECONDS") != os.environ[
         "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
@@ -187,6 +214,11 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError(
             "serving dbt build must pass its configured BigQuery job timeout"
         )
+    if dbt_build.command[-2:] != ["--exclude-resource-type", "unit_test"]:
+        raise AssertionError(
+            "serving production-data build must exclude development dbt unit tests"
+        )
+    assert_idempotent_docker_timeout_cleanup(dbt_build)
 
     assert_publication_hold_environment(publication)
 
