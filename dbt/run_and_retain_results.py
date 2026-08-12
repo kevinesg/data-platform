@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 
 SUCCESSFUL_DBT_STATUSES = frozenset({"no-op", "pass", "reused", "success", "warn"})
+RETAINED_ARTIFACT_METADATA_KEY = "wremotely_retention"
+RETAINED_ARTIFACT_CONTRACT_VERSION = 1
 
 
 def main() -> int:
@@ -30,6 +32,8 @@ def main() -> int:
 
 
 def run_and_retain_results(output_path: Path, dbt_args: list[str]) -> int:
+    if dbt_args[:1] != ["build"]:
+        raise ValueError("the retained invocation must start with dbt build")
     if "--target-path" in dbt_args:
         raise ValueError("the retained dbt invocation must not set --target-path")
 
@@ -42,7 +46,9 @@ def run_and_retain_results(output_path: Path, dbt_args: list[str]) -> int:
             return completed.returncode
 
         run_results_path = Path(target_dir) / "run_results.json"
-        payload = validate_successful_build_results(run_results_path)
+        payload = add_retention_provenance(
+            validate_successful_build_results(run_results_path)
+        )
         write_json_atomically(output_path, payload)
     return 0
 
@@ -60,8 +66,14 @@ def validate_successful_build_results(path: Path) -> dict[str, object]:
     if not isinstance(metadata, dict) or not isinstance(results, list) or not results:
         raise RuntimeError("dbt run results has an invalid or empty structure")
     metadata_args = metadata.get("args")
-    if not isinstance(metadata_args, dict) or metadata_args.get("which") != "build":
-        raise RuntimeError("dbt run results is not from dbt build")
+    if metadata_args is not None and (
+        not isinstance(metadata_args, dict)
+        or (
+            "which" in metadata_args
+            and metadata_args.get("which") != "build"
+        )
+    ):
+        raise RuntimeError("dbt run results contradicts the dbt build invocation")
 
     for result in results:
         if not isinstance(result, dict):
@@ -70,6 +82,20 @@ def validate_successful_build_results(path: Path) -> dict[str, object]:
         if status not in SUCCESSFUL_DBT_STATUSES:
             raise RuntimeError(f"dbt build contains a non-successful result status: {status}")
     return payload
+
+
+def add_retention_provenance(payload: dict[str, object]) -> dict[str, object]:
+    metadata = payload["metadata"]
+    if not isinstance(metadata, dict):
+        raise RuntimeError("dbt run results has invalid metadata")
+    retained_payload = dict(payload)
+    retained_metadata = dict(metadata)
+    retained_metadata[RETAINED_ARTIFACT_METADATA_KEY] = {
+        "contract_version": RETAINED_ARTIFACT_CONTRACT_VERSION,
+        "invocation": "dbt build",
+    }
+    retained_payload["metadata"] = retained_metadata
+    return retained_payload
 
 
 def write_json_atomically(path: Path, payload: dict[str, object]) -> None:

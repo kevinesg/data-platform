@@ -10,15 +10,27 @@ from unittest.mock import patch
 from run_and_retain_results import run_and_retain_results
 
 
-def build_payload(*, invocation: str = "build", status: str = "success") -> dict[str, object]:
+def build_payload(
+    *, invocation: str | None = None, status: str = "success"
+) -> dict[str, object]:
+    metadata: dict[str, object] = {"dbt_version": "1.12.0"}
+    if invocation is not None:
+        metadata["args"] = {"which": invocation}
     return {
-        "metadata": {"args": {"which": invocation}},
+        "metadata": metadata,
         "elapsed_time": 12.5,
         "results": [{"unique_id": "model.wremotely.example", "status": status}],
     }
 
 
 class RetainedBuildResultsTest(unittest.TestCase):
+    def test_non_build_invocation_is_rejected_before_starting_dbt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("run_and_retain_results.subprocess.run") as run:
+                with self.assertRaisesRegex(ValueError, "must start with dbt build"):
+                    run_and_retain_results(Path(directory) / "run_results.json", ["generate"])
+            run.assert_not_called()
+
     def test_successful_build_atomically_replaces_previous_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "retained" / "run_results.json"
@@ -37,7 +49,13 @@ class RetainedBuildResultsTest(unittest.TestCase):
                 result = run_and_retain_results(output, ["build", "--project-dir", "wremotely"])
 
             self.assertEqual(result, 0)
-            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), build_payload())
+            retained_payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                retained_payload["metadata"]["wremotely_retention"],
+                {"contract_version": 1, "invocation": "dbt build"},
+            )
+            retained_payload["metadata"].pop("wremotely_retention")
+            self.assertEqual(retained_payload, build_payload())
 
     def test_failed_build_preserves_previous_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
