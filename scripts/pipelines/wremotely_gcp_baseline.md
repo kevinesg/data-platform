@@ -252,7 +252,9 @@ artifact at the following bounded path. Supplying several flags includes
 several explicit samples.
 
 For the production-shaped dev validation, verify the retained split-project
-artifact before supplying it:
+artifact before supplying it. dbt 1.12 does not include the command selector in
+native `run_results.json` metadata, so the retention wrapper adds a provenance
+marker after it has successfully run `dbt build`:
 
 ```bash
 export WREMOTELY_DBT_RUN_RESULTS="$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-build/run_results.json"
@@ -260,7 +262,10 @@ export WREMOTELY_DBT_RUN_RESULTS="$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-buil
 test -r "$WREMOTELY_DBT_RUN_RESULTS"
 jq -e '
   (.results | length) > 0 and
-  .metadata.args.which == "build" and
+  .metadata.wremotely_retention == {
+    "contract_version": 1,
+    "invocation": "dbt build"
+  } and
   all(.results[]; (
     (.unique_id | type) == "string" and
     (.unique_id | split(".")[1]) == "wremotely" and
