@@ -28,6 +28,9 @@ build/
 # Local generated data
 scripts/.local/
 dbt/logs/
+# Ignore generated artifacts left by checkouts that predate the domain split.
+dbt/data_warehouse/logs/
+dbt/data_warehouse/target/
 metabase/backups/
 
 # OS and editors

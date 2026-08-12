@@ -1,0 +1,35 @@
+name: "personal_finance"
+version: "1.0.0"
+profile: "personal_finance"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+seeds:
+  personal_finance:
+    +schema: seed_personal_finance
+    personal_finance__transaction_type_classification:
+      +column_types:
+        transaction_type: STRING
+        cashflow_type: STRING
+        is_income_deduction: BOOLEAN
+
+models:
+  personal_finance:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: mart_personal_finance

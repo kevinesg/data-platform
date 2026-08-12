@@ -222,16 +222,20 @@ jobs:
           test -f "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
           docker pull "$DATA_PLATFORM_DBT_IMAGE"
-          docker run --rm \
-            --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
-            -e DBT_TARGET \
-            -e PROJECT_ID \
-            -e RAW_DATASET \
-            -e DBT_DATASET \
-            -e DBT_THREADS \
-            -e BIGQUERY_LOCATION \
-            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
-            "$DATA_PLATFORM_DBT_IMAGE" compile --project-dir data_warehouse --target "$DBT_TARGET"
+          for project in personal_finance wremotely; do
+            docker run --rm \
+              --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+              -e DBT_TARGET \
+              -e PROJECT_ID \
+              -e RAW_DATASET \
+              -e DBT_DATASET \
+              -e DBT_THREADS \
+              -e BIGQUERY_LOCATION \
+              -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+              "$DATA_PLATFORM_DBT_IMAGE" compile \
+                --project-dir "$project" \
+                --target "$DBT_TARGET"
+          done
 
       - name: Pull and start QA Airflow
         shell: bash

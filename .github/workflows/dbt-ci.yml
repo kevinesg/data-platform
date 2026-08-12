@@ -75,12 +75,20 @@ jobs:
       - name: Create CI profile
         run: |
           mkdir -p ci-profiles
-          cp data_warehouse/profiles.yml.example ci-profiles/profiles.yml
+          cp profiles.yml.example ci-profiles/profiles.yml
 
-      - name: Parse dbt project
+      - name: Parse independent dbt projects
         # Parse is intentionally credential-free. Live BigQuery build/test
         # validation belongs to dev and deployed QA smoke checks.
-        run: uv run dbt parse --project-dir data_warehouse --profiles-dir ci-profiles
+        run: |
+          for project in personal_finance wremotely; do
+            uv run dbt parse \
+              --no-partial-parse \
+              --project-dir "$project" \
+              --profiles-dir ci-profiles
+          done
+
+          uv run python validate_project_boundaries.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

@@ -27,6 +27,7 @@ def main() -> int:
 
     modules = import_dag_modules(args.dag_dir)
     assert_all_tasks_have_execution_timeouts(modules)
+    validate_dbt_project_boundaries(modules)
     validate_wremotely_dags(modules)
     print("airflow DAG contracts OK")
     return 0
@@ -81,6 +82,24 @@ def assert_idempotent_docker_timeout_cleanup(task: DockerOperator) -> None:
                 raise AssertionError("Docker cleanup changed an unrelated failure") from exc
         else:
             raise AssertionError("Docker cleanup swallowed an unrelated failure")
+
+
+def validate_dbt_project_boundaries(modules: dict[str, ModuleType]) -> None:
+    expected_projects = {
+        "etl__personal_finance": "personal_finance",
+        "publish__wremotely_serving": "wremotely",
+    }
+    for module_name, expected_project in expected_projects.items():
+        dag = require_dag(modules, module_name)
+        command = dag.get_task("dbt_build").command
+        if not isinstance(command, list):
+            raise AssertionError(f"{dag.dag_id}.dbt_build command must be an argv list")
+        actual_project = command_argument(command, "--project-dir")
+        if actual_project != expected_project:
+            raise AssertionError(
+                f"{dag.dag_id}.dbt_build must run the {expected_project!r} dbt project, "
+                f"got {actual_project!r}"
+            )
 
 
 def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:

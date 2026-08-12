@@ -92,13 +92,13 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
 uv run dbt parse \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR"
 
 uv run dbt build \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:models/staging/wremotely
+  --select path:models/staging
 ```
 
 Use the external profile and service-account key documented in `dbt/README.md`.

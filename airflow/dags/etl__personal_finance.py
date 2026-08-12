@@ -184,11 +184,9 @@ with DAG(
         command=[
             "build",
             "--project-dir",
-            "data_warehouse",
+            "personal_finance",
             "--target",
             required_env("DBT_TARGET"),
-            "--select",
-            "+path:models/marts/personal_finance",
         ],
         environment=dbt_environment,
         mounts=dbt_mounts,

@@ -77,15 +77,15 @@ export DATA_PLATFORM_DBT_PROFILES_DIR="${DATA_PLATFORM_DBT_PROFILES_DIR:-$DATA_P
 export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
-WREMOTELY_DBT_SELECTOR="path:seeds/wremotely"
-WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/staging/wremotely"
-WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/intermediate/wremotely"
-WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/marts/wremotely"
-WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:tests/wremotely"
+WREMOTELY_DBT_SELECTOR="path:seeds"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/staging"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/intermediate"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:models/marts"
+WREMOTELY_DBT_SELECTOR="$WREMOTELY_DBT_SELECTOR path:tests"
 export WREMOTELY_DBT_SELECTOR
 
 uv run dbt build \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select $WREMOTELY_DBT_SELECTOR
 ```
@@ -100,7 +100,7 @@ state. Run the ordinary build once more afterward:
 
 ```bash
 uv run dbt build \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select $WREMOTELY_DBT_SELECTOR
 ```

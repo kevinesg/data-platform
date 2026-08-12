@@ -15,7 +15,6 @@ domain docs instead of accumulating in this component README.
 - [Command Flow](#command-flow)
 - [Project Layout](#project-layout)
 - [Local Runtime Setup](#local-runtime-setup)
-- [First-Time Repository Initialization](#first-time-repository-initialization)
 - [Existing-Checkout Setup](#existing-checkout-setup)
 - [Profile Contract](#profile-contract)
 - [End-To-End Dev Setup](#end-to-end-dev-setup)
@@ -33,9 +32,7 @@ the platform maintainer has provided the dbt workspace values.
 Follow this file in order for dbt component setup:
 
 1. **Local Runtime Setup** verifies the dbt CLI can run from this component.
-2. **First-Time Repository Initialization** is used only while creating the dbt
-   project skeleton in an empty repo. Existing checkouts use
-   **Existing-Checkout Setup** instead.
+2. **Existing-Checkout Setup** installs the locked runtime for both projects.
 3. **dbt Cloud Workspace** provisions or repairs the dbt service account, raw
    read grant, and dbt target datasets.
 4. **dbt Local Workstation** creates the external service-account key and
@@ -45,25 +42,25 @@ Follow this file in order for dbt component setup:
 
 ## Project Layout
 
-The first dbt setup step is the local runtime only. Install and verify the dbt
-CLI before creating a dbt project directory.
+The component contains two domain-owned projects that run independently while
+sharing one locked Python runtime and one environment-driven profile template:
 
-The dbt project files are created with `dbt init`. Do not hand-create the
-generated project skeleton before the CLI works locally.
+```text
+dbt/
+  personal_finance/
+  wremotely/
+  profiles.yml.example
+```
 
-Profiles, sources, models, seeds, tests, and dbt-specific cloud resources are
-added after project initialization, in the commits that need them.
+Both projects currently target BigQuery. Personal finance remains on BigQuery;
+future wremotely warehouse work belongs inside `dbt/wremotely` and must not add
+a dependency on the personal-finance graph.
 
 ![dbt warehouse layer flow](../assets/diagrams/dbt-layer.svg)
 
-There are two setup paths:
-
-- First-time repository initialization creates
-  [dbt/data_warehouse/](data_warehouse/) with `dbt init`, then removes dbt's
-  starter tutorial files before committing.
-- Existing-checkout setup starts from the committed
-  [dbt/data_warehouse/](data_warehouse/)
-  project and installs the locked local runtime.
+Each project owns its sources, models, seeds, tests, analyses, snapshots,
+macros, and `dbt_project.yml`. Cross-project `ref` and `source` dependencies are
+not allowed.
 
 ## Local Runtime Setup
 
@@ -97,56 +94,9 @@ cd dbt
 uv run dbt --version
 ```
 
-## First-Time Repository Initialization
-
-This path applies only while the repository is being initialized and
-`dbt/data_warehouse/` does not exist yet.
-
-Initialize the project:
-
-```bash
-cd dbt
-
-uv run dbt init
-```
-
-Use these prompt responses:
-
-```text
-Enter a name for your project (letters, digits, underscore): data_warehouse
-The profile data_warehouse already exists in ~/.dbt/profiles.yml. Continue and overwrite it? [y/N]: n
-```
-
-Answer `n` when dbt asks to overwrite an existing global profile. This project
-does not use `~/.dbt/profiles.yml` as the committed or preferred local profile
-location.
-
-Clean up the generated starter project before committing:
-
-- Delete `data_warehouse/models/example/` and the tutorial files inside it,
-  including `my_first_dbt_model.sql`, `my_second_dbt_model.sql`, and
-  `schema.yml` when dbt generates them.
-- Remove the generated `models.data_warehouse.example` configuration from
-  [data_warehouse/dbt_project.yml](data_warehouse/dbt_project.yml).
-- Replace the generated [data_warehouse/README.md](data_warehouse/README.md)
-  starter text with this project's dbt ownership notes.
-- Keep the standard dbt directories: `analyses/`, `macros/`, `models/`,
-  `seeds/`, `snapshots/`, and `tests/`.
-- Add `.gitkeep` files only for empty standard directories that Git must track.
-- Keep [data_warehouse/.gitignore](data_warehouse/.gitignore) for dbt-generated
-  `target/`,
-  `dbt_packages/`, and `logs/`.
-- Leave generated local runtime files untracked, including `dbt/.venv/`,
-  `dbt/logs/`, `data_warehouse/target/`, and `data_warehouse/dbt_packages/`.
-
-The actual local `profiles.yml` belongs outside the repository under the
-project secrets directory once profile setup is needed.
-
 ## Existing-Checkout Setup
 
-When `dbt/data_warehouse/` already exists in the repository, the project has
-already been initialized. Set up the local runtime from the lockfile and verify
-the CLI:
+Set up the local runtime from the lockfile and verify the CLI:
 
 ```bash
 cd dbt
@@ -160,7 +110,8 @@ service-account key, profile file, and `dbt debug`.
 
 ## Profile Contract
 
-The committed `data_warehouse/profiles.yml.example` is a non-secret template.
+The committed `profiles.yml.example` is a non-secret template containing the
+`personal_finance` and `wremotely` profiles.
 The working `profiles.yml` lives outside the repository with the rest of the
 project's local dev configuration.
 
@@ -543,7 +494,7 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 mkdir -p "$DBT_PROFILES_DIR"
 chmod 700 "$DBT_PROFILES_DIR"
 
-cp data_warehouse/profiles.yml.example "$DBT_PROFILES_DIR/profiles.yml"
+cp profiles.yml.example "$DBT_PROFILES_DIR/profiles.yml"
 chmod 600 "$DBT_PROFILES_DIR/profiles.yml"
 ```
 
@@ -581,32 +532,39 @@ for DBT_WRITE_DATASET in $DBT_WRITE_DATASETS; do
 done
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
-uv run dbt debug --project-dir data_warehouse --profiles-dir "$DBT_PROFILES_DIR"
+for DBT_PROJECT_DIR in personal_finance wremotely; do
+  uv run dbt debug \
+    --project-dir "$DBT_PROJECT_DIR" \
+    --profiles-dir "$DBT_PROFILES_DIR"
+done
 ```
 
 After source definitions are added, verify dbt can parse and list them:
 
 ```bash
-uv run dbt ls \
-  --project-dir data_warehouse \
-  --profiles-dir "$DBT_PROFILES_DIR" \
-  --resource-type source
+for DBT_PROJECT_DIR in personal_finance wremotely; do
+  uv run dbt ls \
+    --project-dir "$DBT_PROJECT_DIR" \
+    --profiles-dir "$DBT_PROFILES_DIR" \
+    --resource-type source
+done
 ```
 
 After staging models are added, verify dbt can list and run only the relevant
 staging selector:
 
 ```bash
-export DBT_STAGING_SELECTOR="path:models/staging/<domain>"
+export DBT_PROJECT_DIR=wremotely
+export DBT_STAGING_SELECTOR="path:models/staging"
 
 uv run dbt ls \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --resource-type model \
   --select "$DBT_STAGING_SELECTOR"
 
 uv run dbt run \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_STAGING_SELECTOR"
 ```
@@ -615,7 +573,7 @@ After staging model tests are added, run only the relevant staging tests:
 
 ```bash
 uv run dbt test \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_STAGING_SELECTOR"
 ```
@@ -624,15 +582,15 @@ After seeds and downstream models are added, materialize the relevant seeds
 before running models that depend on them. `dbt run` does not run seed files.
 
 ```bash
-export DBT_SEED_SELECTOR="<seed-selector>"
+export DBT_SEED_SELECTOR="path:seeds"
 
 uv run dbt ls \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --resource-type seed
 
 uv run dbt seed \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_SEED_SELECTOR"
 ```
@@ -641,16 +599,16 @@ After intermediate models are added, run and test only the relevant layer or
 domain selector:
 
 ```bash
-export DBT_INTERMEDIATE_SELECTOR="path:models/intermediate/<domain>"
-export DBT_INTERMEDIATE_TEST_SELECTOR="path:tests/<domain>"
+export DBT_INTERMEDIATE_SELECTOR="path:models/intermediate"
+export DBT_INTERMEDIATE_TEST_SELECTOR="path:tests"
 
 uv run dbt run \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_INTERMEDIATE_SELECTOR"
 
 uv run dbt test \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_INTERMEDIATE_SELECTOR" "$DBT_INTERMEDIATE_TEST_SELECTOR"
 ```
@@ -659,15 +617,15 @@ After marts are added, seed first when needed, then run the selected mart
 selector with its upstream models:
 
 ```bash
-export DBT_MART_SELECTOR="path:models/marts/<domain>"
+export DBT_MART_SELECTOR="path:models/marts"
 
 uv run dbt seed \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "$DBT_SEED_SELECTOR"
 
 uv run dbt run \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --select "+$DBT_MART_SELECTOR"
 ```
@@ -688,25 +646,15 @@ export DBT_JOB_CREATION_TIMEOUT_SECONDS="$WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SEC
 export DBT_JOB_EXECUTION_TIMEOUT_SECONDS="$WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
 
 time uv run dbt test \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --target "$DBT_TARGET" \
-  --resource-type unit_test \
-  --select \
-    path:models/staging/wremotely \
-    path:models/intermediate/wremotely \
-    path:models/marts/wremotely
+  --resource-type unit_test
 
 time uv run dbt build \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
   --target "$DBT_TARGET" \
-  --select \
-    path:seeds/wremotely \
-    path:models/staging/wremotely \
-    path:models/intermediate/wremotely \
-    path:models/marts/wremotely \
-    path:tests/wremotely \
   --exclude-resource-type unit_test
 ```
 
@@ -725,13 +673,13 @@ Build the dbt image from the repository root:
 docker build -t data-platform-dbt:dev dbt
 ```
 
-The image contains locked runtime dependencies, the dbt project, and a
-non-secret profile copied from `data_warehouse/profiles.yml.example`. It does
+The image contains locked runtime dependencies, both dbt projects, and a
+non-secret profile copied from `profiles.yml.example`. It does
 not contain environment files, service-account keys, generated dbt artifacts, or
 a repository bind mount.
 
 Because the profile is baked into the image, every deployed target selected by
-`DBT_TARGET` must exist in `data_warehouse/profiles.yml.example` before the dbt
+`DBT_TARGET` must exist in `profiles.yml.example` before the dbt
 image is published.
 
 Container commands that call BigQuery must receive configuration and
@@ -770,15 +718,16 @@ Validate the profile, parse graph, compile SQL, and build the selected model
 graph against dev:
 
 ```bash
-export DBT_MODEL_SELECTOR="path:models/marts/<domain>"
+export DBT_PROJECT_DIR=wremotely
+export DBT_MODEL_SELECTOR="path:models/marts"
 
-run_dbt_container debug --project-dir data_warehouse
-run_dbt_container parse --project-dir data_warehouse
+run_dbt_container debug --project-dir "$DBT_PROJECT_DIR"
+run_dbt_container parse --project-dir "$DBT_PROJECT_DIR"
 run_dbt_container compile \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --select "+$DBT_MODEL_SELECTOR"
 run_dbt_container build \
-  --project-dir data_warehouse \
+  --project-dir "$DBT_PROJECT_DIR" \
   --select "+$DBT_MODEL_SELECTOR"
 ```
 

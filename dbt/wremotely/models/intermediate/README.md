@@ -144,7 +144,7 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_PLATFORM_DBT_PROFILES_DIR}"
 test -s "$DBT_GOOGLE_APPLICATION_CREDENTIALS"
 
 uv run dbt build \
-  --project-dir data_warehouse \
+  --project-dir wremotely \
   --profiles-dir "$DBT_PROFILES_DIR" \
-  --select path:seeds/wremotely path:models/staging/wremotely path:models/intermediate/wremotely
+  --select path:seeds path:models/staging path:models/intermediate
 ```
