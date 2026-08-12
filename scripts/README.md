@@ -389,3 +389,7 @@ relevant pipeline implementation. A single pipeline note can live at
 `pipelines/<source>.md`; use `pipelines/<source>/` only when that pipeline needs
 multiple docs or supporting non-runtime files. The importable runtime source
 tree is not the home for operational notes.
+
+- [wremotely GCP workload baseline](pipelines/wremotely_gcp_baseline.md) is a
+  bounded, read-only migration measurement. It does not create pipeline data or
+  become an Airflow task.
