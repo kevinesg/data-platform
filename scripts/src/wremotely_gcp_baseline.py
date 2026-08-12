@@ -27,6 +27,7 @@ GOOGLE_AUTH_SCOPES = (
     "https://www.googleapis.com/auth/monitoring.read",
 )
 MIB = 1024 * 1024
+SUCCESSFUL_DBT_STATUSES = frozenset({"no-op", "pass", "reused", "success", "warn"})
 
 
 def main() -> int:
@@ -655,6 +656,9 @@ def collect_dbt_run_results(paths: list[Path]) -> dict[str, Any]:
             raise RuntimeError(f"dbt run results has invalid structure: {path}")
         if not results:
             raise RuntimeError(f"dbt run results contains no executed nodes: {path}")
+        metadata_args = metadata.get("args")
+        if not isinstance(metadata_args, dict) or metadata_args.get("which") != "build":
+            raise RuntimeError(f"dbt run results is not from dbt build: {path}")
         statuses: dict[str, int] = defaultdict(int)
         for result in results:
             if not isinstance(result, dict):
@@ -665,7 +669,12 @@ def collect_dbt_run_results(paths: list[Path]) -> dict[str, Any]:
                 raise RuntimeError(
                     f"dbt run results is not exclusively scoped to wremotely: {path}"
                 )
-            statuses[str(result.get("status", "unknown"))] += 1
+            status = str(result.get("status", "unknown"))
+            if status not in SUCCESSFUL_DBT_STATUSES:
+                raise RuntimeError(
+                    f"dbt run results contains a non-successful status {status!r}: {path}"
+                )
+            statuses[status] += 1
         samples.append(
             {
                 "sample": index,
