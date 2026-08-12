@@ -28,6 +28,8 @@ GOOGLE_AUTH_SCOPES = (
 )
 MIB = 1024 * 1024
 SUCCESSFUL_DBT_STATUSES = frozenset({"no-op", "pass", "reused", "success", "warn"})
+RETAINED_ARTIFACT_METADATA_KEY = "wremotely_retention"
+RETAINED_ARTIFACT_CONTRACT_VERSION = 1
 
 
 def main() -> int:
@@ -657,8 +659,17 @@ def collect_dbt_run_results(paths: list[Path]) -> dict[str, Any]:
         if not results:
             raise RuntimeError(f"dbt run results contains no executed nodes: {path}")
         metadata_args = metadata.get("args")
-        if not isinstance(metadata_args, dict) or metadata_args.get("which") != "build":
+        if isinstance(metadata_args, dict) and metadata_args.get("which") == "build":
+            pass
+        elif metadata_args is not None:
             raise RuntimeError(f"dbt run results is not from dbt build: {path}")
+        else:
+            retention = metadata.get(RETAINED_ARTIFACT_METADATA_KEY)
+            if not isinstance(retention, dict) or retention != {
+                "contract_version": RETAINED_ARTIFACT_CONTRACT_VERSION,
+                "invocation": "dbt build",
+            }:
+                raise RuntimeError(f"dbt run results is not from dbt build: {path}")
         statuses: dict[str, int] = defaultdict(int)
         for result in results:
             if not isinstance(result, dict):

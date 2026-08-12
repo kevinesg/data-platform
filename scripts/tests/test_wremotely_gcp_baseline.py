@@ -445,7 +445,10 @@ def test_collect_dbt_run_results_rejects_invalid_or_cross_domain_content(
                 "metadata": {
                     "generated_at": "2026-08-10T00:00:00Z",
                     "invocation_id": "private-invocation-id",
-                    "args": {"which": "build"},
+                    "wremotely_retention": {
+                        "contract_version": 1,
+                        "invocation": "dbt build",
+                    },
                 },
                 "elapsed_time": 10,
                 "results": [
@@ -503,6 +506,29 @@ def test_collect_dbt_run_results_rejects_docs_and_failed_builds(tmp_path: Path) 
 
         with pytest.raises(RuntimeError, match=expected_error):
             collect_dbt_run_results([artifact])
+
+    unmarked = tmp_path / "unmarked-dbt-12.json"
+    unmarked.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "generated_at": "2026-08-10T00:00:00Z",
+                    "dbt_version": "1.12.0",
+                },
+                "elapsed_time": 10,
+                "results": [
+                    {
+                        "status": "success",
+                        "unique_id": "model.wremotely.example",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="not from dbt build"):
+        collect_dbt_run_results([unmarked])
 
 
 def test_write_report_refuses_overwrite_and_replaces_atomically(tmp_path: Path) -> None:
