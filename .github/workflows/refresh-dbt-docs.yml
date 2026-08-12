@@ -60,7 +60,11 @@ jobs:
           test -d "$PROD_REPO_DIR/.git"
           test -f "$PROD_DATA_PLATFORM_ENV_FILE"
           test -f "$PROD_IMAGE_ENV_FILE"
-          mkdir -p "$DBT_DOCS_DIR" "$DBT_DOCS_TARGET_DIR"
+          mkdir -p \
+            "$DBT_DOCS_DIR/personal_finance" \
+            "$DBT_DOCS_DIR/wremotely" \
+            "$DBT_DOCS_TARGET_DIR/personal_finance" \
+            "$DBT_DOCS_TARGET_DIR/wremotely"
           chmod 755 "$DBT_DOCS_DIR"
 
       - name: Log in to GHCR
@@ -112,25 +116,42 @@ jobs:
           }
 
           docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
-          docker run --rm \
-            --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
-            --mount "type=bind,source=$DBT_DOCS_TARGET_DIR,target=/app/data_warehouse/target" \
-            -e DBT_TARGET \
-            -e PROJECT_ID \
-            -e RAW_DATASET \
-            -e DBT_DATASET \
-            -e DBT_THREADS \
-            -e BIGQUERY_LOCATION \
-            -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
-            "$DATA_PLATFORM_DBT_IMAGE" docs generate \
-              --project-dir data_warehouse \
-              --target "$DBT_TARGET" \
-              --static
+          for project in personal_finance wremotely; do
+            docker run --rm \
+              --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+              --mount "type=bind,source=$DBT_DOCS_TARGET_DIR/$project,target=/app/$project/target" \
+              -e DBT_TARGET \
+              -e PROJECT_ID \
+              -e RAW_DATASET \
+              -e DBT_DATASET \
+              -e DBT_THREADS \
+              -e BIGQUERY_LOCATION \
+              -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+              "$DATA_PLATFORM_DBT_IMAGE" docs generate \
+                --project-dir "$project" \
+                --target "$DBT_TARGET" \
+                --static
 
-          test -f "$DBT_DOCS_TARGET_DIR/static_index.html"
-          cp "$DBT_DOCS_TARGET_DIR/static_index.html" "$DBT_DOCS_DIR/index.html"
+            test -f "$DBT_DOCS_TARGET_DIR/$project/static_index.html"
+            cp \
+              "$DBT_DOCS_TARGET_DIR/$project/static_index.html" \
+              "$DBT_DOCS_DIR/$project/index.html"
+          done
+
+          printf '%s\n' \
+            '<!doctype html>' \
+            '<html lang="en"><head><meta charset="utf-8"><title>dbt projects</title></head>' \
+            '<body><main><h1>dbt projects</h1><ul>' \
+            '<li><a href="/personal_finance/">personal_finance</a></li>' \
+            '<li><a href="/wremotely/">wremotely</a></li>' \
+            '</ul></main></body></html>' \
+            > "$DBT_DOCS_DIR/index.html"
           printf '%s\n' "$DATA_PLATFORM_DBT_IMAGE" > "$DBT_DOCS_DIR/.dbt-image"
-          chmod 644 "$DBT_DOCS_DIR/index.html" "$DBT_DOCS_DIR/.dbt-image"
+          chmod 644 \
+            "$DBT_DOCS_DIR/index.html" \
+            "$DBT_DOCS_DIR/personal_finance/index.html" \
+            "$DBT_DOCS_DIR/wremotely/index.html" \
+            "$DBT_DOCS_DIR/.dbt-image"
 
       - name: Serve static dbt docs
         shell: bash

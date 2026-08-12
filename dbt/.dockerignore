@@ -13,10 +13,14 @@ target/
 dbt_packages/
 profiles.yml
 
-data_warehouse/logs/
-data_warehouse/target/
-data_warehouse/dbt_packages/
-data_warehouse/profiles.yml
+personal_finance/logs/
+personal_finance/target/
+personal_finance/dbt_packages/
+personal_finance/profiles.yml
+wremotely/logs/
+wremotely/target/
+wremotely/dbt_packages/
+wremotely/profiles.yml
 
 credentials/
 *-service-account.json

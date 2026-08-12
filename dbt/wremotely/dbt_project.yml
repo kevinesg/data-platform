@@ -1,0 +1,69 @@
+name: "wremotely"
+version: "1.0.0"
+profile: "wremotely"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+seeds:
+  wremotely:
+    +schema: seed_wremotely
+    wremotely__search_tags:
+      +column_types:
+        tag_code: STRING
+        tag_label: STRING
+        match_pattern: STRING
+    wremotely__countries:
+      +column_types:
+        country_code: STRING
+        country_name: STRING
+        alpha_3_code: STRING
+        numeric_code: STRING
+    wremotely__country_aliases:
+      +column_types:
+        country_code: STRING
+        alias: STRING
+        match_kind: STRING
+    wremotely__country_cldr_aliases:
+      +column_types:
+        country_code: STRING
+        alias: STRING
+        match_kind: STRING
+    wremotely__country_subdivisions:
+      +column_types:
+        subdivision_code: STRING
+        country_code: STRING
+        subdivision_name: STRING
+    wremotely__country_groups:
+      +column_types:
+        country_group_code: STRING
+        country_group_name: STRING
+        scope_note: STRING
+    wremotely__country_group_aliases:
+      +column_types:
+        country_group_code: STRING
+        alias: STRING
+    wremotely__country_group_memberships:
+      +column_types:
+        country_group_code: STRING
+        country_code: STRING
+
+models:
+  wremotely:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: mart_wremotely

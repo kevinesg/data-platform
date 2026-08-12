@@ -19,8 +19,9 @@ RUN apt-get update \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY data_warehouse/profiles.yml.example ./profiles/profiles.yml
-COPY data_warehouse ./data_warehouse
+COPY profiles.yml.example ./profiles/profiles.yml
+COPY personal_finance ./personal_finance
+COPY wremotely ./wremotely
 
 ENTRYPOINT ["dbt"]
 CMD ["--help"]

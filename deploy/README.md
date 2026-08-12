@@ -1246,9 +1246,9 @@ The workflow:
 6. Waits for every Compose service health check, then requires the complete
    deployed DAG inventory and no Airflow import errors.
 
-The `dbt compile` step uses the profile baked into the selected dbt image. That
-profile is copied from `dbt/data_warehouse/profiles.yml.example` at image build
-time, so the image must include a target matching `DBT_TARGET=qa`.
+The two `dbt compile` steps use the shared profile baked into the selected dbt
+image. That profile is copied from `dbt/profiles.yml.example` at image build
+time, so both domain profiles must include a target matching `DBT_TARGET=qa`.
 
 ### QA Verification
 
@@ -1692,15 +1692,18 @@ the backup workflow as a production control.
 
 ## Deployed dbt Docs
 
-dbt docs are generated from the deployed prod dbt image so the documentation
-matches the dbt code and profile contract selected for prod. Generated files are
-runtime artifacts and must not be committed.
+dbt docs are generated independently for the `personal_finance` and
+`wremotely` projects from the deployed prod dbt image so the documentation
+matches the dbt code and profile contract selected for prod. The docs root
+links to both static sites. Generated files are runtime artifacts and must not
+be committed.
 
 The [refresh-dbt-docs](../.github/workflows/refresh-dbt-docs.yml) workflow runs
 after successful `deploy-prod` workflow runs and can also be started manually.
 It reads the deployed prod image manifest and environment file from the
-deployment host, generates a static `static_index.html`, copies it to a runtime
-directory, and serves it with nginx bound to localhost.
+deployment host, generates one static site per domain project, copies both to a
+runtime directory, and serves a small project index with nginx bound to
+localhost.
 
 Automatic runs skip docs generation when the existing `index.html` was produced
 from the same deployed dbt image recorded in `.dbt-image`. Manual workflow runs
@@ -1741,7 +1744,11 @@ export DBT_DOCS_TARGET_DIR="$HOME/runtime/data-platform/prod/dbt-docs-target"
 export DBT_DOCS_PORT=8082
 export DBT_DOCS_CONTAINER=data-platform-dbt-docs-prod
 
-mkdir -p "$DBT_DOCS_DIR" "$DBT_DOCS_TARGET_DIR"
+mkdir -p \
+  "$DBT_DOCS_DIR/personal_finance" \
+  "$DBT_DOCS_DIR/wremotely" \
+  "$DBT_DOCS_TARGET_DIR/personal_finance" \
+  "$DBT_DOCS_TARGET_DIR/wremotely"
 chmod 755 "$DBT_DOCS_DIR"
 
 set -a
@@ -1770,25 +1777,42 @@ docker_pull_with_retry() {
 }
 
 docker_pull_with_retry "$DATA_PLATFORM_DBT_IMAGE"
-docker run --rm \
-  --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
-  --mount "type=bind,source=$DBT_DOCS_TARGET_DIR,target=/app/data_warehouse/target" \
-  -e DBT_TARGET \
-  -e PROJECT_ID \
-  -e RAW_DATASET \
-  -e DBT_DATASET \
-  -e DBT_THREADS \
-  -e BIGQUERY_LOCATION \
-  -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
-  "$DATA_PLATFORM_DBT_IMAGE" docs generate \
-    --project-dir data_warehouse \
-    --target "$DBT_TARGET" \
-    --static
+for project in personal_finance wremotely; do
+  docker run --rm \
+    --mount "type=bind,source=$DBT_GOOGLE_APPLICATION_CREDENTIALS,target=/credentials/dbt-service-account.json,readonly" \
+    --mount "type=bind,source=$DBT_DOCS_TARGET_DIR/$project,target=/app/$project/target" \
+    -e DBT_TARGET \
+    -e PROJECT_ID \
+    -e RAW_DATASET \
+    -e DBT_DATASET \
+    -e DBT_THREADS \
+    -e BIGQUERY_LOCATION \
+    -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/credentials/dbt-service-account.json \
+    "$DATA_PLATFORM_DBT_IMAGE" docs generate \
+      --project-dir "$project" \
+      --target "$DBT_TARGET" \
+      --static
 
-test -f "$DBT_DOCS_TARGET_DIR/static_index.html"
-cp "$DBT_DOCS_TARGET_DIR/static_index.html" "$DBT_DOCS_DIR/index.html"
+  test -f "$DBT_DOCS_TARGET_DIR/$project/static_index.html"
+  cp \
+    "$DBT_DOCS_TARGET_DIR/$project/static_index.html" \
+    "$DBT_DOCS_DIR/$project/index.html"
+done
+
+printf '%s\n' \
+  '<!doctype html>' \
+  '<html lang="en"><head><meta charset="utf-8"><title>dbt projects</title></head>' \
+  '<body><main><h1>dbt projects</h1><ul>' \
+  '<li><a href="/personal_finance/">personal_finance</a></li>' \
+  '<li><a href="/wremotely/">wremotely</a></li>' \
+  '</ul></main></body></html>' \
+  > "$DBT_DOCS_DIR/index.html"
 printf '%s\n' "$DATA_PLATFORM_DBT_IMAGE" > "$DBT_DOCS_DIR/.dbt-image"
-chmod 644 "$DBT_DOCS_DIR/index.html" "$DBT_DOCS_DIR/.dbt-image"
+chmod 644 \
+  "$DBT_DOCS_DIR/index.html" \
+  "$DBT_DOCS_DIR/personal_finance/index.html" \
+  "$DBT_DOCS_DIR/wremotely/index.html" \
+  "$DBT_DOCS_DIR/.dbt-image"
 
 docker rm -f "$DBT_DOCS_CONTAINER" 2>/dev/null || true
 docker run -d \

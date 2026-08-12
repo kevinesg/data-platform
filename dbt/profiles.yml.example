@@ -1,0 +1,39 @@
+personal_finance:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev: &personal_finance_bigquery_defaults
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
+      project: "{{ env_var('PROJECT_ID') }}"
+      dataset: "{{ env_var('DBT_DATASET') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'US') }}"
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      priority: interactive
+      job_creation_timeout_seconds: "{{ env_var('DBT_JOB_CREATION_TIMEOUT_SECONDS', '60') | int }}"
+      job_execution_timeout_seconds: "{{ env_var('DBT_JOB_EXECUTION_TIMEOUT_SECONDS', '300') | int }}"
+      job_retries: 1
+    qa:
+      <<: *personal_finance_bigquery_defaults
+    prod:
+      <<: *personal_finance_bigquery_defaults
+
+wremotely:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev: &wremotely_bigquery_defaults
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
+      project: "{{ env_var('PROJECT_ID') }}"
+      dataset: "{{ env_var('DBT_DATASET') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'US') }}"
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      priority: interactive
+      job_creation_timeout_seconds: "{{ env_var('DBT_JOB_CREATION_TIMEOUT_SECONDS', '60') | int }}"
+      job_execution_timeout_seconds: "{{ env_var('DBT_JOB_EXECUTION_TIMEOUT_SECONDS', '300') | int }}"
+      job_retries: 1
+    qa:
+      <<: *wremotely_bigquery_defaults
+    prod:
+      <<: *wremotely_bigquery_defaults
