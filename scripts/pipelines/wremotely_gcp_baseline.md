@@ -34,8 +34,9 @@ The collector:
   preserving counts while bounding the Monitoring response;
 - limits lookback to 42 days because Cloud Monitoring does not retain these
   Pub/Sub metrics as long as BigQuery job metadata; and
-- includes dbt wall-clock duration only when explicit `run_results.json`
-  artifacts are supplied.
+- includes dbt wall-clock duration only when explicit successful `dbt build`
+  `run_results.json` artifacts are supplied; docs-generation and failed-build
+  artifacts are rejected.
 
 The report gives usage units, not currency. Shared-project billing does not
 provide a defensible product-only invoice allocation, and the metadata queries
@@ -245,21 +246,25 @@ export BASELINE_OUTPUT="$BASELINE_OUTPUT_DIR/${BASELINE_CAPTURED_AT}.json"
 ```
 
 Capture 30 days of comparable activity. Omit `--dbt-run-results` unless the
-path is an actual retained wremotely project artifact from the measured
-environment. Supplying several flags includes several explicit samples.
+path is an actual retained successful wremotely project build artifact from the
+measured environment. The serving publication DAG retains only the latest such
+artifact at the following bounded path. Supplying several flags includes
+several explicit samples.
 
 For the production-shaped dev validation, verify the retained split-project
 artifact before supplying it:
 
 ```bash
-export WREMOTELY_DBT_RUN_RESULTS="$DATA_PLATFORM_REPO_DIR/dbt/wremotely/target/run_results.json"
+export WREMOTELY_DBT_RUN_RESULTS="$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-build/run_results.json"
 
 test -r "$WREMOTELY_DBT_RUN_RESULTS"
 jq -e '
   (.results | length) > 0 and
+  .metadata.args.which == "build" and
   all(.results[]; (
     (.unique_id | type) == "string" and
-    (.unique_id | split(".")[1]) == "wremotely"
+    (.unique_id | split(".")[1]) == "wremotely" and
+    (.status | IN("success", "pass", "warn", "no-op", "reused"))
   ))
 ' "$WREMOTELY_DBT_RUN_RESULTS"
 ```

@@ -192,7 +192,10 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
     dbt_results.write_text(
         json.dumps(
             {
-                "metadata": {"generated_at": "2026-08-10T00:10:00Z"},
+                "metadata": {
+                    "generated_at": "2026-08-10T00:10:00Z",
+                    "args": {"which": "build"},
+                },
                 "elapsed_time": 75.25,
                 "results": [
                     {
@@ -200,7 +203,7 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
                         "unique_id": "model.wremotely.serving_jobs",
                     },
                     {
-                        "status": "fail",
+                        "status": "pass",
                         "unique_id": "test.wremotely.serving_jobs_contract",
                     },
                 ],
@@ -416,7 +419,10 @@ def test_collect_dbt_run_results_rejects_invalid_or_cross_domain_content(
     cross_domain.write_text(
         json.dumps(
             {
-                "metadata": {"generated_at": "2026-08-10T00:00:00Z"},
+                "metadata": {
+                    "generated_at": "2026-08-10T00:00:00Z",
+                    "args": {"which": "build"},
+                },
                 "elapsed_time": 10,
                 "results": [
                     {
@@ -439,6 +445,7 @@ def test_collect_dbt_run_results_rejects_invalid_or_cross_domain_content(
                 "metadata": {
                     "generated_at": "2026-08-10T00:00:00Z",
                     "invocation_id": "private-invocation-id",
+                    "args": {"which": "build"},
                 },
                 "elapsed_time": 10,
                 "results": [
@@ -467,6 +474,35 @@ def test_collect_dbt_run_results_rejects_invalid_or_cross_domain_content(
     assert "private-invocation-id" not in serialized
     assert "secret_model" not in serialized
     assert str(valid) not in serialized
+
+
+def test_collect_dbt_run_results_rejects_docs_and_failed_builds(tmp_path: Path) -> None:
+    for name, invocation, status, expected_error in (
+        ("docs.json", "generate", "success", "not from dbt build"),
+        ("failed.json", "build", "fail", "non-successful status"),
+    ):
+        artifact = tmp_path / name
+        artifact.write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "generated_at": "2026-08-10T00:00:00Z",
+                        "args": {"which": invocation},
+                    },
+                    "elapsed_time": 10,
+                    "results": [
+                        {
+                            "status": status,
+                            "unique_id": "model.wremotely.example",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match=expected_error):
+            collect_dbt_run_results([artifact])
 
 
 def test_write_report_refuses_overwrite_and_replaces_atomically(tmp_path: Path) -> None:
