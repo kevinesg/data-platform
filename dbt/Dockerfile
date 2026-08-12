@@ -20,6 +20,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY profiles.yml.example ./profiles/profiles.yml
+COPY run_and_retain_results.py ./run_and_retain_results.py
 COPY personal_finance ./personal_finance
 COPY wremotely ./wremotely
 
