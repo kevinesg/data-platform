@@ -208,6 +208,12 @@ The wremotely workflows are split by operating purpose:
 - `publish__wremotely_serving` is trigger-only and serializes dbt build,
   publication hold, serving snapshot publication, and Pub/Sub signalling.
 
+The serving dbt task atomically retains only its latest successful
+`dbt build` `run_results.json` under
+`$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-build/`. Failed builds and unrelated
+commands leave the prior artifact unchanged. This bounded operational artifact
+supports workload measurement without accumulating dbt target directories.
+
 Airflow initialization creates one-slot `wremotely_network` and
 `wremotely_warehouse` pools. The first prevents separate DAG runs from scraping
 concurrently outside the private runtime's per-domain controls. The second

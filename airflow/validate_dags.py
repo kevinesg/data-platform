@@ -237,6 +237,18 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError(
             "serving production-data build must exclude development dbt unit tests"
         )
+    if dbt_build.entrypoint != ["python", "/app/run_and_retain_results.py"]:
+        raise AssertionError("serving dbt build must retain results through the image runner")
+    if command_argument(dbt_build.command, "--output") != (
+        "/artifacts/wremotely-etl/baseline/dbt-build/run_results.json"
+    ):
+        raise AssertionError("serving dbt build must retain one bounded baseline artifact")
+    artifact_mount = next(
+        (mount for mount in dbt_build.mounts if mount["Target"] == "/artifacts/wremotely-etl"),
+        None,
+    )
+    if artifact_mount is None or artifact_mount["ReadOnly"]:
+        raise AssertionError("serving dbt build baseline artifact mount must be writable")
     assert_idempotent_docker_timeout_cleanup(dbt_build)
 
     assert_publication_hold_environment(publication)

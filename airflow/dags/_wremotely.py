@@ -20,6 +20,9 @@ WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH = "/credentials/wremotely-etl-service-a
 DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 PUBLICATION_HOLD_POLICY_CONTAINER_PATH = "/run/secrets/wremotely-publication-hold-policy.md"
 WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH = "/artifacts/wremotely-etl"
+WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH = (
+    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/dbt-build/run_results.json"
+)
 APPROVED_SOURCE_REGISTRY_CONTAINER_PATH = "/app/source_registry/approved_sources.jsonl"
 
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
@@ -465,7 +468,12 @@ dbt_mounts = [
         target=DBT_CREDENTIALS_CONTAINER_PATH,
         type="bind",
         read_only=True,
-    )
+    ),
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
+        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+        type="bind",
+    ),
 ]
 
 
@@ -474,6 +482,9 @@ def create_dbt_build_task() -> DockerOperator:
         task_id="dbt_build",
         image=DBT_IMAGE,
         command=[
+            "--output",
+            WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH,
+            "--",
             "build",
             "--project-dir",
             "wremotely",
@@ -484,6 +495,7 @@ def create_dbt_build_task() -> DockerOperator:
         ],
         environment=dbt_environment,
         mounts=dbt_mounts,
+        entrypoint=["python", "/app/run_and_retain_results.py"],
         execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
