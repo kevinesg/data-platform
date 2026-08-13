@@ -665,6 +665,33 @@ minutes as a failed gate. Record both commands' final `PASS`, `WARN`, `ERROR`,
 `SKIP`, and total elapsed values before changing the Airflow task budget or
 promoting an image.
 
+### Retry a failed serving build
+
+The serving image runner keeps failed dbt target directories under
+`$WREMOTELY_ETL_ARTIFACTS_DIR/dbt-failures/` while leaving the last successful
+`baseline/dbt-build/run_results.json` unchanged. Those directories are the
+state input for dbt Core's native `dbt retry`, which reruns only the failed
+point and its required descendants after the underlying problem is corrected.
+Only the five newest failed targets are retained.
+Do not edit or reuse a failed target directory from a different dbt image or
+project revision.
+
+The wrapper's retry mode is intentionally separate from the ordinary Airflow
+build command so dbt remains usable without an Airflow-specific retry API:
+
+```bash
+python /app/run_and_retain_results.py \
+  --output /artifacts/wremotely-etl/baseline/dbt-build/run_results.json \
+  --retry-target-path /artifacts/wremotely-etl/dbt-failures/<failed-target>
+```
+
+Run that command in the same dbt image, profile, credential mount, and target
+environment as the failed build. On success it atomically replaces the
+baseline result artifact; on failure it leaves the prior baseline artifact
+unchanged. A retry artifact contains the nodes executed by `dbt retry`, so the
+operator must still clear or continue only the downstream publication tasks
+for the same corrected run after verifying the retry output.
+
 ## Docker Runtime
 
 Build the dbt image from the repository root:
