@@ -1044,10 +1044,42 @@ the selected-URL table alone does not suppress a URL.
 - `WREMOTELY_RECHECK_WORKER_COUNT` controls total internal lifecycle
   concurrency and must be between `1` and `32`. The default is `16`; source
   tenant/domain serialization still applies.
-- Scheduled lifecycle runs always use seven buckets, minimum age zero, and a
-  complete-bucket limit of zero. A manual dev trigger may set the DAG parameter
+- `WREMOTELY_SOURCE_HOT_PASS_DAYS` controls the Workday/Workable listing hot
+  pass. The default is `7`; unknown listing dates remain eligible. This is not
+  a source-bootstrap ledger; use a full-refresh crawl when bootstrapping a
+  newly approved source.
+- `WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS` controls the minimum source posting
+  age for scheduled lifecycle checks. The default is `21`; missing posting dates
+  remain eligible. Full-refresh lifecycle runs bypass this gate.
+- Scheduled lifecycle runs always use seven buckets, minimum recheck age zero,
+  the configured posting-age gate, and a complete-bucket limit of zero. A manual dev trigger may set the DAG parameter
   `recheck_limit` to `1..1000` for a bounded orchestration smoke; production
   scheduled runs leave it at `0`.
+
+To update the values in an external QA or production environment file, use the
+operator's existing environment-file helper (do not commit the file):
+
+```bash
+set_env_value() {
+  file="$1"
+  key="$2"
+  value="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+set_env_value "$DATA_PLATFORM_ENV_FILE" WREMOTELY_SOURCE_HOT_PASS_DAYS 7
+set_env_value "$DATA_PLATFORM_ENV_FILE" WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS 21
+```
+
+Run this once per environment after exporting `DATA_PLATFORM_ENV_FILE` to the
+intended external `.env` file. Then run the repository's environment validator
+before restarting or deploying Airflow. These values affect newly scheduled
+runs; they do not rewrite completed artifacts.
+
 - `WREMOTELY_PUBLICATION_TOPIC` selects the private environment-specific topic.
   The publisher service account receives `roles/pubsub.publisher` on this topic
   only; it does not need project-wide Pub/Sub administration or subscriber
