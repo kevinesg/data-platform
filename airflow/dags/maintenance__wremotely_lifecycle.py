@@ -84,6 +84,8 @@ with DAG(
             "{{ params.recheck_limit }}",
             "--recheck-min-age-hours",
             "0",
+            "--recheck-min-posting-age-days",
+            optional_env("WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS", "21"),
         ),
         environment=wremotely_environment,
         mounts=wremotely_mounts,

@@ -150,6 +150,13 @@ def validate_values(values: dict[str, str]) -> str | None:
         if not is_positive_integer(values[name]):
             return f"{name} must be a positive integer"
 
+    for name in (
+        "WREMOTELY_SOURCE_HOT_PASS_DAYS",
+        "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS",
+    ):
+        if not is_non_negative_integer(values[name]):
+            return f"{name} must be a non-negative integer"
+
     if int(values["WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"]) > 300:
         return "WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS must be no greater than 300"
     if int(values["WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"]) > 1200:
@@ -161,6 +168,10 @@ def validate_values(values: dict[str, str]) -> str | None:
         return "WREMOTELY_PLATFORM_WORKER_COUNT must be no greater than 8"
     if int(values["WREMOTELY_RECHECK_WORKER_COUNT"]) > 32:
         return "WREMOTELY_RECHECK_WORKER_COUNT must be no greater than 32"
+    if int(values["WREMOTELY_SOURCE_HOT_PASS_DAYS"]) > 31:
+        return "WREMOTELY_SOURCE_HOT_PASS_DAYS must be no greater than 31"
+    if int(values["WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS"]) > 3650:
+        return "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS must be no greater than 3650"
 
     for name in ("WREMOTELY_DOMAIN_DELAY_SECONDS", "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"):
         if not is_non_negative_number(values[name]):
