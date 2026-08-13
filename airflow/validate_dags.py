@@ -727,6 +727,10 @@ def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
         raise AssertionError("lifecycle preparation must use seven stable buckets")
     if command_argument(prepare_command, "--recheck-min-age-hours") != "0":
         raise AssertionError("each lifecycle bucket must include every current active row")
+    if command_argument(prepare_command, "--recheck-min-posting-age-days") != os.environ.get(
+        "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS", "21"
+    ):
+        raise AssertionError("lifecycle preparation must use the configured posting-age gate")
     if command_argument(prepare_command, "--handoff-dataset") != os.environ[
         "WREMOTELY_HANDOFF_DATASET"
     ]:

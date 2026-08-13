@@ -83,6 +83,8 @@ with DAG(
             "0",
             "--source-crawl-max-job-urls",
             "0",
+            "--source-hot-pass-days",
+            optional_env("WREMOTELY_SOURCE_HOT_PASS_DAYS", "7"),
             "--source-crawl-worker-count",
             optional_env("WREMOTELY_SOURCE_CRAWL_WORKER_COUNT", "6"),
             "--platform-worker-count",
