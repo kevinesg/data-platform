@@ -5,22 +5,36 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 SUCCESSFUL_DBT_STATUSES = frozenset({"no-op", "pass", "reused", "success", "warn"})
 RETAINED_ARTIFACT_METADATA_KEY = "wremotely_retention"
 RETAINED_ARTIFACT_CONTRACT_VERSION = 1
+MAX_RETAINED_FAILED_TARGETS = 5
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run dbt and retain only the latest successful build result."
+        description=(
+            "Run dbt and retain the latest successful result, while preserving "
+            "failed targets for native dbt retry."
+        )
     )
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--failed-target-root", type=Path)
+    parser.add_argument("--retry-target-path", type=Path)
     parser.add_argument("dbt_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+
+    if args.retry_target_path is not None:
+        if args.dbt_args:
+            parser.error("dbt retry mode does not accept dbt arguments")
+        return retry_and_retain_results(args.output, args.retry_target_path)
 
     dbt_args = args.dbt_args
     if dbt_args[:1] == ["--"]:
@@ -28,10 +42,19 @@ def main() -> int:
     if not dbt_args or dbt_args[0] != "build":
         parser.error("the retained invocation must start with dbt build")
 
-    return run_and_retain_results(args.output, dbt_args)
+    return run_and_retain_results(
+        args.output,
+        dbt_args,
+        failed_target_root=args.failed_target_root,
+    )
 
 
-def run_and_retain_results(output_path: Path, dbt_args: list[str]) -> int:
+def run_and_retain_results(
+    output_path: Path,
+    dbt_args: list[str],
+    *,
+    failed_target_root: Path | None = None,
+) -> int:
     if dbt_args[:1] != ["build"]:
         raise ValueError("the retained invocation must start with dbt build")
     if "--target-path" in dbt_args:
@@ -43,14 +66,76 @@ def run_and_retain_results(output_path: Path, dbt_args: list[str]) -> int:
             check=False,
         )
         if completed.returncode != 0:
+            retain_failed_target(target_dir, failed_target_root)
             return completed.returncode
 
         run_results_path = Path(target_dir) / "run_results.json"
-        payload = add_retention_provenance(
-            validate_successful_build_results(run_results_path)
-        )
+        try:
+            payload = add_retention_provenance(
+                validate_successful_build_results(run_results_path),
+                invocation="dbt build",
+            )
+        except RuntimeError:
+            retain_failed_target(target_dir, failed_target_root)
+            raise
         write_json_atomically(output_path, payload)
     return 0
+
+
+def retry_and_retain_results(output_path: Path, target_path: Path) -> int:
+    """Retry the failed nodes recorded in a retained dbt target directory."""
+
+    if not target_path.is_dir():
+        raise ValueError(f"dbt retry target directory does not exist: {target_path}")
+    completed = subprocess.run(
+        ["dbt", "retry", "--target-path", str(target_path)],
+        check=False,
+    )
+    if completed.returncode != 0:
+        return completed.returncode
+
+    payload = add_retention_provenance(
+        validate_successful_build_results(target_path / "run_results.json"),
+        # Keep the existing downstream artifact contract: a retry is still the
+        # serving dbt build, even though dbt's internal invocation is `retry`.
+        invocation="dbt build",
+    )
+    write_json_atomically(output_path, payload)
+    return 0
+
+
+def retain_failed_target(
+    target_dir: str | Path,
+    failed_target_root: Path | None,
+) -> Path | None:
+    """Copy a failed target directory to the bounded operator artifact mount."""
+
+    if failed_target_root is None:
+        return None
+    source = Path(target_dir)
+    failed_target_root.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    destination = failed_target_root / f"{timestamp}-{uuid4().hex[:12]}"
+    temporary_destination = failed_target_root / f".{destination.name}.tmp"
+    shutil.copytree(source, temporary_destination)
+    os.replace(temporary_destination, destination)
+    prune_failed_targets(failed_target_root)
+    print(f"dbt_failed_target={destination}", flush=True)
+    return destination
+
+
+def prune_failed_targets(failed_target_root: Path) -> None:
+    retained_targets = sorted(
+        (
+            path
+            for path in failed_target_root.iterdir()
+            if path.is_dir() and not path.name.startswith(".")
+        ),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for stale_target in retained_targets[MAX_RETAINED_FAILED_TARGETS:]:
+        shutil.rmtree(stale_target)
 
 
 def validate_successful_build_results(path: Path) -> dict[str, object]:
@@ -70,7 +155,7 @@ def validate_successful_build_results(path: Path) -> dict[str, object]:
         not isinstance(metadata_args, dict)
         or (
             "which" in metadata_args
-            and metadata_args.get("which") != "build"
+            and metadata_args.get("which") not in {"build", "retry"}
         )
     ):
         raise RuntimeError("dbt run results contradicts the dbt build invocation")
@@ -84,7 +169,11 @@ def validate_successful_build_results(path: Path) -> dict[str, object]:
     return payload
 
 
-def add_retention_provenance(payload: dict[str, object]) -> dict[str, object]:
+def add_retention_provenance(
+    payload: dict[str, object],
+    *,
+    invocation: str,
+) -> dict[str, object]:
     metadata = payload["metadata"]
     if not isinstance(metadata, dict):
         raise RuntimeError("dbt run results has invalid metadata")
@@ -92,7 +181,7 @@ def add_retention_provenance(payload: dict[str, object]) -> dict[str, object]:
     retained_metadata = dict(metadata)
     retained_metadata[RETAINED_ARTIFACT_METADATA_KEY] = {
         "contract_version": RETAINED_ARTIFACT_CONTRACT_VERSION,
-        "invocation": "dbt build",
+        "invocation": invocation,
     }
     retained_payload["metadata"] = retained_metadata
     return retained_payload

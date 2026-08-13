@@ -243,6 +243,12 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "/artifacts/wremotely-etl/baseline/dbt-build/run_results.json"
     ):
         raise AssertionError("serving dbt build must retain one bounded baseline artifact")
+    if command_argument(dbt_build.command, "--failed-target-root") != (
+        "/artifacts/wremotely-etl/dbt-failures"
+    ):
+        raise AssertionError(
+            "serving dbt build must retain failed targets for native dbt retry"
+        )
     artifact_mount = next(
         (mount for mount in dbt_build.mounts if mount["Target"] == "/artifacts/wremotely-etl"),
         None,

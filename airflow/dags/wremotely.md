@@ -929,7 +929,15 @@ someone manually deletes verified external data.
   attempt, stops and removes the task container, and preserves the last
   complete downstream serving publication. If Docker has already removed the
   container, timeout cleanup treats that absence as an idempotent no-op so the
-  original Airflow timeout remains the reported failure.
+  original Airflow timeout remains the reported failure. A failed dbt build
+  also preserves its temporary target directory under
+  `$WREMOTELY_ETL_ARTIFACTS_DIR/dbt-failures/`; this includes the
+  `run_results.json` and manifest needed by native `dbt retry`. The prior
+  successful baseline artifact is never replaced by a failed or partial run.
+  The runner keeps only the five newest failed target directories so repeated
+  failures cannot grow the artifact volume without bound.
+  Retrying is an explicit operator action after the cause is corrected; the
+  serving DAG does not silently retry from an old target directory.
 - `publish_serving_snapshot` is content-addressed. Replaying the same completed
   run verifies the bundled approved-source checksum recorded by the private
   runtime and the source-coverage aggregate before returning its publication

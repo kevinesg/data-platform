@@ -61,6 +61,7 @@ normalized_country_aliases AS (
 country_match_phrase_candidates AS (
     SELECT
         alias_row.*
+        , SPLIT(alias_row.alias_search_text, ' ')[SAFE_OFFSET(0)] AS first_token
         , MIN(alias_row.country_code) OVER (
             PARTITION BY alias_row.alias_search_text, alias_row.match_kind
         ) AS minimum_country_code
@@ -84,6 +85,7 @@ country_match_phrases AS (
         , alias_search_text
         , alias_case_sensitive_text
         , match_kind
+        , first_token
     FROM country_match_phrase_candidates
     WHERE minimum_country_code = maximum_country_code
         AND alias_rank = 1
@@ -187,6 +189,8 @@ country_subdivision_alias_candidates AS (
 subdivision_match_phrase_candidates AS (
     SELECT
         subdivision.*
+        , SPLIT(subdivision.alias_case_sensitive_text, ' ')[SAFE_OFFSET(0)]
+            AS first_token
         , MIN(country_code) OVER (
             PARTITION BY alias_search_text, match_kind
         ) AS minimum_country_code
@@ -207,6 +211,7 @@ subdivision_match_phrases AS (
         , alias_search_text
         , alias_case_sensitive_text
         , match_kind
+        , first_token
     FROM subdivision_match_phrase_candidates
     WHERE minimum_country_code = maximum_country_code
         AND alias_rank = 1
@@ -248,6 +253,7 @@ normalized_country_group_aliases AS (
 country_group_match_phrase_candidates AS (
     SELECT
         alias_row.*
+        , SPLIT(alias_row.alias_search_text, ' ')[SAFE_OFFSET(0)] AS first_token
         , MIN(alias_row.country_group_code) OVER (
             PARTITION BY alias_row.alias_search_text
         ) AS minimum_country_group_code
@@ -273,6 +279,7 @@ country_group_match_phrases AS (
         , alias_search_text
         , alias_case_sensitive_text
         , has_code_alias AS is_code
+        , first_token
     FROM country_group_match_phrase_candidates
     WHERE minimum_country_group_code = maximum_country_group_code
         AND alias_rank = 1
@@ -487,6 +494,7 @@ location_alias_context_observations AS (
     FROM prepared AS p
     INNER JOIN country_match_phrases AS a
         ON a.match_kind = 'phrase'
+        AND a.first_token IN UNNEST(SPLIT(p.normalized_raw_value, ' '))
         AND STRPOS(
             CONCAT(' ', p.normalized_raw_value, ' ')
             , CONCAT(' ', a.alias_search_text, ' ')
@@ -557,6 +565,7 @@ context_conflicting_country_matches AS (
         OR (
             p.country_match_mode = 'TEXT'
             AND a.match_kind = 'phrase'
+            AND a.first_token IN UNNEST(SPLIT(p.normalized_raw_value, ' '))
             AND STRPOS(
                 CONCAT(' ', p.normalized_raw_value, ' ')
                 , CONCAT(' ', a.alias_search_text, ' ')
@@ -640,10 +649,13 @@ country_text_match_candidates AS (
         , 'COUNTRY_TEXT_ALIAS' AS match_source
     FROM prepared AS p
     INNER JOIN country_text_match_phrases AS a
+        -- Keep the exact boundary check while avoiding a broad comparison
+        -- against every country phrase.
         ON STRPOS(
             CONCAT(' ', p.normalized_raw_value, ' ')
             , CONCAT(' ', a.alias_search_text, ' ')
         ) > 0
+        AND a.first_token IN UNNEST(SPLIT(p.normalized_raw_value, ' '))
     LEFT JOIN context_conflicting_country_matches AS conflict
         ON p.evidence_id = conflict.evidence_id
         AND a.country_code = conflict.country_code
@@ -672,6 +684,9 @@ subdivision_text_match_candidates AS (
     INNER JOIN unambiguous_subdivision_match_phrases AS subdivision
         ON (
             subdivision.match_kind = 'phrase'
+            AND subdivision.first_token IN UNNEST(
+                SPLIT(p.case_sensitive_search_text, ' ')
+            )
             AND STRPOS(
                 CONCAT(' ', p.case_sensitive_search_text, ' ')
                 , CONCAT(' ', subdivision.alias_case_sensitive_text, ' ')
@@ -852,6 +867,7 @@ country_group_text_evidence AS (
     INNER JOIN country_group_match_phrases AS a
         ON (
             NOT a.is_code
+            AND a.first_token IN UNNEST(SPLIT(p.normalized_raw_value, ' '))
             AND STRPOS(
                 CONCAT(' ', p.normalized_raw_value, ' ')
                 , CONCAT(' ', a.alias_search_text, ' ')
@@ -859,6 +875,9 @@ country_group_text_evidence AS (
         )
         OR (
             a.is_code
+            AND LOWER(a.first_token) IN UNNEST(
+                SPLIT(LOWER(p.case_sensitive_search_text), ' ')
+            )
             AND STRPOS(
                 CONCAT(' ', p.case_sensitive_search_text, ' ')
                 , CONCAT(' ', a.alias_case_sensitive_text, ' ')

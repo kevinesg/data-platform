@@ -23,6 +23,9 @@ WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH = "/artifacts/wremotely-etl"
 WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH = (
     f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/dbt-build/run_results.json"
 )
+WREMOTELY_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH = (
+    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/dbt-failures"
+)
 APPROVED_SOURCE_REGISTRY_CONTAINER_PATH = "/app/source_registry/approved_sources.jsonl"
 
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
@@ -484,6 +487,8 @@ def create_dbt_build_task() -> DockerOperator:
         command=[
             "--output",
             WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH,
+            "--failed-target-root",
+            WREMOTELY_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH,
             "--",
             "build",
             "--project-dir",
