@@ -7,7 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from run_and_retain_results import run_and_retain_results
+from run_and_retain_results import (
+    MAX_RETAINED_FAILED_TARGETS,
+    retry_and_retain_results,
+    run_and_retain_results,
+)
 
 
 def build_payload(
@@ -69,6 +73,83 @@ class RetainedBuildResultsTest(unittest.TestCase):
 
             self.assertEqual(result, 1)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), {"previous": True})
+
+    def test_failed_build_retains_target_for_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "run_results.json"
+            failed_root = root / "failed"
+
+            def failed_build(command: list[str], *, check: bool) -> subprocess.CompletedProcess:
+                target = Path(command[command.index("--target-path") + 1])
+                (target / "run_results.json").write_text(
+                    json.dumps(build_payload(status="error")), encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(command, 1)
+
+            with patch("run_and_retain_results.subprocess.run", side_effect=failed_build):
+                result = run_and_retain_results(
+                    output,
+                    ["build"],
+                    failed_target_root=failed_root,
+                )
+
+            self.assertEqual(result, 1)
+            retained_targets = list(failed_root.iterdir())
+            self.assertEqual(len(retained_targets), 1)
+            self.assertTrue((retained_targets[0] / "run_results.json").is_file())
+
+    def test_retry_replaces_successful_result_with_build_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "failed-target"
+            target.mkdir()
+            (target / "run_results.json").write_text(
+                json.dumps(build_payload(status="error")), encoding="utf-8"
+            )
+            output = root / "retained" / "run_results.json"
+
+            def successful_retry(command: list[str], *, check: bool) -> subprocess.CompletedProcess:
+                self.assertEqual(command[:3], ["dbt", "retry", "--target-path"])
+                (target / "run_results.json").write_text(
+                    json.dumps(build_payload()), encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch(
+                "run_and_retain_results.subprocess.run",
+                side_effect=successful_retry,
+            ):
+                result = retry_and_retain_results(output, target)
+
+            self.assertEqual(result, 0)
+            retained_payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                retained_payload["metadata"]["wremotely_retention"],
+                {"contract_version": 1, "invocation": "dbt build"},
+            )
+
+    def test_failed_target_retention_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            failed_root = root / "failed"
+
+            def failed_build(command: list[str], *, check: bool) -> subprocess.CompletedProcess:
+                return subprocess.CompletedProcess(command, 1)
+
+            with patch("run_and_retain_results.subprocess.run", side_effect=failed_build):
+                for _ in range(MAX_RETAINED_FAILED_TARGETS + 1):
+                    result = run_and_retain_results(
+                        root / "run_results.json",
+                        ["build"],
+                        failed_target_root=failed_root,
+                    )
+                    self.assertEqual(result, 1)
+
+            self.assertEqual(
+                len([path for path in failed_root.iterdir() if path.is_dir()]),
+                MAX_RETAINED_FAILED_TARGETS,
+            )
 
     def test_non_build_or_unsuccessful_artifact_preserves_previous_result(self) -> None:
         for payload in (
