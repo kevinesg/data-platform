@@ -24,8 +24,9 @@ The collector:
   `serving_jobs`;
 - attributes completed BigQuery jobs through those table prefixes or the
   `wremotely` query identifier and excludes its own labeled metadata queries;
-- bounds the shared BigQuery metadata queries with a maximum bytes-billed
-  value;
+- bounds each shared BigQuery metadata query and the aggregate capture with
+  explicit bytes-billed ceilings; the jobs scan is split into one-day slices
+  for partition pruning;
 - fails without writing a partial report if the Cloud Storage prefix contains
   more than the declared object limit;
 - emits fixed Cloud Storage age and storage-class buckets, not object names or
@@ -284,15 +285,19 @@ uv run python src/wremotely_gcp_baseline.py \
   --lookback-days 30 \
   --max-gcs-objects 250000 \
   --bigquery-max-bytes-billed 300000000 \
+  --bigquery-max-total-bytes-billed 2000000000 \
   --dbt-run-results "$WREMOTELY_DBT_RUN_RESULTS" \
   --output "$BASELINE_OUTPUT"
 ```
 
-The 300 MB per-query ceiling is deliberately just above the observed
-227,540,992-byte requirement of the 30-day dev jobs metadata query. A larger
-environment can still fail closed and report the minimum required ceiling. Do
-not raise it above the collector's 1 GB hard limit without revisiting the query
-attribution design.
+The jobs metadata query is executed in one-day creation-time slices so the
+partitioned `JOBS_BY_PROJECT` scan remains bounded as the project grows. The
+300 MB ceiling applies to each query, while the 2 GB ceiling applies to the
+sum of the current-storage, storage-timeline, and all jobs-slice queries. A
+larger environment can still fail closed and report the minimum required
+per-query or total ceiling. Do not raise the per-query ceiling above the
+collector's 1 GB hard limit or the aggregate ceiling above 5 GB without
+revisiting the query attribution design.
 
 Validate the scope, bounds, and report completeness before using the result in
 an architecture decision:

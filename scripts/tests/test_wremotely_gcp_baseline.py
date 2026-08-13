@@ -13,11 +13,14 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from wremotely_gcp_baseline import (  # noqa: E402
     BASELINE_JOB_LABELS,
     DEFAULT_BIGQUERY_MAX_BYTES_BILLED,
+    DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED,
     GOOGLE_AUTH_SCOPES,
     collect_baseline,
+    collect_bigquery,
     collect_dbt_run_results,
     collect_gcs,
     collect_pubsub,
+    time_slices,
     validate_options,
     write_report,
 )
@@ -33,19 +36,22 @@ def test_auth_scope_allows_bounded_bigquery_metadata_jobs() -> None:
 def test_default_bigquery_bound_covers_measured_dev_metadata_query() -> None:
     assert DEFAULT_BIGQUERY_MAX_BYTES_BILLED == 300_000_000
     assert DEFAULT_BIGQUERY_MAX_BYTES_BILLED > 227_540_992
+    assert DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED == 2_000_000_000
 
 
 class FakeQueryJob:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
+    def __init__(self, rows: list[dict[str, Any]], total_bytes_billed: int = 0) -> None:
         self.rows = rows
+        self.total_bytes_billed = total_bytes_billed
 
     def result(self) -> list[dict[str, Any]]:
         return self.rows
 
 
 class FakeBigQueryClient:
-    def __init__(self) -> None:
+    def __init__(self, jobs_total_bytes_billed: int = 10_000_000) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.jobs_total_bytes_billed = jobs_total_bytes_billed
 
     def query(self, query: str, **kwargs: Any) -> FakeQueryJob:
         self.calls.append({"query": query, **kwargs})
@@ -97,7 +103,12 @@ class FakeBigQueryClient:
             ]
         else:
             raise AssertionError(f"unexpected query: {query}")
-        return FakeQueryJob(rows)
+        return FakeQueryJob(
+            rows,
+            total_bytes_billed=(
+                self.jobs_total_bytes_billed if "JOBS_BY_PROJECT" in query else 0
+            ),
+        )
 
 
 class FakeQueryJobConfig:
@@ -236,7 +247,7 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
         bucket="kevinesg-prod-wremotely-artifacts",
         prefix="wremotely",
         topic="wremotely-serving-publications",
-        window_start=datetime(2026, 8, 1, tzinfo=UTC),
+        window_start=datetime(2026, 8, 9, tzinfo=UTC),
         window_end=datetime(2026, 8, 11, tzinfo=UTC),
         max_gcs_objects=100,
         bigquery_max_bytes_billed=100_000_000,
@@ -275,7 +286,14 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
             },
         ],
     }
-    assert report["bigquery"]["jobs"]["job_count"] == 3
+    assert report["bigquery"]["jobs"]["job_count"] == 6
+    assert report["bigquery"]["query_budget"] == {
+        "per_query_max_bytes_billed": 100_000_000,
+        "total_max_bytes_billed": 2_000_000_000,
+        "total_bytes_billed": 20_000_000,
+        "query_count": 4,
+        "jobs_query_slice_days": 1,
+    }
     assert report["gcs"]["object_count"] == 2
     assert report["gcs"]["total_bytes"] == 200
     assert report["gcs"]["by_age_bucket"] == [
@@ -294,7 +312,7 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
         ("kevinesg-prod-wremotely-artifacts", "wremotely/")
     ]
 
-    assert len(bigquery_client.calls) == 3
+    assert len(bigquery_client.calls) == 4
     for call in bigquery_client.calls:
         config = call["job_config"]
         assert isinstance(config, FakeQueryJobConfig)
@@ -313,6 +331,23 @@ def test_collect_baseline_is_domain_scoped_bounded_and_secret_safe(tmp_path: Pat
     assert "data_platform_operation" in jobs_call["query"]
     assert "UNNEST(referenced_tables)" in jobs_call["query"]
     assert "destination_table.dataset_id" in jobs_call["query"]
+    jobs_calls = [
+        call for call in bigquery_client.calls if "JOBS_BY_PROJECT" in call["query"]
+    ]
+    assert [
+        (parameter.name, parameter.value)
+        for parameter in jobs_calls[0]["job_config"].kwargs["query_parameters"]
+    ] == [
+        ("window_start", datetime(2026, 8, 9, tzinfo=UTC)),
+        ("window_end", datetime(2026, 8, 10, tzinfo=UTC)),
+    ]
+    assert [
+        (parameter.name, parameter.value)
+        for parameter in jobs_calls[1]["job_config"].kwargs["query_parameters"]
+    ] == [
+        ("window_start", datetime(2026, 8, 10, tzinfo=UTC)),
+        ("window_end", datetime(2026, 8, 11, tzinfo=UTC)),
+    ]
 
 
 def test_validate_options_rejects_cross_domain_and_unbounded_inputs(tmp_path: Path) -> None:
@@ -340,10 +375,77 @@ def test_validate_options_rejects_cross_domain_and_unbounded_inputs(tmp_path: Pa
         validate_options(**{**common, "topic": "serving-publications"})
     with pytest.raises(ValueError, match="maximum bytes billed"):
         validate_options(**{**common, "bigquery_max_bytes_billed": 2_000_000_000})
+    with pytest.raises(ValueError, match="maximum total bytes billed"):
+        validate_options(
+            **{
+                **common,
+                "bigquery_max_total_bytes_billed": 90_000_000,
+            }
+        )
 
     output.write_text("existing", encoding="utf-8")
     with pytest.raises(ValueError, match="output already exists"):
         validate_options(**common)
+
+
+def test_time_slices_cover_window_without_overlap() -> None:
+    assert list(
+        time_slices(
+            datetime(2026, 8, 1, 6, tzinfo=UTC),
+            datetime(2026, 8, 3, 6, tzinfo=UTC),
+            days=1,
+        )
+    ) == [
+        (
+            datetime(2026, 8, 1, 6, tzinfo=UTC),
+            datetime(2026, 8, 2, 6, tzinfo=UTC),
+        ),
+        (
+            datetime(2026, 8, 2, 6, tzinfo=UTC),
+            datetime(2026, 8, 3, 6, tzinfo=UTC),
+        ),
+    ]
+
+
+def test_collect_bigquery_fails_closed_when_aggregate_budget_is_exhausted() -> None:
+    with pytest.raises(RuntimeError, match="total bytes billed budget exhausted"):
+        collect_bigquery(
+            client=FakeBigQueryClient(),
+            bigquery_module=FakeBigQueryModule,
+            project_id="kevinesg-prod",
+            location="US",
+            window_start=datetime(2026, 8, 9, tzinfo=UTC),
+            window_end=datetime(2026, 8, 11, tzinfo=UTC),
+            maximum_bytes_billed=100_000_000,
+            maximum_total_bytes_billed=10_000_000,
+        )
+
+
+def test_collect_bigquery_slices_a_production_shaped_30_day_jobs_scan() -> None:
+    client = FakeBigQueryClient(jobs_total_bytes_billed=45_000_000)
+    result = collect_bigquery(
+        client=client,
+        bigquery_module=FakeBigQueryModule,
+        project_id="kevinesg-prod",
+        location="US",
+        window_start=datetime(2026, 7, 13, tzinfo=UTC),
+        window_end=datetime(2026, 8, 12, tzinfo=UTC),
+        maximum_bytes_billed=300_000_000,
+        maximum_total_bytes_billed=2_000_000_000,
+    )
+
+    assert result["jobs"]["job_count"] == 90
+    assert result["query_budget"] == {
+        "per_query_max_bytes_billed": 300_000_000,
+        "total_max_bytes_billed": 2_000_000_000,
+        "total_bytes_billed": 1_350_000_000,
+        "query_count": 32,
+        "jobs_query_slice_days": 1,
+    }
+    assert all(
+        call["job_config"].kwargs["maximum_bytes_billed"] == 300_000_000
+        for call in client.calls
+    )
 
 
 def test_collect_gcs_fails_closed_at_object_bound() -> None:
