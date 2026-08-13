@@ -8,6 +8,7 @@ import sys
 import tempfile
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,9 @@ TABLE_PREFIXES = ("wremotely__", "stg_wremotely__", "int_wremotely__")
 DATASET_SUFFIXES = ("_wremotely",)
 BASELINE_JOB_LABELS = {"data_platform_operation": "wremotely_gcp_baseline"}
 DEFAULT_BIGQUERY_MAX_BYTES_BILLED = 300_000_000
+DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED = 2_000_000_000
+MAX_BIGQUERY_TOTAL_BYTES_BILLED = 5_000_000_000
+JOBS_QUERY_SLICE_DAYS = 1
 PUBSUB_MESSAGE_SIZE_METRIC = "pubsub.googleapis.com/topic/message_sizes"
 MONITORING_ENDPOINT = "https://monitoring.googleapis.com/v3"
 GOOGLE_AUTH_SCOPES = (
@@ -49,6 +53,11 @@ def main() -> int:
         type=int,
         default=DEFAULT_BIGQUERY_MAX_BYTES_BILLED,
     )
+    parser.add_argument(
+        "--bigquery-max-total-bytes-billed",
+        type=int,
+        default=DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED,
+    )
     parser.add_argument("--dbt-run-results", action="append", default=[], type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--overwrite", action="store_true")
@@ -66,6 +75,7 @@ def main() -> int:
             window_end=window_end,
             max_gcs_objects=args.max_gcs_objects,
             bigquery_max_bytes_billed=args.bigquery_max_bytes_billed,
+            bigquery_max_total_bytes_billed=args.bigquery_max_total_bytes_billed,
             dbt_run_results=args.dbt_run_results,
             output=args.output,
             overwrite=args.overwrite,
@@ -125,6 +135,7 @@ def validate_options(
     dbt_run_results: list[Path],
     output: Path,
     overwrite: bool,
+    bigquery_max_total_bytes_billed: int = DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED,
 ) -> dict[str, Any]:
     if not PROJECT_ID_PATTERN.fullmatch(project_id):
         raise ValueError("gcp project must be a valid project ID")
@@ -147,6 +158,15 @@ def validate_options(
         raise ValueError("max GCS objects must be between 1 and 1000000")
     if not 10_000_000 <= bigquery_max_bytes_billed <= 1_000_000_000:
         raise ValueError("BigQuery maximum bytes billed must be between 10 MB and 1 GB")
+    if not (
+        bigquery_max_bytes_billed
+        <= bigquery_max_total_bytes_billed
+        <= MAX_BIGQUERY_TOTAL_BYTES_BILLED
+    ):
+        raise ValueError(
+            "BigQuery maximum total bytes billed must be at least the per-query maximum "
+            "and no more than 5 GB"
+        )
     missing_artifacts = [str(path) for path in dbt_run_results if not path.is_file()]
     if missing_artifacts:
         raise ValueError("dbt run-results files do not exist: " + ", ".join(missing_artifacts))
@@ -165,6 +185,7 @@ def validate_options(
         "window_end": window_end,
         "max_gcs_objects": max_gcs_objects,
         "bigquery_max_bytes_billed": bigquery_max_bytes_billed,
+        "bigquery_max_total_bytes_billed": bigquery_max_total_bytes_billed,
         "dbt_run_results": dbt_run_results,
     }
 
@@ -185,6 +206,7 @@ def collect_baseline(
     bigquery_module: Any,
     storage_client: Any,
     monitoring_session: Any,
+    bigquery_max_total_bytes_billed: int = DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED,
 ) -> dict[str, Any]:
     return {
         "contract_version": 1,
@@ -209,6 +231,7 @@ def collect_baseline(
             window_start=window_start,
             window_end=window_end,
             maximum_bytes_billed=bigquery_max_bytes_billed,
+            maximum_total_bytes_billed=bigquery_max_total_bytes_billed,
         ),
         "gcs": collect_gcs(
             storage_client,
@@ -242,6 +265,12 @@ def collect_baseline(
     }
 
 
+@dataclass(frozen=True)
+class BigQueryResult:
+    rows: list[dict[str, Any]]
+    total_bytes_billed: int
+
+
 def collect_bigquery(
     *,
     client: Any,
@@ -251,42 +280,67 @@ def collect_bigquery(
     window_start: datetime,
     window_end: datetime,
     maximum_bytes_billed: int,
+    maximum_total_bytes_billed: int = DEFAULT_BIGQUERY_MAX_TOTAL_BYTES_BILLED,
 ) -> dict[str, Any]:
+    total_bytes_billed = 0
+    query_count = 0
+
+    def execute(query: str, parameters: list[Any]) -> list[dict[str, Any]]:
+        nonlocal total_bytes_billed, query_count
+        remaining = maximum_total_bytes_billed - total_bytes_billed
+        if remaining < 10_000_000:
+            raise RuntimeError(
+                "BigQuery total bytes billed budget exhausted before the baseline completed"
+            )
+        result = run_bigquery(
+            client,
+            bigquery_module,
+            query,
+            location,
+            project_id,
+            min(maximum_bytes_billed, remaining),
+            parameters,
+        )
+        total_bytes_billed += result.total_bytes_billed
+        query_count += 1
+        if total_bytes_billed > maximum_total_bytes_billed:
+            raise RuntimeError("BigQuery total bytes billed exceeded the baseline budget")
+        return result.rows
+
     parameters = [
         bigquery_module.ScalarQueryParameter("window_start", "TIMESTAMP", window_start),
         bigquery_module.ScalarQueryParameter("window_end", "TIMESTAMP", window_end),
     ]
-    current_rows = run_bigquery(
-        client,
-        bigquery_module,
-        current_storage_query(project_id, location),
-        location,
-        project_id,
-        maximum_bytes_billed,
-        [],
-    )
-    timeline_rows = run_bigquery(
-        client,
-        bigquery_module,
-        storage_timeline_query(project_id, location),
-        location,
-        project_id,
-        maximum_bytes_billed,
-        parameters,
-    )
-    job_rows = run_bigquery(
-        client,
-        bigquery_module,
-        jobs_query(project_id, location),
-        location,
-        project_id,
-        maximum_bytes_billed,
-        parameters,
-    )
+    current_rows = execute(current_storage_query(project_id, location), [])
+    timeline_rows = execute(storage_timeline_query(project_id, location), parameters)
+    job_rows: list[dict[str, Any]] = []
+    for slice_start, slice_end in time_slices(
+        window_start, window_end, days=JOBS_QUERY_SLICE_DAYS
+    ):
+        job_rows.extend(
+            execute(
+                jobs_query(project_id, location),
+                [
+                    bigquery_module.ScalarQueryParameter(
+                        "window_start", "TIMESTAMP", slice_start
+                    ),
+                    bigquery_module.ScalarQueryParameter(
+                        "window_end", "TIMESTAMP", slice_end
+                    ),
+                ],
+            )
+        )
     return {
         "current_storage": summarize_current_storage(current_rows),
         "storage_timeline": [normalize_mapping(row) for row in timeline_rows],
         "jobs": summarize_jobs(job_rows),
+        "query_budget": {
+            "per_query_max_bytes_billed": maximum_bytes_billed,
+            "total_max_bytes_billed": maximum_total_bytes_billed,
+            "total_bytes_billed": total_bytes_billed,
+            "query_count": query_count,
+            "jobs_query_slice_days": JOBS_QUERY_SLICE_DAYS,
+        },
         "attribution": {
             "table_prefixes": list(TABLE_PREFIXES),
             "dataset_suffixes": list(DATASET_SUFFIXES),
@@ -305,22 +359,39 @@ def run_bigquery(
     project_id: str,
     maximum_bytes_billed: int,
     parameters: list[Any],
-) -> list[dict[str, Any]]:
+) -> BigQueryResult:
     config = bigquery_module.QueryJobConfig(
         labels=BASELINE_JOB_LABELS,
         maximum_bytes_billed=maximum_bytes_billed,
         query_parameters=parameters,
         use_query_cache=False,
     )
-    return [
-        dict(row)
-        for row in client.query(
-            query,
-            job_config=config,
-            location=location,
-            project=project_id,
-        ).result()
-    ]
+    job = client.query(
+        query,
+        job_config=config,
+        location=location,
+        project=project_id,
+    )
+    return BigQueryResult(
+        rows=[
+            dict(row)
+            for row in job.result()
+        ],
+        total_bytes_billed=int(getattr(job, "total_bytes_billed", 0) or 0),
+    )
+
+
+def time_slices(
+    window_start: datetime, window_end: datetime, *, days: int
+) -> Iterable[tuple[datetime, datetime]]:
+    if days < 1:
+        raise ValueError("time-slice days must be positive")
+    cursor = window_start
+    step = timedelta(days=days)
+    while cursor < window_end:
+        slice_end = min(cursor + step, window_end)
+        yield cursor, slice_end
+        cursor = slice_end
 
 
 def current_storage_query(project_id: str, location: str) -> str:
