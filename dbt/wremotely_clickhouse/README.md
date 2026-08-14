@@ -1,6 +1,6 @@
-# Wremotely ClickHouse dbt harness
+# wremotely ClickHouse dbt harness
 
-This directory is an isolated compatibility harness for the Wremotely
+This directory is an isolated compatibility harness for the wremotely
 ClickHouse migration. It is intentionally separate from the shared dbt
 runtime in `dbt/`, which continues to serve the existing BigQuery
 `personal_finance` and Wremotely projects.
@@ -35,8 +35,8 @@ typed staging table in the same ClickHouse database.
 
 ## Scope and next boundary
 
-This first slice proves the separate runtime, source contract, JSON payload
-projection, and dbt tests against a real raw relation. It deliberately defers
+This slice proves the separate runtime, source contract, JSON payload
+projection, and dbt tests against real raw relations. It deliberately defers
 the remaining staging graph, intermediate/mart models, ClickHouse grants,
 Airflow orchestration, and production cutover until each compatibility step is
 validated with representative data.

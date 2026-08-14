@@ -14,3 +14,32 @@ models:
       - name: raw_payload
         tests:
           - not_null
+  - name: stg_wremotely__selected_job_urls
+    description: ClickHouse-compatible staging projection over selected job URLs.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: url
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: stg_wremotely__extraction_page_results
+    description: ClickHouse-compatible staging projection over extracted pages.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null

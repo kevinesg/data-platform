@@ -16,3 +16,25 @@ sources:
           - name: payload
             tests:
               - not_null
+      - name: selected_job_urls
+        identifier: wremotely__selected_job_urls
+        description: Selected job URLs emitted by the private ETL selection step.
+        columns:
+          - name: ingest_key
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
+      - name: extraction_page_results
+        identifier: wremotely__extraction_page_results
+        description: Page extraction results emitted by the private ETL extraction step.
+        columns:
+          - name: ingest_key
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
