@@ -56,6 +56,12 @@ Both projects currently target BigQuery. Personal finance remains on BigQuery;
 future wremotely warehouse work belongs inside `dbt/wremotely` and must not add
 a dependency on the personal-finance graph.
 
+The migration has a separate, pinned ClickHouse compatibility harness under
+[`wremotely_clickhouse/`](wremotely_clickhouse/). It does not share the Python
+runtime or profile with the BigQuery projects. Follow its
+[`README.md`](wremotely_clickhouse/README.md) for the local validation command;
+do not use it as an Airflow or production deployment path yet.
+
 ![dbt warehouse layer flow](../assets/diagrams/dbt-layer.svg)
 
 Each project owns its sources, models, seeds, tests, analyses, snapshots,
