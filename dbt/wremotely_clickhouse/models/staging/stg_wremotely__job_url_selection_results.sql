@@ -35,6 +35,7 @@ select
         as source_default_work_arrangement
     , nullIf(JSONExtractString(payload, 'source_page_final_url'), '') as source_page_final_url
     , nullIf(JSONExtractString(payload, 'link_text'), '') as link_text
+    , JSONExtractInt(payload, 'link_text_char_count') as link_text_char_count
     , nullIf(JSONExtractString(payload, 'link_title_candidate'), '') as link_title_candidate
     , nullIf(upper(JSONExtractString(payload, 'link_title_candidate_status')), '')
         as link_title_candidate_status

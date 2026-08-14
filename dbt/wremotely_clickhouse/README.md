@@ -40,4 +40,7 @@ projection, and dbt tests against real raw relations. It deliberately defers
 the lifecycle-recheck staging model until a representative raw lifecycle
 relation is loaded, as well as the remaining intermediate/mart models,
 ClickHouse grants, Airflow orchestration, and production cutover until each
-compatibility step is validated with representative data.
+compatibility step is validated with representative data. The first latest-per-
+candidate intermediate projections use replay-safe full-table materialization;
+incremental merge behavior is deferred until the full graph and source-history
+semantics are validated.

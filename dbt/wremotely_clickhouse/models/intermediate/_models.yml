@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: int_wremotely__latest_job_facts
+    description: Latest job-facts envelope per candidate from immutable raw history.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: int_wremotely__latest_extraction_page_results
+    description: Latest extraction result per candidate from immutable raw history.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: int_wremotely__latest_classifications
+    description: Latest classification result per candidate from immutable raw history.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: int_wremotely__latest_selected_job_urls
+    description: Latest selected URL per candidate with selection evidence context.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: raw_payload
+        tests:
+          - not_null
