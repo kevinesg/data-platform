@@ -9,3 +9,5 @@ models:
   wremotely_clickhouse:
     staging:
       +materialized: table
+    intermediate:
+      +materialized: table

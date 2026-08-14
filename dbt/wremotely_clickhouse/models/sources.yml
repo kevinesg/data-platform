@@ -38,3 +38,36 @@ sources:
           - name: payload
             tests:
               - not_null
+      - name: classification_classifications
+        identifier: wremotely__classification_classifications
+        description: Classification results emitted by the private ETL classifier.
+        columns:
+          - name: ingest_key
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
+      - name: country_eligibility_extractions
+        identifier: wremotely__country_eligibility_extractions
+        description: Country-eligibility evidence emitted by the private ETL extractor.
+        columns:
+          - name: ingest_key
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
+      - name: job_url_selection_results
+        identifier: wremotely__job_url_selection_results
+        description: URL selection decisions emitted by the private ETL selector.
+        columns:
+          - name: ingest_key
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
