@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_wremotely__job_facts
+    description: First ClickHouse-compatible staging projection over stable raw job facts.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null
