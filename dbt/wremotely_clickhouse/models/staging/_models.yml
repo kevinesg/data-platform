@@ -43,3 +43,42 @@ models:
       - name: raw_payload
         tests:
           - not_null
+  - name: stg_wremotely__classification_classifications
+    description: ClickHouse-compatible staging projection over classifications.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: stg_wremotely__country_eligibility_extractions
+    description: ClickHouse-compatible staging projection over country evidence.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null
+  - name: stg_wremotely__job_url_selection_results
+    description: ClickHouse-compatible staging projection over selection decisions.
+    columns:
+      - name: ingest_key
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: raw_payload
+        tests:
+          - not_null
