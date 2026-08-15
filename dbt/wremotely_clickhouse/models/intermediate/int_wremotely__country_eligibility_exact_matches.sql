@@ -49,6 +49,18 @@ with country_aliases as (
     from {{ ref('wremotely__countries') }}
 ),
 
+country_text_aliases as (
+    select
+        alias_search_text
+        , any(country_code) as matched_country_code
+        , arrayElement(splitByChar(' ', ifNull(alias_search_text, '')), 1) as first_token
+    from country_aliases
+    where match_kind = 'phrase'
+        and alias_search_text is not null
+    group by alias_search_text
+    having uniqExact(country_code) = 1
+),
+
 country_group_aliases as (
     select distinct
         country_group_code
@@ -57,6 +69,17 @@ country_group_aliases as (
             , ''
         ) as alias_search_text
     from {{ ref('wremotely__country_group_aliases') }}
+),
+
+country_group_text_aliases as (
+    select
+        alias_search_text
+        , any(country_group_code) as matched_country_group_code
+        , arrayElement(splitByChar(' ', ifNull(alias_search_text, '')), 1) as first_token
+    from country_group_aliases
+    where alias_search_text is not null
+    group by alias_search_text
+    having uniqExact(country_group_code) = 1
 ),
 
 reviewed_location_aliases as (
@@ -92,6 +115,17 @@ subdivision_aliases as (
     from {{ ref('wremotely__country_subdivisions') }}
 ),
 
+subdivision_text_aliases as (
+    select
+        alias_search_text
+        , any(country_code) as matched_country_code
+        , arrayElement(splitByChar(' ', ifNull(alias_search_text, '')), 1) as first_token
+    from subdivision_aliases
+    where alias_search_text is not null
+    group by alias_search_text
+    having uniqExact(country_code) = 1
+),
+
 country_matches as (
     select distinct
         e.evidence_id
@@ -110,6 +144,25 @@ country_matches as (
         and c.alias_search_text is not null
 ),
 
+country_text_matches as (
+    select distinct
+        e.evidence_id
+        , e.candidate_id
+        , e.evidence_direction
+        , c.matched_country_code as matched_country_code
+        , nullIf('', '') as matched_country_group_code
+        , 'COUNTRY_TEXT_ALIAS' as match_source
+    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    inner join country_text_aliases as c
+        on e.country_match_mode = 'TEXT'
+        and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), c.first_token)
+        and position(
+            concat(' ', e.normalized_raw_value, ' ')
+            , concat(' ', c.alias_search_text, ' ')
+        ) > 0
+    where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
+),
+
 country_group_matches as (
     select distinct
         e.evidence_id
@@ -124,6 +177,25 @@ country_group_matches as (
     where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
         and e.country_match_mode = 'ATOMIC'
         and g.alias_search_text is not null
+),
+
+country_group_text_matches as (
+    select distinct
+        e.evidence_id
+        , e.candidate_id
+        , e.evidence_direction
+        , nullIf('', '') as matched_country_code
+        , g.matched_country_group_code as matched_country_group_code
+        , 'COUNTRY_GROUP_TEXT_ALIAS' as match_source
+    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    inner join country_group_text_aliases as g
+        on e.country_match_mode = 'TEXT'
+        and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), g.first_token)
+        and position(
+            concat(' ', e.normalized_raw_value, ' ')
+            , concat(' ', g.alias_search_text, ' ')
+        ) > 0
+    where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
 ),
 
 reviewed_location_matches as (
@@ -165,14 +237,50 @@ subdivision_matches as (
         and s.alias_search_text is not null
 ),
 
-combined as (
+subdivision_text_matches as (
+    select distinct
+        e.evidence_id
+        , e.candidate_id
+        , e.evidence_direction
+        , s.matched_country_code as matched_country_code
+        , nullIf('', '') as matched_country_group_code
+        , 'COUNTRY_SUBDIVISION_TEXT_ALIAS' as match_source
+    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    inner join subdivision_text_aliases as s
+        on e.country_match_mode = 'TEXT'
+        and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), s.first_token)
+        and position(
+            concat(' ', e.normalized_raw_value, ' ')
+            , concat(' ', s.alias_search_text, ' ')
+        ) > 0
+    where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
+),
+
+combined_raw as (
     select * from country_matches
     union all
+    select * from country_text_matches
+    union all
     select * from country_group_matches
+    union all
+    select * from country_group_text_matches
     union all
     select * from reviewed_location_matches
     union all
     select * from subdivision_matches
+    union all
+    select * from subdivision_text_matches
+),
+
+combined as (
+    select distinct
+        evidence_id
+        , candidate_id
+        , evidence_direction
+        , matched_country_code
+        , matched_country_group_code
+        , match_source
+    from combined_raw
 ),
 
 country_match_counts as (

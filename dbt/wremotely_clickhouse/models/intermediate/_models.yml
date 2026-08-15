@@ -96,6 +96,7 @@ models:
                   - ATOMIC_COUNTRY_ALIAS
                   - COUNTRY_TEXT_ALIAS
                   - ATOMIC_COUNTRY_GROUP_ALIAS
+                  - COUNTRY_GROUP_TEXT_ALIAS
                   - REVIEWED_LOCATION_COUNTRY_ALIAS
                   - ATOMIC_COUNTRY_SUBDIVISION_ALIAS
                   - COUNTRY_SUBDIVISION_TEXT_ALIAS
@@ -119,3 +120,22 @@ models:
       - name: country_eligibility_evidence_count
         tests:
           - not_null
+  - name: int_wremotely__job_country_eligibility
+    description: Explicit eligible and excluded country bridge rows for candidate jobs.
+    columns:
+      - name: job_id
+        tests:
+          - not_null
+      - name: country_code
+        tests:
+          - not_null
+      - name: eligibility_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ELIGIBLE, EXCLUDED]
+      - name: country_eligibility_scope
+        tests:
+          - accepted_values:
+              arguments:
+                values: [SPECIFIC, GLOBAL_EXCEPT]

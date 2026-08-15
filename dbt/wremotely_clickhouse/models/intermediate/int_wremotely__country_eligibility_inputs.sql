@@ -72,9 +72,22 @@ prepared_roles as (
     from raw_evidence
 ),
 
+global_location_aliases as (
+    select distinct
+        lowerUTF8(source_platform_guess) as source_platform_guess
+        , nullIf(
+            trim(replaceRegexpAll(lowerUTF8(location_alias), '[^[:alnum:]]+', ' '))
+            , ''
+        ) as alias_search_text
+    from {{ ref('wremotely__global_location_aliases') }}
+    where nullIf(trim(source_platform_guess), '') is not null
+        and nullIf(trim(location_alias), '') is not null
+),
+
 prepared_inputs as (
     select
         *
+        , global_alias.alias_search_text is not null as is_reviewed_global_location
         , ifNull(raw_country_eligibility_scope, 'UNKNOWN') not in ('GLOBAL', 'GLOBAL_EXCEPT')
             and (
                 (
@@ -94,6 +107,9 @@ prepared_inputs as (
                 )
             ) as is_restricting_location_evidence
     from prepared_roles
+    left join global_location_aliases as global_alias
+        on global_alias.source_platform_guess = lowerUTF8(ifNull(source_platform_guess, ''))
+        and global_alias.alias_search_text = normalized_raw_value
 ),
 
 final as (
@@ -127,8 +143,10 @@ final as (
         , location_object_path
         , is_location_evidence_role
         , is_reviewed_platform_location_role
+        , is_reviewed_global_location
         , is_restricting_location_evidence
         , case
+            when is_reviewed_global_location then 'GLOBAL'
             when is_restricting_location_evidence then 'INCLUDED'
             when ifNull(raw_country_eligibility_scope, 'UNKNOWN') in ('GLOBAL', 'GLOBAL_EXCEPT')
                 and country_field_role in (
