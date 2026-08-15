@@ -36,11 +36,20 @@ typed staging table in the same ClickHouse database.
 ## Scope and next boundary
 
 This slice proves the separate runtime, source contract, JSON payload
-projection, candidate-title projection, and dbt tests against real raw
-relations. It deliberately defers the lifecycle-recheck staging model until a
+projection, candidate-title projection, prepared country-eligibility inputs,
+exact country-eligibility matches, candidate country-eligibility rollup, and
+serving-country bridge, and dbt tests against real raw relations.
+The prepared country relation aligns evidence to the latest classification and
+assigns deterministic direction and match-mode fields. Exact matching covers
+normalized country, group, reviewed location, and subdivision aliases, and
+marks evidence that resolves to multiple countries as ambiguous rather than
+selecting one silently. Phrase substring matching and country bridge expansion
+are represented in the candidate rollup and serving-country bridge. It
+deliberately defers the lifecycle-recheck staging model until a
 representative raw lifecycle relation is loaded, as well as the remaining
 intermediate/mart models, ClickHouse grants, Airflow orchestration, and
 production cutover until each compatibility step is validated with
-representative data. The latest-per-candidate and candidate-title projections
-use replay-safe full-table materialization; incremental merge behavior is
-deferred until the full graph and source-history semantics are validated.
+representative data. The latest-per-candidate, candidate-title, and prepared
+country and exact-match projections use replay-safe full-table materialization; incremental
+merge behavior is deferred until the full graph and source-history semantics
+are validated.

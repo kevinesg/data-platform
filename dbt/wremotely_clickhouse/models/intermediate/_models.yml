@@ -58,3 +58,84 @@ models:
                   - HTML_META_TWITTER_TITLE
                   - LINK_TITLE_CANDIDATE
                   - LEGACY_BOUNDED_LINK_TEXT
+  - name: int_wremotely__country_eligibility_inputs
+    description: Latest-classification-aligned country evidence prepared for downstream alias resolution.
+    columns:
+      - name: evidence_id
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: evidence_direction
+        tests:
+          - accepted_values:
+              arguments:
+                values: [GLOBAL, INCLUDED, EXCLUDED, UNKNOWN]
+      - name: country_match_mode
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ATOMIC, TEXT, NONE]
+  - name: int_wremotely__country_eligibility_exact_matches
+    description: Exact normalized country, group, reviewed-location, and subdivision matches for prepared evidence.
+    columns:
+      - name: match_id
+        tests:
+          - not_null
+          - unique
+      - name: evidence_id
+        tests:
+          - not_null
+      - name: match_source
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - ATOMIC_COUNTRY_ALIAS
+                  - COUNTRY_TEXT_ALIAS
+                  - ATOMIC_COUNTRY_GROUP_ALIAS
+                  - COUNTRY_GROUP_TEXT_ALIAS
+                  - REVIEWED_LOCATION_COUNTRY_ALIAS
+                  - ATOMIC_COUNTRY_SUBDIVISION_ALIAS
+                  - COUNTRY_SUBDIVISION_TEXT_ALIAS
+      - name: match_status
+        tests:
+          - accepted_values:
+                arguments:
+                  values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+  - name: int_wremotely__candidate_country_eligibility
+    description: Candidate-level country eligibility rollup with group expansion and ambiguity exclusion.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: validated_country_eligibility_scope
+        tests:
+          - accepted_values:
+              arguments:
+                values: [SPECIFIC, GLOBAL_EXCEPT, GLOBAL, UNKNOWN]
+      - name: country_eligibility_evidence_count
+        tests:
+          - not_null
+  - name: int_wremotely__job_country_eligibility
+    description: Explicit eligible and excluded country bridge rows for candidate jobs.
+    columns:
+      - name: job_id
+        tests:
+          - not_null
+      - name: country_code
+        tests:
+          - not_null
+      - name: eligibility_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ELIGIBLE, EXCLUDED]
+      - name: country_eligibility_scope
+        tests:
+          - accepted_values:
+              arguments:
+                values: [SPECIFIC, GLOBAL_EXCEPT]
