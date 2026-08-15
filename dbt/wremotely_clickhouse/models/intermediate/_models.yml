@@ -79,7 +79,7 @@ models:
               arguments:
                 values: [ATOMIC, TEXT, NONE]
   - name: int_wremotely__country_eligibility_exact_matches
-    description: Exact normalized country and reviewed-location matches for prepared evidence.
+    description: Exact normalized country, group, reviewed-location, and subdivision matches for prepared evidence.
     columns:
       - name: match_id
         tests:
@@ -97,3 +97,10 @@ models:
                   - COUNTRY_TEXT_ALIAS
                   - ATOMIC_COUNTRY_GROUP_ALIAS
                   - REVIEWED_LOCATION_COUNTRY_ALIAS
+                  - ATOMIC_COUNTRY_SUBDIVISION_ALIAS
+                  - COUNTRY_SUBDIVISION_TEXT_ALIAS
+      - name: match_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]

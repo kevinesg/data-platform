@@ -70,6 +70,28 @@ reviewed_location_aliases as (
     from {{ ref('wremotely__location_country_aliases') }}
 ),
 
+subdivision_aliases as (
+    select distinct
+        country_code
+        , subdivision_code
+        , nullIf(
+            trim(replaceRegexpAll(lowerUTF8(subdivision_name), '[^[:alnum:]]+', ' '))
+            , ''
+        ) as alias_search_text
+    from {{ ref('wremotely__country_subdivisions') }}
+
+    union distinct
+
+    select distinct
+        country_code
+        , subdivision_code
+        , nullIf(
+            trim(replaceRegexpAll(lowerUTF8(subdivision_code), '[^[:alnum:]]+', ' '))
+            , ''
+        ) as alias_search_text
+    from {{ ref('wremotely__country_subdivisions') }}
+),
+
 country_matches as (
     select distinct
         e.evidence_id
@@ -124,12 +146,57 @@ reviewed_location_matches as (
         and r.alias_search_text is not null
 ),
 
+subdivision_matches as (
+    select distinct
+        e.evidence_id
+        , e.candidate_id
+        , e.evidence_direction
+        , s.country_code as matched_country_code
+        , nullIf('', '') as matched_country_group_code
+        , case
+            when e.country_match_mode = 'ATOMIC' then 'ATOMIC_COUNTRY_SUBDIVISION_ALIAS'
+            else 'COUNTRY_SUBDIVISION_TEXT_ALIAS'
+        end as match_source
+    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    inner join subdivision_aliases as s
+        on e.normalized_raw_value = s.alias_search_text
+    where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
+        and e.is_restricting_location_evidence
+        and s.alias_search_text is not null
+),
+
 combined as (
     select * from country_matches
     union all
     select * from country_group_matches
     union all
     select * from reviewed_location_matches
+    union all
+    select * from subdivision_matches
+),
+
+country_match_counts as (
+    select
+        evidence_id
+        , uniqExactIf(
+            matched_country_code
+            , notEmpty(ifNull(matched_country_code, ''))
+        ) as matched_country_count
+    from combined
+    group by evidence_id
+),
+
+annotated as (
+    select
+        c.*
+        , if(
+            ifNull(m.matched_country_count, 0) > 1
+            , 'AMBIGUOUS_COUNTRY_ALIAS'
+            , 'MATCHED'
+        ) as match_status
+    from combined as c
+    left join country_match_counts as m
+        on c.evidence_id = m.evidence_id
 )
 
 select
@@ -140,4 +207,4 @@ select
         , '|', match_source
     ) as match_id
     , *
-from combined
+from annotated
