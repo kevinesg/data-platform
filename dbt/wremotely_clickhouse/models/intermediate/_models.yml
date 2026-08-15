@@ -78,3 +78,22 @@ models:
           - accepted_values:
               arguments:
                 values: [ATOMIC, TEXT, NONE]
+  - name: int_wremotely__country_eligibility_exact_matches
+    description: Exact normalized country and reviewed-location matches for prepared evidence.
+    columns:
+      - name: match_id
+        tests:
+          - not_null
+          - unique
+      - name: evidence_id
+        tests:
+          - not_null
+      - name: match_source
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - ATOMIC_COUNTRY_ALIAS
+                  - COUNTRY_TEXT_ALIAS
+                  - ATOMIC_COUNTRY_GROUP_ALIAS
+                  - REVIEWED_LOCATION_COUNTRY_ALIAS

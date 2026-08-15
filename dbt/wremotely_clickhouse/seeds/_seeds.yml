@@ -1,0 +1,66 @@
+version: 2
+
+seeds:
+  - name: wremotely__countries
+    columns:
+      - name: country_code
+        data_tests: [not_null, unique]
+      - name: country_name
+        data_tests: [not_null]
+  - name: wremotely__country_aliases
+    columns:
+      - name: country_code
+        data_tests: [not_null]
+      - name: alias
+        data_tests: [not_null]
+      - name: match_kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [exact_code, phrase]
+  - name: wremotely__country_cldr_aliases
+    columns:
+      - name: country_code
+        data_tests: [not_null]
+      - name: alias
+        data_tests: [not_null]
+      - name: match_kind
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [exact_code, phrase]
+  - name: wremotely__country_group_aliases
+    columns:
+      - name: country_group_code
+        data_tests: [not_null]
+      - name: alias
+        data_tests: [not_null]
+  - name: wremotely__country_subdivisions
+    columns:
+      - name: subdivision_code
+        data_tests: [not_null, unique]
+      - name: country_code
+        data_tests: [not_null]
+      - name: subdivision_name
+        data_tests: [not_null]
+  - name: wremotely__global_location_aliases
+    columns:
+      - name: location_alias
+        data_tests: [not_null]
+      - name: source_platform_guess
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [ashby]
+  - name: wremotely__location_country_aliases
+    columns:
+      - name: country_code
+        data_tests: [not_null]
+      - name: location_alias
+        data_tests: [not_null]
+      - name: source_platform_guess
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['', ashby, bamboohr, jobvite, lever, smartrecruiters, workday]
