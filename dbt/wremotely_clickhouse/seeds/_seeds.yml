@@ -35,6 +35,12 @@ seeds:
         data_tests: [not_null]
       - name: alias
         data_tests: [not_null]
+  - name: wremotely__country_group_memberships
+    columns:
+      - name: country_group_code
+        data_tests: [not_null]
+      - name: country_code
+        data_tests: [not_null]
   - name: wremotely__country_subdivisions
     columns:
       - name: subdivision_code

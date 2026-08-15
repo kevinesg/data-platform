@@ -102,5 +102,20 @@ models:
       - name: match_status
         tests:
           - accepted_values:
+                arguments:
+                  values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+  - name: int_wremotely__candidate_country_eligibility
+    description: Candidate-level country eligibility rollup with group expansion and ambiguity exclusion.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: validated_country_eligibility_scope
+        tests:
+          - accepted_values:
               arguments:
-                values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+                values: [SPECIFIC, GLOBAL_EXCEPT, GLOBAL, UNKNOWN]
+      - name: country_eligibility_evidence_count
+        tests:
+          - not_null
