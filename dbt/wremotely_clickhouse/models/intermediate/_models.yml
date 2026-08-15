@@ -41,3 +41,20 @@ models:
       - name: raw_payload
         tests:
           - not_null
+  - name: int_wremotely__candidate_job_titles
+    description: Trustworthy bounded title evidence selected per candidate.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: title_source
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - JSONLD
+                  - HTML_META_OG_TITLE
+                  - HTML_META_TWITTER_TITLE
+                  - LINK_TITLE_CANDIDATE
+                  - LEGACY_BOUNDED_LINK_TEXT
