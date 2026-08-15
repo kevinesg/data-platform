@@ -45,9 +45,9 @@ select
     , nullIf(JSONExtractString(payload, 'declared_language_source'), '')
         as declared_language_source
     , nullIf(JSONExtractString(payload, 'page_extractor'), '') as page_extractor
-    , nullIf(JSONExtractString(payload, 'country_field_source'), '') as country_field_source
-    , nullIf(JSONExtractString(payload, 'country_field_role'), '') as country_field_role
-    , nullIf(JSONExtractString(payload, 'country_field_source_system'), '')
+    , nullIf(upper(JSONExtractString(payload, 'country_field_source')), '') as country_field_source
+    , nullIf(upper(JSONExtractString(payload, 'country_field_role')), '') as country_field_role
+    , nullIf(upper(JSONExtractString(payload, 'country_field_source_system')), '')
         as country_field_source_system
     , nullIf(JSONExtractString(payload, 'country_field_source_identifier'), '')
         as country_field_source_identifier

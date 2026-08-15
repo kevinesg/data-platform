@@ -58,3 +58,23 @@ models:
                   - HTML_META_TWITTER_TITLE
                   - LINK_TITLE_CANDIDATE
                   - LEGACY_BOUNDED_LINK_TEXT
+  - name: int_wremotely__country_eligibility_inputs
+    description: Latest-classification-aligned country evidence prepared for downstream alias resolution.
+    columns:
+      - name: evidence_id
+        tests:
+          - not_null
+          - unique
+      - name: candidate_id
+        tests:
+          - not_null
+      - name: evidence_direction
+        tests:
+          - accepted_values:
+              arguments:
+                values: [GLOBAL, INCLUDED, EXCLUDED, UNKNOWN]
+      - name: country_match_mode
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ATOMIC, TEXT, NONE]
