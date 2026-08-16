@@ -7,9 +7,9 @@ runtime in `dbt/`, which continues to serve the existing BigQuery
 
 The harness uses the dbt-clickhouse-supported dbt Core 1.10 line. Do not
 downgrade the shared dbt 1.12 runtime to make this adapter fit. The harness is
-not yet an Airflow task or a production cutover path. Its container image is
-published separately from the shared BigQuery dbt image so the two
-adapter/runtime contracts can evolve independently.
+used by the manual on-prem Airflow DAG; it is not a production cutover path by
+itself. Its container image is published separately from the shared BigQuery
+dbt image so the two adapter/runtime contracts can evolve independently.
 
 ## Container image
 
@@ -75,8 +75,11 @@ selecting one silently. Phrase substring matching and country bridge expansion
 are represented in the candidate rollup and serving-country bridge. Lifecycle
 closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
 observations; missing lifecycle history remains open and is never treated as
-closure. ClickHouse grants, Airflow orchestration, publication signalling, VPS
-snapshot reads, and production cutover remain separate operational work. The graph uses replay-safe
+closure. The on-prem Airflow DAG runs this graph after loading local raw
+relations, then exports a READY ClickHouse publication artifact and signals its
+content-addressed publication ID over the existing Pub/Sub topic. ClickHouse
+grants, the private VPS snapshot-read route, worker cutover, and production
+authority remain separate operational work. The graph uses replay-safe
 full-table materialization; incremental merge behavior is deferred until the
 full source-history and lifecycle semantics are validated.
 
