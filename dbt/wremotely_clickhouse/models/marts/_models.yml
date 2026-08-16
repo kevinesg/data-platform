@@ -10,6 +10,26 @@ models:
         tests: [not_null]
       - name: source_url
         tests: [not_null]
+      - name: title
+        tests: [not_null]
+      - name: remote_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [REMOTE, HYBRID, ONSITE]
+      - name: country_eligibility_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [GLOBAL, GLOBAL_EXCEPT, SPECIFIC]
+      - name: is_deleted
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
       - name: employment_types
         tests: [not_null]
       - name: search_tags
@@ -27,7 +47,19 @@ models:
         tests: [not_null, unique]
       - name: company_name
         tests: [not_null]
+      - name: company_identity_basis
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [company_source_domain_v1]
+      - name: source_domain
+        tests: [not_null]
       - name: open_job_count
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
         tests: [not_null]
       - name: company_row_sha256
         tests: [not_null, unique]
@@ -45,6 +77,10 @@ models:
                 values: [ELIGIBLE, EXCLUDED]
       - name: job_country_eligibility_row_sha256
         tests: [not_null, unique]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
   - name: wremotely__publication_manifest
     description: Deterministic ClickHouse serving snapshot manifest.
     columns:
@@ -57,3 +93,17 @@ models:
                 values: [wremotely_serving_snapshot_v4]
       - name: serving_snapshot_sha256
         tests: [not_null, unique]
+      - name: publication_contract_version
+        tests: [not_null]
+      - name: serving_job_count
+        tests: [not_null]
+      - name: serving_company_count
+        tests: [not_null]
+      - name: job_country_eligibility_count
+        tests: [not_null]
+      - name: publication_state
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [dbt_modeled_not_signaled]

@@ -104,6 +104,7 @@ select
     , has_lifecycle_recheck
     , is_deleted
     , _updated_at
+    , _updated_at as dbt_updated_at
     , source_updated_at
     , public_snippet
 from company_keyed
