@@ -79,3 +79,20 @@ closure. ClickHouse grants, Airflow orchestration, publication signalling, VPS
 snapshot reads, and production cutover remain separate operational work. The graph uses replay-safe
 full-table materialization; incremental merge behavior is deferred until the
 full source-history and lifecycle semantics are validated.
+
+## Contract parity
+
+The ClickHouse graph is intentionally not required to have the same dbt
+resource count as the BigQuery graph. The country-evidence implementation is
+split into prepared-input and exact-match relations, while adapter-specific
+SQL is kept out of the shared project. Parity means preserving the same
+publication, lifecycle, country-eligibility, company, taxonomy, and identity
+guarantees—not duplicating BigQuery syntax or forcing identical model names.
+
+The ClickHouse project includes the complete country taxonomy seeds, expanded
+column-level contracts for the latest/source and serving models, and
+adapter-compatible invariant tests for URL-to-facts alignment, lifecycle
+closure, publication status, country bridges, companies, taxonomies, and the
+publication manifest. BigQuery-specific custom SQL and dbt unit tests remain
+in the shared BigQuery project until an equivalent ClickHouse implementation
+is available and validated.
