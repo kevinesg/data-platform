@@ -16,6 +16,10 @@ seeds:
         data_tests: [not_null, unique]
       - name: country_name
         data_tests: [not_null]
+      - name: alpha_3_code
+        data_tests: [not_null, unique]
+      - name: numeric_code
+        data_tests: [not_null, unique]
   - name: wremotely__country_aliases
     columns:
       - name: country_code
@@ -41,14 +45,38 @@ seeds:
   - name: wremotely__country_group_aliases
     columns:
       - name: country_group_code
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__country_groups')
+                field: country_group_code
       - name: alias
         data_tests: [not_null]
   - name: wremotely__country_group_memberships
     columns:
       - name: country_group_code
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__country_groups')
+                field: country_group_code
       - name: country_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('wremotely__countries')
+                field: country_code
+  - name: wremotely__country_groups
+    description: Reviewed country groups used to expand broad hiring-region evidence.
+    columns:
+      - name: country_group_code
+        data_tests: [not_null, unique]
+      - name: country_group_name
+        data_tests: [not_null]
+      - name: scope_note
         data_tests: [not_null]
   - name: wremotely__country_subdivisions
     columns:

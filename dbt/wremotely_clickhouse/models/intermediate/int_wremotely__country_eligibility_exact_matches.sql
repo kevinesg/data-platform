@@ -309,10 +309,24 @@ annotated as (
 
 select
     concat(
-        evidence_id
-        , '|', ifNull(matched_country_code, '')
-        , '|', ifNull(matched_country_group_code, '')
-        , '|', match_source
+        annotated.evidence_id
+        , '|', ifNull(annotated.matched_country_code, '')
+        , '|', ifNull(annotated.matched_country_group_code, '')
+        , '|', annotated.match_source
     ) as match_id
-    , *
+    , annotated.evidence_id
+    , annotated.candidate_id
+    , annotated.evidence_direction
+    , if(
+        annotated.match_status = 'AMBIGUOUS_COUNTRY_ALIAS'
+        , nullIf('', '')
+        , annotated.matched_country_code
+    ) as matched_country_code
+    , if(
+        annotated.match_status = 'AMBIGUOUS_COUNTRY_ALIAS'
+        , nullIf('', '')
+        , annotated.matched_country_group_code
+    ) as matched_country_group_code
+    , annotated.match_source
+    , annotated.match_status
 from annotated

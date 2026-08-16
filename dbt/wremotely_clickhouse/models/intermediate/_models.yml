@@ -11,6 +11,24 @@ models:
       - name: raw_payload
         tests:
           - not_null
+      - name: url
+        tests: [not_null]
+      - name: latest_job_fact_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [EXTRACTED, SKIPPED_EXTRACTION_FAILED]
+      - name: latest_job_fact_extracted_at
+        tests: [not_null]
+      - name: latest_job_fact_stage_run_id
+        tests: [not_null]
+      - name: latest_job_facts_run_id
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
   - name: int_wremotely__latest_extraction_page_results
     description: Latest extraction result per candidate from immutable raw history.
     columns:
@@ -21,6 +39,22 @@ models:
       - name: raw_payload
         tests:
           - not_null
+      - name: url
+        tests: [not_null]
+      - name: latest_page_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [SUCCEEDED, FAILED]
+      - name: latest_extraction_stage_run_id
+        tests: [not_null]
+      - name: latest_extraction_run_id
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
   - name: int_wremotely__latest_classifications
     description: Latest classification result per candidate from immutable raw history.
     columns:
@@ -31,6 +65,46 @@ models:
       - name: raw_payload
         tests:
           - not_null
+      - name: url
+        tests: [not_null]
+      - name: latest_classification_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [CLASSIFIED, NEEDS_REVIEW, QUARANTINED]
+      - name: latest_job_posting_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [JOB, NON_JOB, UNKNOWN]
+      - name: latest_remote_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [REMOTE, HYBRID, ONSITE, UNKNOWN]
+      - name: latest_country_eligibility_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [GLOBAL, GLOBAL_EXCEPT, SPECIFIC, UNKNOWN]
+      - name: latest_serving_decision
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [PUBLISHABLE, NOT_PUBLISHABLE, NEEDS_REVIEW, QUARANTINE]
+      - name: latest_classification_stage_run_id
+        tests: [not_null]
+      - name: latest_classification_run_id
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
   - name: int_wremotely__latest_lifecycle_rechecks
     description: Latest lifecycle observation per candidate with prior status for terminal confirmation.
     columns:
@@ -56,6 +130,18 @@ models:
       - name: raw_payload
         tests:
           - not_null
+      - name: url
+        tests: [not_null]
+      - name: latest_selected_at
+        tests: [not_null]
+      - name: latest_selection_stage_run_id
+        tests: [not_null]
+      - name: latest_selection_run_id
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
   - name: int_wremotely__candidate_job_titles
     description: Trustworthy bounded title evidence selected per candidate.
     columns:
@@ -118,8 +204,8 @@ models:
       - name: match_status
         tests:
           - accepted_values:
-                arguments:
-                  values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+              arguments:
+                values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
   - name: int_wremotely__candidate_country_eligibility
     description: Candidate-level country eligibility rollup with group expansion and ambiguity exclusion.
     columns:
@@ -176,7 +262,21 @@ models:
               arguments:
                 values: [PUBLISHABLE, CLOSED, NOT_PUBLISHABLE]
       - name: publication_status_reason
-        tests: [not_null]
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - PUBLICATION_READY
+                  - NOT_JOB
+                  - WORK_ARRANGEMENT
+                  - COUNTRY_ELIGIBILITY_SCOPE
+                  - COUNTRY_ELIGIBILITY_VALUES
+                  - MISSING_TITLE
+                  - UNSUPPORTED_LANGUAGE
+                  - LIFECYCLE_CLOSED
+                  - LIFECYCLE_TERMINAL_CONFIRMED
+                  - EXPIRED_VALID_THROUGH
   - name: int_wremotely__publishable_job_facts
     description: Candidate rows accepted by the ClickHouse publication gate.
     columns:
@@ -185,6 +285,26 @@ models:
       - name: canonical_url
         tests: [not_null]
       - name: source_url
+        tests: [not_null]
+      - name: title
+        tests: [not_null]
+      - name: remote_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [REMOTE, HYBRID, ONSITE]
+      - name: country_eligibility_scope
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [GLOBAL, GLOBAL_EXCEPT, SPECIFIC]
+      - name: is_deleted
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
         tests: [not_null]
   - name: int_wremotely__job_search_facets
     description: Candidate-grain normalized employment types and reviewed search tags.
