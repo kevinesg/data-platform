@@ -198,9 +198,13 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   loading, ClickHouse dbt, immutable snapshot export, and the Pub/Sub signal;
 - `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
   already-loaded raw relations;
-- `etl__wremotely_gcp_legacy`, `maintenance__wremotely_artifacts`,
-  `maintenance__wremotely_lifecycle`, and the `repair__wremotely_*` DAGs are
-  retained for historical recovery only and are not scheduled production paths;
+- `etl__wremotely_gcp_legacy`, `maintenance__wremotely_artifacts`, and the
+  `repair__wremotely_*` DAGs remain paused recovery tooling while the final
+  production cutover is verified; they are not scheduled production paths;
+- `maintenance__wremotely_lifecycle` is the native ClickHouse lifecycle path:
+  it selects due candidates from ClickHouse, rechecks them, lands and loads
+  lifecycle facts locally, rebuilds ClickHouse dbt models, and signals the
+  resulting snapshot through Pub/Sub;
 - `repair__wremotely_classifications` is manual-only and replays completed
   historical extraction artifacts through raw classification load;
 - `repair__wremotely_warehouse_classifications` is manual-only and rebuilds
