@@ -207,6 +207,28 @@ The wremotely workflows are split by operating purpose:
   before triggering publication;
 - `publish__wremotely_serving` is trigger-only and serializes dbt build,
   publication hold, serving snapshot publication, and Pub/Sub signalling.
+- `build__wremotely_clickhouse` is manual-only and runs the isolated ClickHouse
+  dbt graph against raw relations that have already been loaded by the private
+  ETL boundary. It does not crawl, load raw data, publish serving state, or
+  replace the GCP-backed DAG.
+
+For local or homeserver validation, set the optional ClickHouse image and
+connection values in the external environment file. The password must remain
+outside Git and is passed only as a private DockerOperator environment value:
+
+```dotenv
+DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE=ghcr.io/kevinesg/data-platform-wremotely-clickhouse-dbt:sha-<commit-sha>
+WREMOTELY_CLICKHOUSE_DATABASE=wremotely_dev
+WREMOTELY_CLICKHOUSE_HOST=host.docker.internal
+WREMOTELY_CLICKHOUSE_PORT=8123
+WREMOTELY_CLICKHOUSE_USER=wremotely_dev
+WREMOTELY_CLICKHOUSE_PASSWORD=<external-secret>
+```
+
+Trigger the DAG only after the corresponding raw-load success marker and
+ClickHouse relation checks pass. This boundary is intentionally manual until
+the full on-prem crawl/stage/load DAG and publication-worker contract are
+implemented.
 
 The serving dbt task atomically retains only its latest successful
 `dbt build` `run_results.json` under
