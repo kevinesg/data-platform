@@ -1,0 +1,34 @@
+name: ${WREMOTELY_CLICKHOUSE_COMPOSE_PROJECT:-wremotely-clickhouse}
+
+services:
+  server:
+    image: ${WREMOTELY_CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:26.3.12.3}
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_DB: ${WREMOTELY_CLICKHOUSE_DATABASE:?set WREMOTELY_CLICKHOUSE_DATABASE}
+      CLICKHOUSE_USER: ${WREMOTELY_CLICKHOUSE_USER:?set WREMOTELY_CLICKHOUSE_USER}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/clickhouse-password
+    volumes:
+      - type: bind
+        source: ${WREMOTELY_CLICKHOUSE_DATA_DIR:?set WREMOTELY_CLICKHOUSE_DATA_DIR}
+        target: /var/lib/clickhouse
+      - type: bind
+        source: ${WREMOTELY_CLICKHOUSE_LOG_DIR:?set WREMOTELY_CLICKHOUSE_LOG_DIR}
+        target: /var/log/clickhouse-server
+      - type: bind
+        source: ${WREMOTELY_CLICKHOUSE_PASSWORD_FILE:?set WREMOTELY_CLICKHOUSE_PASSWORD_FILE}
+        target: /run/secrets/clickhouse-password
+        read_only: true
+    ports:
+      - "${WREMOTELY_CLICKHOUSE_BIND_ADDRESS:-127.0.0.1}:8123:8123"
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s

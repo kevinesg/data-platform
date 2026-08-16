@@ -1,0 +1,45 @@
+name: ClickHouse CI
+
+on:
+  pull_request:
+    paths:
+      - "clickhouse/**"
+      - ".github/workflows/clickhouse-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "clickhouse/**"
+      - ".github/workflows/clickhouse-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          install -d -m 0750 "$scratch/data" "$scratch/logs"
+          printf 'ci-only-secret' > "$scratch/password"
+          chmod 600 "$scratch/password"
+          cat > "$scratch/clickhouse.env" <<EOF
+          WREMOTELY_CLICKHOUSE_COMPOSE_PROJECT=wremotely-clickhouse-ci
+          WREMOTELY_CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:26.3.12.3
+          WREMOTELY_CLICKHOUSE_DATABASE=wremotely_ci
+          WREMOTELY_CLICKHOUSE_USER=wremotely_ci
+          WREMOTELY_CLICKHOUSE_DATA_DIR=$scratch/data
+          WREMOTELY_CLICKHOUSE_LOG_DIR=$scratch/logs
+          WREMOTELY_CLICKHOUSE_PASSWORD_FILE=$scratch/password
+          WREMOTELY_CLICKHOUSE_BIND_ADDRESS=127.0.0.1
+          EOF
+          docker compose \
+            --env-file "$scratch/clickhouse.env" \
+            --file clickhouse/docker-compose.yml \
+            config --quiet
