@@ -7,7 +7,28 @@ runtime in `dbt/`, which continues to serve the existing BigQuery
 
 The harness uses the dbt-clickhouse-supported dbt Core 1.10 line. Do not
 downgrade the shared dbt 1.12 runtime to make this adapter fit. The harness is
-not yet an Airflow task or a production cutover path.
+not yet an Airflow task or a production cutover path. Its container image is
+published separately from the shared BigQuery dbt image so the two
+adapter/runtime contracts can evolve independently.
+
+## Container image
+
+Build the isolated runtime from this directory:
+
+```bash
+docker build \
+  --file Dockerfile \
+  --tag data-platform-wremotely-clickhouse-dbt:dev \
+  .
+
+docker run --rm data-platform-wremotely-clickhouse-dbt:dev --version
+```
+
+The CI workflow builds the same Dockerfile without pushing it. Successful dbt
+CI on `main` publishes the immutable
+`ghcr.io/kevinesg/data-platform-wremotely-clickhouse-dbt:sha-<commit-sha>` tag.
+The image currently contains only the isolated dbt project and profile
+template; credentials and the real profile must be supplied at runtime.
 
 ## Local setup
 
