@@ -50,6 +50,7 @@ WREMOTELY_CLICKHOUSE_DATA_DIR=/srv/data/warehouse/workmichi/clickhouse/prod/data
 WREMOTELY_CLICKHOUSE_LOG_DIR=/srv/data/warehouse/workmichi/clickhouse/prod/logs
 WREMOTELY_CLICKHOUSE_PASSWORD_FILE=/home/kevinesg/secrets/data-platform/prod/clickhouse-password
 WREMOTELY_CLICKHOUSE_BIND_ADDRESS=127.0.0.1
+WREMOTELY_CLICKHOUSE_PORT=8123
 ```
 
 Use separate database, user, password, data directory, Compose project, and
@@ -85,7 +86,8 @@ docker compose --env-file "$HOME/secrets/data-platform/prod/clickhouse.env" \
 docker compose --env-file "$HOME/secrets/data-platform/prod/clickhouse.env" \
   -f docker-compose.yml ps
 
-curl --fail --silent http://127.0.0.1:8123/ping
+curl --fail --silent \
+  "http://${WREMOTELY_CLICKHOUSE_BIND_ADDRESS:-127.0.0.1}:${WREMOTELY_CLICKHOUSE_PORT:-8123}/ping"
 ```
 
 The expected ping response is `Ok.`. Validate authenticated access without

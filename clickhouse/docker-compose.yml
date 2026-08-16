@@ -25,7 +25,7 @@ services:
         target: /run/secrets/clickhouse-password
         read_only: true
     ports:
-      - "${WREMOTELY_CLICKHOUSE_BIND_ADDRESS:-127.0.0.1}:8123:8123"
+      - "${WREMOTELY_CLICKHOUSE_BIND_ADDRESS:-127.0.0.1}:${WREMOTELY_CLICKHOUSE_PORT:-8123}:8123"
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s
