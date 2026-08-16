@@ -15,6 +15,7 @@ from _wremotely import (
     WREMOTELY_WAREHOUSE_POOL,
     WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
     create_onprem_clickhouse_dbt_build_task,
+    create_onprem_clickhouse_publication_snapshot_task,
     docker_task,
     etl_command,
     onprem_wremotely_environment,
@@ -37,6 +38,7 @@ CLASSIFICATION_RUN_ID = f"{BASE_RUN_ID}-classify"
 STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
 LANDING_RUN_ID = f"{BASE_RUN_ID}-landing"
 CLICKHOUSE_RAW_RUN_ID = f"{BASE_RUN_ID}-clickhouse-raw"
+CLICKHOUSE_SNAPSHOT_RUN_ID = f"{BASE_RUN_ID}-clickhouse-snapshot"
 
 
 with DAG(
@@ -276,6 +278,10 @@ with DAG(
 
     dbt_build = create_onprem_clickhouse_dbt_build_task()
 
+    publish_clickhouse_snapshot = create_onprem_clickhouse_publication_snapshot_task(
+        CLICKHOUSE_SNAPSHOT_RUN_ID
+    )
+
     (
         crawl
         >> select
@@ -286,4 +292,5 @@ with DAG(
         >> land_filesystem
         >> load_clickhouse_raw
         >> dbt_build
+        >> publish_clickhouse_snapshot
     )
