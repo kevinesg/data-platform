@@ -646,6 +646,32 @@ def create_onprem_clickhouse_dbt_build_task() -> DockerOperator:
     )
 
 
+def create_onprem_clickhouse_publication_snapshot_task(run_id: str) -> DockerOperator:
+    return docker_task(
+        task_id="publish_clickhouse_snapshot",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "publish-clickhouse-snapshot",
+            "--run-id",
+            run_id,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--source-registry-input",
+            APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+            "--publication-snapshot-batch-row-count",
+            optional_env("WREMOTELY_PUBLICATION_SNAPSHOT_BATCH_ROW_COUNT", "1000"),
+        ),
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
 def create_publication_hold_task(run_id: str) -> DockerOperator:
     return docker_task(
         task_id="publication_hold",

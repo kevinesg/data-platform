@@ -176,6 +176,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "land_filesystem",
             "load_clickhouse_raw",
             "dbt_build",
+            "publish_clickhouse_snapshot",
         ],
     )
     assert_onprem_ingestion_task_contract(onprem_ingestion)
@@ -244,7 +245,13 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(clickhouse_build, "dbt_build", "wremotely_warehouse")
     assert_pool(onprem_ingestion, "crawl", "wremotely_network")
     assert_pool(onprem_ingestion, "extract", "wremotely_network")
-    for task_id in ("stage", "land_filesystem", "load_clickhouse_raw", "dbt_build"):
+    for task_id in (
+        "stage",
+        "land_filesystem",
+        "load_clickhouse_raw",
+        "dbt_build",
+        "publish_clickhouse_snapshot",
+    ):
         assert_pool(onprem_ingestion, task_id, "wremotely_warehouse")
 
     dbt_build = publication.get_task("dbt_build")
@@ -480,6 +487,20 @@ def assert_ingestion_task_contract(ingestion: DAG) -> None:
 
 
 def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
+    expected_task_ids = {
+        "crawl",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "stage",
+        "land_filesystem",
+        "load_clickhouse_raw",
+        "dbt_build",
+        "publish_clickhouse_snapshot",
+    }
+    if set(ingestion.task_ids) != expected_task_ids:
+        raise AssertionError(f"{ingestion.dag_id} task set does not match its contract")
     for task_id in ingestion.task_ids:
         task = ingestion.get_task(task_id)
         if task.task_id == "dbt_build":
@@ -512,6 +533,22 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         raise AssertionError("on-prem dbt task must run the ClickHouse project")
     if dbt_command[-2:] != ["--exclude-resource-type", "unit_test"]:
         raise AssertionError("on-prem dbt task must exclude development unit tests")
+
+    snapshot_command = ingestion.get_task("publish_clickhouse_snapshot").command
+    if command_argument(snapshot_command, "--step") != "publish-clickhouse-snapshot":
+        raise AssertionError("on-prem publication task must export a ClickHouse snapshot")
+    if command_argument(snapshot_command, "--source-registry-input") != (
+        "/app/source_registry/approved_sources.jsonl"
+    ):
+        raise AssertionError("on-prem publication task must use the image-bundled registry")
+    if "--source-registry-input-sha256" in snapshot_command:
+        raise AssertionError(
+            "on-prem publication task must not depend on an external registry checksum"
+        )
+    if "publish_clickhouse_snapshot" not in ingestion.get_task(
+        "dbt_build"
+    ).downstream_task_ids:
+        raise AssertionError("on-prem dbt build must precede ClickHouse snapshot export")
 
 
 def assert_pool(dag: DAG, task_id: str, expected_pool: str) -> None:
