@@ -1,6 +1,15 @@
 version: 2
 
 seeds:
+  - name: wremotely__search_tags
+    description: Reviewed public search-tag taxonomy and bounded match patterns.
+    columns:
+      - name: tag_code
+        data_tests: [not_null, unique]
+      - name: tag_label
+        data_tests: [not_null, unique]
+      - name: match_pattern
+        data_tests: [not_null, unique]
   - name: wremotely__countries
     columns:
       - name: country_code

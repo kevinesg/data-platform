@@ -138,4 +138,45 @@ models:
         tests:
           - accepted_values:
               arguments:
-                values: [SPECIFIC, GLOBAL_EXCEPT]
+              values: [SPECIFIC, GLOBAL_EXCEPT]
+  - name: int_wremotely__current_candidate_facts
+    description: Current candidate-grain join of latest selection, extraction, facts, classification, and country eligibility.
+    columns:
+      - name: candidate_id
+        tests: [not_null, unique]
+      - name: url
+        tests: [not_null]
+      - name: source_updated_at
+        tests: [not_null]
+      - name: dbt_updated_at
+        tests: [not_null]
+  - name: int_wremotely__job_publication_status
+    description: Candidate publication gate over the ClickHouse current-facts contract.
+    columns:
+      - name: candidate_id
+        tests: [not_null, unique]
+      - name: publication_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [PUBLISHABLE, CLOSED, NOT_PUBLISHABLE]
+      - name: publication_status_reason
+        tests: [not_null]
+  - name: int_wremotely__publishable_job_facts
+    description: Candidate rows accepted by the ClickHouse publication gate.
+    columns:
+      - name: job_id
+        tests: [not_null, unique]
+      - name: canonical_url
+        tests: [not_null]
+      - name: source_url
+        tests: [not_null]
+  - name: int_wremotely__job_search_facets
+    description: Candidate-grain normalized employment types and reviewed search tags.
+    columns:
+      - name: job_id
+        tests: [not_null, unique]
+      - name: employment_types
+        tests: [not_null]
+      - name: search_tags
+        tests: [not_null]
