@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: wremotely__serving_jobs
+    description: ClickHouse pre-publication serving rows for accepted and closed candidates.
+    columns:
+      - name: job_id
+        tests: [not_null, unique]
+      - name: canonical_url
+        tests: [not_null]
+      - name: source_url
+        tests: [not_null]
+      - name: employment_types
+        tests: [not_null]
+      - name: search_tags
+        tests: [not_null]
+      - name: serving_content_sha256
+        tests: [not_null]
+      - name: publication_hold_content_sha256
+        tests: [not_null]
+      - name: serving_row_sha256
+        tests: [not_null, unique]
+  - name: wremotely__companies
+    description: Conservative company aggregate over active ClickHouse serving jobs.
+    columns:
+      - name: company_id
+        tests: [not_null, unique]
+      - name: company_name
+        tests: [not_null]
+      - name: open_job_count
+        tests: [not_null]
+      - name: company_row_sha256
+        tests: [not_null, unique]
+  - name: wremotely__job_country_eligibility
+    description: Explicit country bridge rows for active ClickHouse serving jobs.
+    columns:
+      - name: job_id
+        tests: [not_null]
+      - name: country_code
+        tests: [not_null]
+      - name: eligibility_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ELIGIBLE, EXCLUDED]
+      - name: job_country_eligibility_row_sha256
+        tests: [not_null, unique]
+  - name: wremotely__publication_manifest
+    description: Deterministic ClickHouse serving snapshot manifest.
+    columns:
+      - name: publication_id
+        tests: [not_null, unique]
+      - name: serving_snapshot_contract
+        tests:
+          - accepted_values:
+              arguments:
+                values: [wremotely_serving_snapshot_v4]
+      - name: serving_snapshot_sha256
+        tests: [not_null, unique]
