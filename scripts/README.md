@@ -390,6 +390,14 @@ relevant pipeline implementation. A single pipeline note can live at
 multiple docs or supporting non-runtime files. The importable runtime source
 tree is not the home for operational notes.
 
+The scheduled Wremotely production pipeline no longer uses the GCP baseline
+collector, GCS transport, or BigQuery load scripts. Wremotely data lands on the
+local filesystem and is loaded into ClickHouse by the private ETL image; this
+repository still owns the final Pub/Sub signal. The historical baseline and
+BigQuery/GCS commands below remain read-only migration tooling and are not
+invoked by the active Wremotely DAG. The personal-finance pipeline remains on
+GCP.
+
 - [wremotely GCP workload baseline](pipelines/wremotely_gcp_baseline.md) is a
   bounded, read-only migration measurement. It does not create pipeline data or
   become an Airflow task.

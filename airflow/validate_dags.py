@@ -180,30 +180,27 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "signal_publication",
         ],
     )
+    if onprem_ingestion.dag_id != "etl__wremotely":
+        raise AssertionError("ClickHouse ingestion must own the canonical etl__wremotely DAG ID")
+    if ingestion.dag_id != "etl__wremotely_gcp_legacy":
+        raise AssertionError("legacy GCP ingestion must not own the canonical DAG ID")
     assert_onprem_ingestion_task_contract(onprem_ingestion)
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     if environment == "prod":
-        if ingestion.schedule != EXPECTED_PROD_INGESTION_SCHEDULE:
+        if onprem_ingestion.schedule != EXPECTED_PROD_INGESTION_SCHEDULE:
             raise AssertionError(
                 "prod ingestion DAG schedule must be "
-                f"{EXPECTED_PROD_INGESTION_SCHEDULE!r}, got {ingestion.schedule!r}"
+                f"{EXPECTED_PROD_INGESTION_SCHEDULE!r}, got {onprem_ingestion.schedule!r}"
             )
-        if lifecycle.schedule != EXPECTED_PROD_LIFECYCLE_SCHEDULE:
-            raise AssertionError(
-                "prod lifecycle DAG schedule must be "
-                f"{EXPECTED_PROD_LIFECYCLE_SCHEDULE!r}, got {lifecycle.schedule!r}"
-            )
-        if artifact_cleanup.schedule != EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE:
-            raise AssertionError(
-                "prod artifact cleanup DAG schedule must be "
-                f"{EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE!r}, "
-                f"got {artifact_cleanup.schedule!r}"
-            )
-    if environment != "prod" and artifact_cleanup.schedule is not None:
-        raise AssertionError("non-prod artifact cleanup DAG must be manual")
-    if environment != "prod" and lifecycle.schedule is not None:
-        raise AssertionError("non-prod lifecycle DAG must be manual")
+    elif onprem_ingestion.schedule is not None:
+        raise AssertionError("non-prod ingestion DAG must be manual")
+    if ingestion.schedule is not None:
+        raise AssertionError("legacy GCP ingestion DAG must be disabled")
+    if artifact_cleanup.schedule is not None:
+        raise AssertionError("legacy GCS artifact cleanup DAG must be disabled")
+    if lifecycle.schedule is not None:
+        raise AssertionError("legacy GCP lifecycle DAG must be disabled")
     if artifact_cleanup.max_active_runs != 1:
         raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
     if repair.schedule is not None:
@@ -224,8 +221,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("ClickHouse dbt build DAG must always be manual")
     if clickhouse_build.max_active_runs != 1:
         raise AssertionError("ClickHouse dbt build DAG must serialize builds")
-    if onprem_ingestion.schedule is not None:
-        raise AssertionError("on-prem ingestion DAG must always be manual")
     if onprem_ingestion.max_active_runs != 1:
         raise AssertionError("on-prem ingestion DAG must serialize runs")
 
@@ -511,9 +506,17 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         if not isinstance(task.command, list):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} command must be an argv list")
         if task_id != "signal_publication" and any(
-            argument in task.command for argument in ("--gcp-project", "--raw-dataset")
+            argument in task.command
+            for argument in (
+                "--gcp-project",
+                "--raw-dataset",
+                "--handoff-dataset",
+                "--bigquery-location",
+                "--gcs-bucket",
+                "--gcs-prefix",
+            )
         ):
-            raise AssertionError(f"{ingestion.dag_id}.{task_id} must not call BigQuery")
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} must not call GCP")
         if task.environment.get("GOOGLE_CLOUD_PROJECT"):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} must not receive GCP settings")
 

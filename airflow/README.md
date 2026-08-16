@@ -192,32 +192,26 @@ Private DAG helper modules use a leading underscore, such as
 Airflow DAG discovery while keeping those modules importable by DAG files.
 Use the same pattern for future helper modules such as `_dag_factory.py`.
 
-The wremotely workflows are split by operating purpose:
+The scheduled wremotely workflow is the ClickHouse/on-prem path:
 
-- `etl__wremotely` ingests newly crawled job URLs and triggers publication after raw load;
-- `maintenance__wremotely_artifacts` removes three-day-old policy-eligible
-  local runs and exact verified-loaded wremotely GCS artifacts;
-- `maintenance__wremotely_lifecycle` rechecks one stable active-job bucket and
-  triggers publication after lifecycle raw load;
+- `etl__wremotely` runs crawl, extraction, filesystem landing, ClickHouse raw
+  loading, ClickHouse dbt, immutable snapshot export, and the Pub/Sub signal;
+- `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
+  already-loaded raw relations;
+- `etl__wremotely_gcp_legacy`, `maintenance__wremotely_artifacts`,
+  `maintenance__wremotely_lifecycle`, and the `repair__wremotely_*` DAGs are
+  retained for historical recovery only and are not scheduled production paths;
 - `repair__wremotely_classifications` is manual-only and replays completed
   historical extraction artifacts through raw classification load;
 - `repair__wremotely_warehouse_classifications` is manual-only and rebuilds
   current classifications from exact-lineage raw warehouse facts;
 - `repair__wremotely_job_urls` is manual-only and reprocesses 1-100 exact URLs
   before triggering publication;
-- `publish__wremotely_serving` is trigger-only and serializes dbt build,
-  publication hold, serving snapshot publication, and Pub/Sub signalling.
-- `etl__wremotely_onprem` is manual-only and runs the GCP-free crawl, local
-  artifact deduplication, extraction, raw-only classification, filesystem
-  landing, ClickHouse raw load, ClickHouse dbt build, and immutable ClickHouse
-  publication snapshot export chain, followed by a Pub/Sub publication-ID
-  signal. The signal publishes no row data and does not query BigQuery.
-- `build__wremotely_clickhouse` is manual-only and runs the isolated ClickHouse
-  dbt graph against raw relations that have already been loaded by the private
-  ETL boundary. It does not crawl, load raw data, publish serving state, or
-  replace the GCP-backed DAG.
+The legacy publication DAG remains trigger-only for a controlled recovery
+window. Do not trigger it or the other legacy Wremotely DAGs for normal
+production operation. Personal-finance DAGs continue to use BigQuery.
 
-For local or homeserver validation, set the optional ClickHouse image and
+For local or homeserver validation, set the ClickHouse image and
 connection values in the external environment file. The password must remain
 outside Git and is passed only as a private DockerOperator environment value:
 
@@ -229,7 +223,7 @@ WREMOTELY_CLICKHOUSE_PORT=8123
 WREMOTELY_CLICKHOUSE_USER=wremotely_dev
 WREMOTELY_CLICKHOUSE_PASSWORD=<external-secret>
 
-# Required by etl__wremotely_onprem on a homeserver or other Docker host:
+# Required by etl__wremotely on a homeserver or other Docker host:
 WREMOTELY_WAREHOUSE_ROOT=/srv/data/warehouse/workmichi
 WREMOTELY_CLICKHOUSE_URL=http://127.0.0.1:8123
 WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX=wremotely__
@@ -237,16 +231,14 @@ WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS=60
 WREMOTELY_PUBLICATION_SIGNAL_TIMEOUT_SECONDS=60
 ```
 
-Trigger the DAG only after the corresponding raw-load success marker and
-ClickHouse relation checks pass. The on-prem DAG uses the mounted warehouse
-root for `storage/` and `control/`, and its `select` task uses completed local
-extraction artifacts for deduplication instead of querying BigQuery. It is
-intentionally manual until the VPS worker read contract, rollback procedure,
-and production authority cutover are implemented. The snapshot task creates the
-local READY artifact; only the following signal task may publish its
-content-addressed ID to Pub/Sub.
+The DAG uses the mounted warehouse root for `storage/` and `control/`, and its
+`select` task uses completed local extraction artifacts for deduplication
+instead of querying BigQuery. The snapshot task creates the local READY
+artifact; only the following signal task may publish its content-addressed ID
+to Pub/Sub. The signal publishes an identifier only; it does not send row data
+or query BigQuery.
 
-The serving dbt task atomically retains only its latest successful
+The legacy serving dbt task atomically retains only its latest successful
 `dbt build` `run_results.json` under
 `$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-build/`. Failed builds and unrelated
 commands leave the prior artifact unchanged. This bounded operational artifact
@@ -255,10 +247,9 @@ supports workload measurement without accumulating dbt target directories.
 Airflow initialization creates one-slot `wremotely_network` and
 `wremotely_warehouse` pools. The first prevents separate DAG runs from scraping
 concurrently outside the private runtime's per-domain controls. The second
-prevents artifact cleanup and raw loads from overlapping dbt builds and
-serving-table mutations;
-`publish__wremotely_serving.max_active_runs=1` additionally serializes the
-complete multi-task publication chain.
+prevents raw loads, dbt builds, and snapshot mutations from overlapping. The
+canonical ingestion DAG also has `max_active_runs=1`, which serializes complete
+ClickHouse publication runs.
 The packaged `validate_dags.py` command is the reusable CI contract check for
 DAG imports, required task edges, pool assignments, scheduled and manual run
 identity rendering, repair-URL rendering, and classification-replay command

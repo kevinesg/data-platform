@@ -136,8 +136,9 @@ secret or rebuilding the image.
 ## Explicit deferrals
 
 This component does not grant public access or provision the private VPS
-publication-read route and reader grants. The on-prem ETL DAG and Pub/Sub
-publication signal are implemented elsewhere and remain manual-only; the
-paused GCP wremotely DAG is still the rollback path. Production authority
-requires reconciled data, backup/restore evidence, failure recovery,
-publication comparison, and a bounded rollback window.
+publication-read route and reader grants. The scheduled `etl__wremotely` DAG
+owns the on-prem ETL and Pub/Sub publication signal; this service remains the
+local ClickHouse boundary it consumes. The legacy GCP wremotely DAG is kept
+only for controlled recovery and is not part of normal production operation.
+Production authority still requires reconciled data, backup/restore evidence,
+failure recovery, publication comparison, and a bounded rollback window.

@@ -7,7 +7,6 @@ from airflow.sdk import DAG
 from _wremotely import (
     APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
     CRAWL_TASK_EXECUTION_TIMEOUT,
-    ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
@@ -21,7 +20,6 @@ from _wremotely import (
     create_wremotely_refresh_branch_task,
     create_wremotely_refresh_gate_task,
     create_wremotely_refresh_request_task,
-    dag_schedule,
     docker_task,
     normalize_wremotely_refresh_request,
     optional_env,
@@ -50,10 +48,13 @@ WREMOTELY_REFRESH_BOUNDARIES = _WREMOTELY_REFRESH_BOUNDARIES
 
 DAG_RUN_TIMEOUT = timedelta(hours=24)
 with DAG(
-    dag_id="etl__wremotely",
-    description="Load newly processed wremotely jobs and trigger serialized serving publication.",
+    dag_id="etl__wremotely_gcp_legacy",
+    description=(
+        "Legacy BigQuery/GCS wremotely ingestion retained for historical recovery only; "
+        "the scheduled production path is etl__wremotely through ClickHouse."
+    ),
     start_date=datetime(2026, 1, 1),
-    schedule=dag_schedule(ENVIRONMENT, "ETL__WREMOTELY_SCHEDULE"),
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,

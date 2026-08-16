@@ -74,6 +74,7 @@ jobs:
               -e RAW_DATASET=raw_ci \
               -e DATA_PLATFORM_SCRIPTS_IMAGE=data-platform-scripts:ci \
               -e DATA_PLATFORM_DBT_IMAGE=data-platform-dbt:ci \
+              -e DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE=data-platform-wremotely-clickhouse-dbt:ci \
               -e DATA_PLATFORM_WREMOTELY_ETL_IMAGE=wremotely-etl:ci \
               -e SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/tmp/scripts-ci-service-account.json \
               -e DBT_GOOGLE_APPLICATION_CREDENTIALS=/tmp/dbt-ci-service-account.json \
@@ -90,6 +91,16 @@ jobs:
               -e BIGQUERY_LOCATION=US \
               -e WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/tmp/wremotely-etl-ci-service-account.json \
               -e WREMOTELY_ETL_ARTIFACTS_DIR=/tmp/wremotely-etl-artifacts \
+              -e WREMOTELY_WAREHOUSE_ROOT=/tmp/workmichi \
+              -e WREMOTELY_CLICKHOUSE_URL=http://127.0.0.1:8123 \
+              -e WREMOTELY_CLICKHOUSE_DATABASE=wremotely_ci \
+              -e WREMOTELY_CLICKHOUSE_HOST=127.0.0.1 \
+              -e WREMOTELY_CLICKHOUSE_PORT=8123 \
+              -e WREMOTELY_CLICKHOUSE_USER=wremotely_ci \
+              -e WREMOTELY_CLICKHOUSE_TABLE_PREFIX=wremotely__landing \
+              -e WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX=wremotely__ \
+              -e WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS=60 \
+              -e WREMOTELY_PUBLICATION_SIGNAL_TIMEOUT_SECONDS=60 \
               -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
               -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
               -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \
