@@ -7,9 +7,14 @@ and a final Pub/Sub signal containing only the publication identifier.
 
 BigQuery and GCS are no longer part of the scheduled wremotely path. The
 personal-finance DAG remains a separate BigQuery workload. The old
-`etl__wremotely_gcp_legacy`, `publish__wremotely_serving`, lifecycle, cleanup,
-and repair DAGs are retained only for recovery history and must not be used for
-normal wremotely runs.
+`etl__wremotely_gcp_legacy`, publication, cleanup, and repair DAGs are paused
+recovery tooling only and must not be used for normal wremotely runs.
+
+`maintenance__wremotely_lifecycle` is the native maintenance path. It selects
+due jobs from ClickHouse, rechecks their source pages, lands the lifecycle
+facts under the local warehouse root, loads ClickHouse raw relations, runs the
+ClickHouse dbt project, publishes a local snapshot, and sends only the
+content-addressed publication ID through Pub/Sub.
 
 ## Required external configuration
 
@@ -93,8 +98,7 @@ publication contract through its private serving boundary.
 
 ## Retention and lifecycle
 
-The former GCS cleanup and BigQuery lifecycle DAGs are disabled. Do not enable
-their schedules or trigger them manually. Filesystem retention and ClickHouse
-native lifecycle/recheck tasks are separate follow-up work; until then, delete
-only artifacts covered by a verified retention policy and preserve the latest
-successful publication and its control manifest.
+The former GCS cleanup and BigQuery lifecycle paths are not part of normal
+operation. Do not enable their schedules or trigger them manually. Filesystem
+retention and ClickHouse lifecycle runs must preserve the latest successful
+publication and its control manifest.
