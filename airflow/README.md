@@ -207,6 +207,11 @@ The wremotely workflows are split by operating purpose:
   before triggering publication;
 - `publish__wremotely_serving` is trigger-only and serializes dbt build,
   publication hold, serving snapshot publication, and Pub/Sub signalling.
+- `etl__wremotely_onprem` is manual-only and runs the GCP-free crawl, local
+  artifact deduplication, extraction, raw-only classification, filesystem
+  landing, ClickHouse raw load, and ClickHouse dbt build chain. It stops before
+  publication signalling so the new warehouse path can be validated without
+  changing the VPS serving state.
 - `build__wremotely_clickhouse` is manual-only and runs the isolated ClickHouse
   dbt graph against raw relations that have already been loaded by the private
   ETL boundary. It does not crawl, load raw data, publish serving state, or
@@ -223,11 +228,20 @@ WREMOTELY_CLICKHOUSE_HOST=host.docker.internal
 WREMOTELY_CLICKHOUSE_PORT=8123
 WREMOTELY_CLICKHOUSE_USER=wremotely_dev
 WREMOTELY_CLICKHOUSE_PASSWORD=<external-secret>
+
+# Required by etl__wremotely_onprem on a homeserver or other Docker host:
+WREMOTELY_WAREHOUSE_ROOT=/srv/data/warehouse/workmichi
+WREMOTELY_CLICKHOUSE_URL=http://127.0.0.1:8123
+WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX=wremotely__
+WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS=60
 ```
 
 Trigger the DAG only after the corresponding raw-load success marker and
-ClickHouse relation checks pass. This boundary is intentionally manual until
-the full on-prem crawl/stage/load DAG and publication-worker contract are
+ClickHouse relation checks pass. The on-prem DAG uses the mounted warehouse
+root for `storage/` and `control/`, and its `select` task uses completed local
+extraction artifacts for deduplication instead of querying BigQuery. It is
+intentionally manual until the ClickHouse publication snapshot, VPS worker
+read contract, rollback procedure, and production authority cutover are
 implemented.
 
 The serving dbt task atomically retains only its latest successful
