@@ -36,7 +36,36 @@ ranked as (
 )
 
 select
-    * except (selected_job_url_rank)
+    candidate_id
+    , url
+    , normalized_url
+    , source_job_url_id
+    , source_candidate_id
+    , source_url
+    , source_domain
+    , source_crawl_run_id
+    , source_url_identity
+    , source_type_guess
+    , source_platform_guess
+    , source_review_status
+    , source_default_work_arrangement
+    , source_link_text
+    , source_link_text_char_count
+    , source_link_title_candidate
+    , source_link_title_candidate_status
+    , source_link_rel
+    , source_job_url_discovery_reason
+    , selection_status
+    , selection_reason
+    , known_url_match
+    , duplicate_url_identity
+    , selected_at as latest_selected_at
+    , selector_version as latest_selector_version
+    , stage_run_id as latest_selection_stage_run_id
+    , selection_run_id as latest_selection_run_id
+    , source_record_index as latest_selection_source_record_index
+    , source_artifact_sha256 as latest_selection_artifact_sha256
+    , raw_payload
     , selected_at as source_updated_at
     , now64(3) as dbt_updated_at
 from ranked
