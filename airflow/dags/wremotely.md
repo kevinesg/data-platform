@@ -713,14 +713,16 @@ approved source IDs for company-career and ATS-company sources, then includes
 those bounded totals in the same publication identity and control-row
 transaction. Airflow does not inspect registry rows or derive the counts.
 
-`signal_publication` reads the completed local snapshot artifact, verifies that
-its exact publication ID still has one `READY` control row in BigQuery, and
-publishes only that UTF-8 publication ID as the Pub/Sub message data. It runs in
-the scripts image with read-only mounts for the ETL credential and artifact
-directory. Airflow retries or manual task clears may publish a duplicate; this
-is intentional, and the serving worker must use its PostgreSQL publication
-ledger to make duplicate IDs no-ops. If signaling fails, clear only
-`signal_publication`; do not rebuild the snapshot.
+The on-prem `signal_publication` reads the completed ClickHouse `manifest.json`
+and sibling `control.json` from the read-only warehouse mount, requires the
+`_SUCCESS` marker and `READY` state, and publishes only that UTF-8
+content-addressed publication ID to the existing Pub/Sub topic. It never queries
+BigQuery or sends row data. The legacy `publish__wremotely_serving` signal still
+verifies its BigQuery control row; the on-prem signal verifies the committed
+local ClickHouse control artifact instead. Airflow retries or manual task clears
+may publish a duplicate; this is intentional, and the serving worker must use
+its PostgreSQL publication ledger to make duplicate IDs no-ops. If signaling
+fails, clear only `signal_publication`; do not rebuild the snapshot.
 
 The VPS worker consumes an environment-specific pull subscription with its own
 least-privilege subscriber identity. Pub/Sub does not retain topic messages for

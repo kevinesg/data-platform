@@ -560,6 +560,27 @@ onprem_wremotely_mounts = [
     ),
 ]
 
+onprem_publication_signal_environment = {
+    "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
+}
+
+onprem_publication_signal_mounts = [
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
+        target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+    Mount(
+        source=optional_host_path_env(
+            "WREMOTELY_WAREHOUSE_ROOT", "/srv/data/warehouse/workmichi"
+        ),
+        target=WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+]
+
 onprem_clickhouse_dbt_environment = {
     "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
         "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"
@@ -667,6 +688,31 @@ def create_onprem_clickhouse_publication_snapshot_task(run_id: str) -> DockerOpe
         environment=onprem_wremotely_environment,
         private_environment=onprem_wremotely_private_environment,
         mounts=onprem_wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_onprem_clickhouse_publication_signal_task(snapshot_run_id: str) -> DockerOperator:
+    return docker_task(
+        task_id="signal_publication",
+        image=SCRIPTS_IMAGE,
+        entrypoint=["python", "src/clickhouse_publication_signal.py"],
+        command=[
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--publication-topic",
+            required_env("WREMOTELY_PUBLICATION_TOPIC"),
+            "--publication-artifact",
+            (
+                f"{WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH}/control/"
+                f"clickhouse-publication/{snapshot_run_id}/manifest.json"
+            ),
+            "--publish-timeout-seconds",
+            optional_env("WREMOTELY_PUBLICATION_SIGNAL_TIMEOUT_SECONDS", "60"),
+        ],
+        environment=onprem_publication_signal_environment,
+        mounts=onprem_publication_signal_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )

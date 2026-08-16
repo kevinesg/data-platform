@@ -210,9 +210,8 @@ The wremotely workflows are split by operating purpose:
 - `etl__wremotely_onprem` is manual-only and runs the GCP-free crawl, local
   artifact deduplication, extraction, raw-only classification, filesystem
   landing, ClickHouse raw load, ClickHouse dbt build, and immutable ClickHouse
-  publication snapshot export chain. It stops before publication signalling so
-  the new warehouse path can be validated without changing the VPS serving
-  state.
+  publication snapshot export chain, followed by a Pub/Sub publication-ID
+  signal. The signal publishes no row data and does not query BigQuery.
 - `build__wremotely_clickhouse` is manual-only and runs the isolated ClickHouse
   dbt graph against raw relations that have already been loaded by the private
   ETL boundary. It does not crawl, load raw data, publish serving state, or
@@ -235,6 +234,7 @@ WREMOTELY_WAREHOUSE_ROOT=/srv/data/warehouse/workmichi
 WREMOTELY_CLICKHOUSE_URL=http://127.0.0.1:8123
 WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX=wremotely__
 WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS=60
+WREMOTELY_PUBLICATION_SIGNAL_TIMEOUT_SECONDS=60
 ```
 
 Trigger the DAG only after the corresponding raw-load success marker and
@@ -242,9 +242,9 @@ ClickHouse relation checks pass. The on-prem DAG uses the mounted warehouse
 root for `storage/` and `control/`, and its `select` task uses completed local
 extraction artifacts for deduplication instead of querying BigQuery. It is
 intentionally manual until the VPS worker read contract, rollback procedure,
-and production authority cutover are implemented. The final task only creates
-a local READY snapshot artifact; it does not publish a Pub/Sub message or
-change the VPS serving state.
+and production authority cutover are implemented. The snapshot task creates the
+local READY artifact; only the following signal task may publish its
+content-addressed ID to Pub/Sub.
 
 The serving dbt task atomically retains only its latest successful
 `dbt build` `run_results.json` under
