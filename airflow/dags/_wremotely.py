@@ -372,6 +372,10 @@ ENVIRONMENT = optional_env("ENVIRONMENT", "dev")
 WREMOTELY_ETL_IMAGE = required_env("DATA_PLATFORM_WREMOTELY_ETL_IMAGE")
 SCRIPTS_IMAGE = required_env("DATA_PLATFORM_SCRIPTS_IMAGE")
 DBT_IMAGE = required_env("DATA_PLATFORM_DBT_IMAGE")
+CLICKHOUSE_DBT_IMAGE = optional_env(
+    "DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE",
+    "data-platform-wremotely-clickhouse-dbt:dev",
+)
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
 WREMOTELY_LOCAL_LLM_RUNTIME = required_env("WREMOTELY_LOCAL_LLM_RUNTIME")
 WREMOTELY_DBT_MART_DATASET = dbt_schema_name(
@@ -479,6 +483,32 @@ dbt_mounts = [
     ),
 ]
 
+clickhouse_dbt_environment = {
+    "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
+        "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"
+    ),
+    "WREMOTELY_CLICKHOUSE_HOST": optional_env(
+        "WREMOTELY_CLICKHOUSE_HOST", "host.docker.internal"
+    ),
+    "WREMOTELY_CLICKHOUSE_PORT": optional_env("WREMOTELY_CLICKHOUSE_PORT", "8123"),
+    "WREMOTELY_CLICKHOUSE_USER": optional_env(
+        "WREMOTELY_CLICKHOUSE_USER", "wremotely_dev"
+    ),
+}
+clickhouse_dbt_private_environment = {}
+if os.environ.get("WREMOTELY_CLICKHOUSE_PASSWORD", "").strip():
+    clickhouse_dbt_private_environment["WREMOTELY_CLICKHOUSE_PASSWORD"] = os.environ[
+        "WREMOTELY_CLICKHOUSE_PASSWORD"
+    ]
+
+clickhouse_dbt_mounts = [
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
+        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+        type="bind",
+    ),
+]
+
 
 def create_dbt_build_task() -> DockerOperator:
     return docker_task(
@@ -501,6 +531,29 @@ def create_dbt_build_task() -> DockerOperator:
         environment=dbt_environment,
         mounts=dbt_mounts,
         entrypoint=["python", "/app/run_and_retain_results.py"],
+        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_clickhouse_dbt_build_task() -> DockerOperator:
+    return docker_task(
+        task_id="dbt_build",
+        image=CLICKHOUSE_DBT_IMAGE,
+        command=[
+            "build",
+            "--project-dir",
+            "/app",
+            "--profiles-dir",
+            "/app/profiles",
+            "--target-path",
+            f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/clickhouse-dbt/{{{{ dag_run.run_id }}}}",
+            "--exclude-resource-type",
+            "unit_test",
+        ],
+        environment=clickhouse_dbt_environment,
+        private_environment=clickhouse_dbt_private_environment,
+        mounts=clickhouse_dbt_mounts,
         execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
