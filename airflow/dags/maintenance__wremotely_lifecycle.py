@@ -12,20 +12,25 @@ from _wremotely import (
     WREMOTELY_NETWORK_POOL,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
-    create_publication_trigger_task,
+    WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+    create_onprem_clickhouse_dbt_build_task,
+    create_onprem_clickhouse_publication_signal_task,
+    create_onprem_clickhouse_publication_snapshot_task,
     docker_task,
     etl_command,
+    onprem_wremotely_environment,
+    onprem_wremotely_mounts,
+    onprem_wremotely_private_environment,
     optional_env,
-    required_env,
-    wremotely_environment,
-    wremotely_mounts,
 )
 
 BASE_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-lifecycle"
 PREPARE_RECHECK_RUN_ID = f"{BASE_RUN_ID}-prepare"
 RECHECK_RUN_ID = f"{BASE_RUN_ID}-recheck"
 RECHECK_STAGE_RUN_ID = f"{BASE_RUN_ID}-stage"
-PUBLICATION_RUN_ID = BASE_RUN_ID
+RECHECK_LANDING_RUN_ID = f"{BASE_RUN_ID}-landing"
+RECHECK_RAW_RUN_ID = f"{BASE_RUN_ID}-clickhouse-raw"
+CLICKHOUSE_SNAPSHOT_RUN_ID = f"{BASE_RUN_ID}-clickhouse-snapshot"
 RECHECK_BUCKET_COUNT = "7"
 RECHECK_BUCKET_INDEX = (
     "{{ (((dag_run.logical_date or dag_run.run_after).timestamp() // 43200) % 7) | int }}"
@@ -36,8 +41,8 @@ DAG_RUN_TIMEOUT = timedelta(hours=12)
 with DAG(
     dag_id="maintenance__wremotely_lifecycle",
     description=(
-        "Legacy BigQuery/GCS lifecycle recheck retained for historical recovery only; "
-        "disabled after the ClickHouse cutover."
+        "Recheck due Wremotely jobs from ClickHouse, land lifecycle facts locally, "
+        "rebuild ClickHouse dbt models, and signal the immutable snapshot through Pub/Sub."
     ),
     start_date=datetime(2026, 1, 1),
     schedule=None,
@@ -57,26 +62,20 @@ with DAG(
             ),
         )
     },
-    tags=["wremotely", "maintenance", "lifecycle"],
+    tags=["wremotely", "maintenance", "lifecycle", "on-prem", "clickhouse"],
 ) as dag:
     prepare_recheck = docker_task(
         task_id="prepare_recheck",
         image=WREMOTELY_ETL_IMAGE,
         command=etl_command(
             "--step",
-            "prepare-recheck-from-warehouse",
+            "prepare-recheck-from-clickhouse",
             "--run-id",
             PREPARE_RECHECK_RUN_ID,
             "--output-root",
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--raw-dataset",
-            required_env("RAW_DATASET"),
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
             "--recheck-bucket-count",
             RECHECK_BUCKET_COUNT,
             "--recheck-bucket-index",
@@ -88,9 +87,11 @@ with DAG(
             "--recheck-min-posting-age-days",
             optional_env("WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS", "21"),
         ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
     recheck = docker_task(
@@ -122,8 +123,9 @@ with DAG(
             "--domain-failure-limit",
             optional_env("WREMOTELY_DOMAIN_FAILURE_LIMIT", "5"),
         ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
         execution_timeout=RECHECK_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_NETWORK_POOL,
@@ -146,63 +148,72 @@ with DAG(
             "--stage-chunk-row-count",
             optional_env("WREMOTELY_STAGE_CHUNK_ROW_COUNT", "5000"),
         ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-    )
-
-    upload_recheck = docker_task(
-        task_id="upload_recheck",
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "upload",
-            "--run-id",
-            RECHECK_STAGE_RUN_ID,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--gcs-bucket",
-            required_env("WREMOTELY_GCS_BUCKET"),
-            "--gcs-prefix",
-            required_env("WREMOTELY_GCS_PREFIX"),
-        ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-    )
-
-    load_recheck = docker_task(
-        task_id="load_recheck",
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "load",
-            "--run-id",
-            RECHECK_STAGE_RUN_ID,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--raw-dataset",
-            required_env("RAW_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-        ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
-    trigger_publication = create_publication_trigger_task(PUBLICATION_RUN_ID)
+    land_filesystem = docker_task(
+        task_id="land_filesystem",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "land-filesystem",
+            "--run-id",
+            RECHECK_LANDING_RUN_ID,
+            "--stage-run-id",
+            RECHECK_STAGE_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        ),
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+    load_clickhouse_raw = docker_task(
+        task_id="load_clickhouse_raw",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "load-clickhouse-raw",
+            "--run-id",
+            RECHECK_RAW_RUN_ID,
+            "--landing-run-id",
+            RECHECK_LANDING_RUN_ID,
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        ),
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+    dbt_build = create_onprem_clickhouse_dbt_build_task()
+    publish_clickhouse_snapshot = create_onprem_clickhouse_publication_snapshot_task(
+        CLICKHOUSE_SNAPSHOT_RUN_ID
+    )
+    signal_publication = create_onprem_clickhouse_publication_signal_task(
+        CLICKHOUSE_SNAPSHOT_RUN_ID
+    )
 
     (
         prepare_recheck
         >> recheck
         >> stage_recheck
-        >> upload_recheck
-        >> load_recheck
-        >> trigger_publication
+        >> land_filesystem
+        >> load_clickhouse_raw
+        >> dbt_build
+        >> publish_clickhouse_snapshot
+        >> signal_publication
     )

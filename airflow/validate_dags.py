@@ -127,9 +127,11 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "prepare_recheck",
             "recheck",
             "stage_recheck",
-            "upload_recheck",
-            "load_recheck",
-            "trigger_publication",
+            "land_filesystem",
+            "load_clickhouse_raw",
+            "dbt_build",
+            "publish_clickhouse_snapshot",
+            "signal_publication",
         ],
     )
     assert_task_contract(
@@ -200,7 +202,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     if artifact_cleanup.schedule is not None:
         raise AssertionError("legacy GCS artifact cleanup DAG must be disabled")
     if lifecycle.schedule is not None:
-        raise AssertionError("legacy GCP lifecycle DAG must be disabled")
+        raise AssertionError("lifecycle DAG must remain manual until explicitly scheduled")
     if artifact_cleanup.max_active_runs != 1:
         raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
     if repair.schedule is not None:
@@ -232,9 +234,34 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(classification_repair, "load", "wremotely_warehouse")
     assert_pool(warehouse_classification_repair, "prepare", "wremotely_warehouse")
     assert_pool(warehouse_classification_repair, "load", "wremotely_warehouse")
-    for dag in (ingestion, lifecycle, repair):
-        assert_pool(dag, "load" if dag is not lifecycle else "load_recheck", "wremotely_warehouse")
-        assert_publication_trigger(dag)
+    assert_pool(ingestion, "load", "wremotely_warehouse")
+    assert_publication_trigger(ingestion)
+    for task_id in (
+        "stage_recheck",
+        "land_filesystem",
+        "load_clickhouse_raw",
+        "dbt_build",
+        "publish_clickhouse_snapshot",
+        "signal_publication",
+    ):
+        assert_pool(lifecycle, task_id, "wremotely_warehouse")
+    assert_pool(lifecycle, "recheck", "wremotely_network")
+    for task_id in lifecycle.task_ids:
+        task = lifecycle.get_task(task_id)
+        if task_id != "signal_publication" and isinstance(task.command, list):
+            if any(
+                argument in task.command
+                for argument in (
+                    "--gcp-project",
+                    "--raw-dataset",
+                    "--handoff-dataset",
+                    "--bigquery-location",
+                    "--gcs-bucket",
+                    "--gcs-prefix",
+                )
+            ):
+                raise AssertionError(f"{lifecycle.dag_id}.{task_id} must not call GCP")
+    assert_onprem_lifecycle_task_contract(lifecycle)
     assert_pool(publication, "dbt_build", "wremotely_warehouse")
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
@@ -573,6 +600,34 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         raise AssertionError("on-prem signal must follow the ClickHouse snapshot export")
 
 
+def assert_onprem_lifecycle_task_contract(lifecycle: DAG) -> None:
+    prepare_command = lifecycle.get_task("prepare_recheck").command
+    if command_argument(prepare_command, "--step") != "prepare-recheck-from-clickhouse":
+        raise AssertionError("lifecycle preparation must read ClickHouse relations")
+    if command_argument(prepare_command, "--warehouse-root") != "/warehouse/workmichi":
+        raise AssertionError("lifecycle preparation must use the local warehouse root")
+    for task_id in lifecycle.task_ids:
+        task = lifecycle.get_task(task_id)
+        if task_id == "signal_publication":
+            continue
+        if task.environment.get("GOOGLE_CLOUD_PROJECT"):
+            raise AssertionError(f"{lifecycle.dag_id}.{task_id} must not receive GCP settings")
+    if command_argument(lifecycle.get_task("land_filesystem").command, "--step") != "land-filesystem":
+        raise AssertionError("lifecycle must land recheck rows on the filesystem")
+    if command_argument(lifecycle.get_task("load_clickhouse_raw").command, "--step") != "load-clickhouse-raw":
+        raise AssertionError("lifecycle must load recheck rows into ClickHouse")
+    if command_argument(lifecycle.get_task("dbt_build").command, "--project-dir") != "/app":
+        raise AssertionError("lifecycle dbt must run the ClickHouse project")
+    if command_argument(
+        lifecycle.get_task("publish_clickhouse_snapshot").command, "--step"
+    ) != "publish-clickhouse-snapshot":
+        raise AssertionError("lifecycle must publish the ClickHouse snapshot")
+    if "signal_publication" not in lifecycle.get_task(
+        "publish_clickhouse_snapshot"
+    ).downstream_task_ids:
+        raise AssertionError("lifecycle signal must follow the ClickHouse snapshot")
+
+
 def assert_pool(dag: DAG, task_id: str, expected_pool: str) -> None:
     actual_pool = dag.get_task(task_id).pool
     if actual_pool != expected_pool:
@@ -652,7 +707,6 @@ def validate_wremotely_run_identity_contract(
         (lifecycle, "prepare_recheck", "-wremotely-lifecycle-prepare"),
     ]
     publication_contracts = [
-        (lifecycle, "-wremotely-lifecycle"),
         (repair, "-wremotely-repair"),
     ]
     environment = Environment()
@@ -698,6 +752,18 @@ def validate_wremotely_run_identity_contract(
             f"{expected_timestamp}-wremotely-repair",
             environment,
         )
+
+        lifecycle_command = lifecycle.get_task("prepare_recheck").command
+        rendered_lifecycle_command = [
+            environment.from_string(value).render(
+                dag_run=dag_run,
+                params={"recheck_limit": 0},
+            )
+            for value in lifecycle_command
+        ]
+        expected_lifecycle_run_id = f"{expected_timestamp}-wremotely-lifecycle-prepare"
+        if command_argument(rendered_lifecycle_command, "--run-id") != expected_lifecycle_run_id:
+            raise AssertionError(f"lifecycle changed its {case_name} preparation identity")
 
 
 def validate_ingestion_refresh_contract(ingestion: DAG, ingestion_module: ModuleType) -> None:
@@ -862,10 +928,8 @@ def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:
         "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS", "21"
     ):
         raise AssertionError("lifecycle preparation must use the configured posting-age gate")
-    if command_argument(prepare_command, "--handoff-dataset") != os.environ[
-        "WREMOTELY_HANDOFF_DATASET"
-    ]:
-        raise AssertionError("lifecycle preparation must read the current serving handoff")
+    if "--gcp-project" in prepare_command or "--handoff-dataset" in prepare_command:
+        raise AssertionError("lifecycle preparation must not depend on BigQuery")
     if lifecycle.params["recheck_limit"] != 0:
         raise AssertionError("scheduled lifecycle runs must default to the complete bucket")
 
