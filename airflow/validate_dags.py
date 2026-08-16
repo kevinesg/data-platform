@@ -107,6 +107,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     artifact_cleanup = require_dag(modules, "maintenance__wremotely_artifacts")
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
+    clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
     repair = require_dag(modules, "repair__wremotely_job_urls")
     classification_repair = require_dag(modules, "repair__wremotely_classifications")
     warehouse_classification_repair = require_dag(
@@ -161,6 +162,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "signal_publication",
         ],
     )
+    assert_task_contract(clickhouse_build, ["dbt_build"])
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     if environment == "prod":
@@ -200,6 +202,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("publication DAG must always be trigger-only")
     if publication.max_active_runs != 1:
         raise AssertionError("publication DAG must serialize complete publication runs")
+    if clickhouse_build.schedule is not None:
+        raise AssertionError("ClickHouse dbt build DAG must always be manual")
+    if clickhouse_build.max_active_runs != 1:
+        raise AssertionError("ClickHouse dbt build DAG must serialize builds")
 
     assert_pool(ingestion, "crawl", "wremotely_network")
     assert_pool(ingestion, "extract", "wremotely_network")
@@ -215,6 +221,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "dbt_build", "wremotely_warehouse")
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
+    assert_pool(clickhouse_build, "dbt_build", "wremotely_warehouse")
 
     dbt_build = publication.get_task("dbt_build")
     if dbt_build.execution_timeout != timedelta(minutes=30):
