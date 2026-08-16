@@ -9,6 +9,7 @@ The repository is organized by component:
 data-platform/
 |-- scripts/   # extract/load commands and source-specific pipeline code
 |-- dbt/       # warehouse transformations, tests, and dbt project configuration
+|-- clickhouse/ # persistent wremotely analytical warehouse service
 |-- airflow/   # orchestration runtime and DAGs
 |-- metabase/  # analytics service runtime/configuration
 `-- deploy/    # shared environment bootstrap and deployment documentation
@@ -107,6 +108,8 @@ in the owning README so each command sequence has one canonical home.
      verification.
    - [dbt/README.md](dbt/README.md) for dbt project setup, dbt service account,
      datasets, external profile, local credentials, and `dbt debug`.
+   - [clickhouse/README.md](clickhouse/README.md) for the pinned local/on-prem
+     ClickHouse service, external password, persistent data paths, and recovery.
    - [airflow/README.md](airflow/README.md) for the local Airflow runtime and
      empty-stack validation.
    - [metabase/README.md](metabase/README.md) for the analytics service
