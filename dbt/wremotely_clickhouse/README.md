@@ -93,7 +93,10 @@ The ClickHouse project includes the complete country taxonomy seeds, expanded
 column-level contracts for the latest/source and serving models, and
 adapter-compatible invariant tests for URL-to-facts alignment, source-backed
 company identity, timestamp consistency, bounded titles, lifecycle closure,
-publication readiness and status, country bridges, taxonomies, and the
-publication manifest. BigQuery-specific custom SQL and dbt unit tests remain
-in the shared BigQuery project until an equivalent ClickHouse implementation
-is available and validated.
+publication readiness and status, country bridges, taxonomies, publication
+manifest integrity, and the country-evidence boundary. The evidence checks
+also verify latest-classification alignment, global-scope preservation,
+reviewed platform-location consumption, restrictive evidence values, atomic
+match unambiguity, and taxonomy alias hygiene. BigQuery-specific dbt unit tests
+remain in the shared BigQuery project until an equivalent ClickHouse unit-test
+implementation is available and validated.
