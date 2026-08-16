@@ -26,7 +26,13 @@ evaluated as (
                 or startsWith(facts.latest_job_fact_declared_language_tag, 'en')
             )
         ) as meets_content_publication_requirements
-        , false as has_confirmed_lifecycle_closure
+        , (
+            facts.latest_lifecycle_status = 'CLOSED'
+            or (
+                facts.latest_lifecycle_status = 'TERMINAL'
+                and facts.previous_lifecycle_status = 'TERMINAL'
+            )
+        ) as has_confirmed_lifecycle_closure
     from candidate_facts as facts
 ),
 
@@ -56,6 +62,11 @@ final as (
             when latest_job_fact_declared_language_tag is not null
                 and not startsWith(latest_job_fact_declared_language_tag, 'en')
                 then 'UNSUPPORTED_LANGUAGE'
+            when latest_lifecycle_status = 'CLOSED'
+                then 'LIFECYCLE_CLOSED'
+            when latest_lifecycle_status = 'TERMINAL'
+                and previous_lifecycle_status = 'TERMINAL'
+                then 'LIFECYCLE_TERMINAL_CONFIRMED'
             when has_expired_valid_through then 'EXPIRED_VALID_THROUGH'
             else 'PUBLICATION_READY'
         end as publication_status_reason
