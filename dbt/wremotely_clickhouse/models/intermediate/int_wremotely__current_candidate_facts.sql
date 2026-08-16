@@ -30,6 +30,11 @@ classifications as (
     from {{ ref('int_wremotely__latest_classifications') }}
 ),
 
+lifecycle_rechecks as (
+    select *
+    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }}
+),
+
 country_eligibility as (
     select *
     from {{ ref('int_wremotely__candidate_country_eligibility') }}
@@ -219,9 +224,36 @@ joined as (
         , classifications.latest_classification_run_id
         , classifications.latest_classification_source_record_index
         , classifications.latest_classification_artifact_sha256
-        , cast(null as Nullable(DateTime64(3))) as latest_lifecycle_checked_at
-        , cast(null as Nullable(String)) as latest_lifecycle_status
-        , cast(null as Nullable(String)) as previous_lifecycle_status
+        , lifecycle_rechecks.latest_lifecycle_checked_at
+        , lifecycle_rechecks.latest_lifecycle_checker_version
+        , lifecycle_rechecks.latest_lifecycle_page_status
+        , lifecycle_rechecks.latest_lifecycle_status
+        , lifecycle_rechecks.previous_lifecycle_status
+        , lifecycle_rechecks.latest_lifecycle_signal
+        , lifecycle_rechecks.latest_lifecycle_http_status
+        , lifecycle_rechecks.latest_lifecycle_final_url
+        , lifecycle_rechecks.latest_lifecycle_redirect_chain_json
+        , lifecycle_rechecks.latest_lifecycle_content_type
+        , lifecycle_rechecks.latest_lifecycle_attempt_count
+        , lifecycle_rechecks.latest_lifecycle_extractor
+        , lifecycle_rechecks.latest_lifecycle_robots_txt_allowed
+        , lifecycle_rechecks.latest_lifecycle_robots_txt_status
+        , lifecycle_rechecks.latest_lifecycle_robots_txt_http_status
+        , lifecycle_rechecks.latest_lifecycle_robots_txt_url
+        , lifecycle_rechecks.latest_lifecycle_robots_txt_error
+        , lifecycle_rechecks.latest_lifecycle_error_type
+        , lifecycle_rechecks.latest_lifecycle_error
+        , lifecycle_rechecks.latest_lifecycle_content_sha256
+        , lifecycle_rechecks.latest_lifecycle_raw_html_path
+        , lifecycle_rechecks.latest_lifecycle_normalized_text_path
+        , lifecycle_rechecks.latest_lifecycle_normalized_text_sha256
+        , lifecycle_rechecks.latest_lifecycle_jsonld_path
+        , lifecycle_rechecks.latest_lifecycle_jsonld_sha256
+        , lifecycle_rechecks.latest_lifecycle_evidence_json
+        , lifecycle_rechecks.latest_lifecycle_stage_run_id
+        , lifecycle_rechecks.latest_lifecycle_recheck_run_id
+        , lifecycle_rechecks.latest_lifecycle_source_record_index
+        , lifecycle_rechecks.latest_lifecycle_artifact_sha256
         , country_eligibility.validated_country_eligibility_scope
         , ifNull(country_eligibility.eligible_country_codes, [])
             as eligible_country_codes
@@ -240,7 +272,7 @@ joined as (
         , extractions.candidate_id is not null as has_extraction
         , facts.candidate_id is not null as has_job_facts
         , classifications.candidate_id is not null as has_classification
-        , false as has_lifecycle_recheck
+        , lifecycle_rechecks.candidate_id is not null as has_lifecycle_recheck
         , country_eligibility.candidate_id is not null
             as has_country_eligibility_evidence
     from candidate_keys as keys
@@ -252,6 +284,8 @@ joined as (
         on keys.candidate_id = extractions.candidate_id
     left join classifications
         on keys.candidate_id = classifications.candidate_id
+    left join lifecycle_rechecks
+        on keys.candidate_id = lifecycle_rechecks.candidate_id
     left join country_eligibility
         on keys.candidate_id = country_eligibility.candidate_id
     left join candidate_titles as titles
@@ -269,6 +303,7 @@ observed as (
             , ifNull(joined.latest_job_fact_record_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_retrieved_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_classified_at, toDateTime64('1970-01-01 00:00:00', 3))
+            , ifNull(joined.latest_lifecycle_checked_at, toDateTime64('1970-01-01 00:00:00', 3))
         ), toDateTime64('1970-01-01 00:00:00', 3)) as latest_observed_at
     from joined
 )

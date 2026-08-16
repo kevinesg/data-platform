@@ -41,20 +41,20 @@ fingerprints; identical declared input should produce identical fingerprints.
 This slice proves the separate runtime, source contract, JSON payload
 projection, latest-per-candidate source projections, candidate-title
 projection, prepared country-eligibility inputs, exact country-eligibility
-matches, candidate country-eligibility rollup, current candidate facts,
-publication eligibility, publishable job facts, search facets, serving jobs,
-companies, the serving-country bridge, and a deterministic publication
-manifest. The model and seed tests run against real raw relations.
+matches, candidate country-eligibility rollup, lifecycle latest-observation
+semantics, current candidate facts, publication eligibility, publishable job
+facts, search facets, serving jobs, companies, the serving-country bridge, and
+a deterministic publication manifest. The model and seed tests run against
+real raw relations.
 The prepared country relation aligns evidence to the latest classification and
 assigns deterministic direction and match-mode fields. Exact matching covers
 normalized country, group, reviewed location, and subdivision aliases, and
 marks evidence that resolves to multiple countries as ambiguous rather than
 selecting one silently. Phrase substring matching and country bridge expansion
 are represented in the candidate rollup and serving-country bridge. Lifecycle
-recheck inputs remain deferred until a representative capture includes a
-stable lifecycle raw relation. Until that relation is available, lifecycle
-columns are nullable and no row is marked closed by this harness. ClickHouse
-grants, Airflow orchestration, publication signalling, VPS snapshot reads, and
-production cutover remain separate operational work. The graph uses replay-safe
+closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
+observations; missing lifecycle history remains open and is never treated as
+closure. ClickHouse grants, Airflow orchestration, publication signalling, VPS
+snapshot reads, and production cutover remain separate operational work. The graph uses replay-safe
 full-table materialization; incremental merge behavior is deferred until the
 full source-history and lifecycle semantics are validated.

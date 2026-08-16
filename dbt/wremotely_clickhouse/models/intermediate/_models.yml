@@ -31,6 +31,21 @@ models:
       - name: raw_payload
         tests:
           - not_null
+  - name: int_wremotely__latest_lifecycle_rechecks
+    description: Latest lifecycle observation per candidate with prior status for terminal confirmation.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: latest_lifecycle_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ACTIVE, CLOSED, TERMINAL, UNKNOWN]
+      - name: latest_lifecycle_checked_at
+        tests:
+          - not_null
   - name: int_wremotely__latest_selected_job_urls
     description: Latest selected URL per candidate with selection evidence context.
     columns:
