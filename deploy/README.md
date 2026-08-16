@@ -381,8 +381,9 @@ be stored on development workstations.
 ## Deployment Image Manifest
 
 Deployed environments use an external non-secret `images.env` file beside the
-external secret `.env` file. The image manifest pins Airflow, scripts, and dbt
-to immutable GHCR tags produced by
+external secret `.env` file. The image manifest pins Airflow, scripts, the
+shared personal-finance dbt runtime, and the isolated Wremotely ClickHouse dbt
+runtime to immutable GHCR tags produced by
 [`.github/workflows/publish-images.yml`](../.github/workflows/publish-images.yml),
 and pins the private ETL runtime to the immutable tag produced by the private
 repository's `publish-image` workflow.
@@ -394,7 +395,7 @@ $HOME/secrets/data-platform/prod/images.env
 
 The deployment workflows create and update these manifests from published
 images. [deploy/images.env.example](images.env.example) documents the required
-four-entry format for clean-host recovery and local validation; do not maintain
+five-entry format for clean-host recovery and local validation; do not maintain
 deployed image SHAs by hand during normal promotion.
 
 `images.env` is disposable deployment state, not a secret. Recreate it from the
@@ -1240,7 +1241,7 @@ The workflow:
 2. Selects the latest published scripts, dbt, and Airflow images that match the
    deployed source history, then resolves and verifies the private ETL QA
    candidate as an immutable image.
-3. Writes all four refs to `$HOME/secrets/data-platform/qa/images.env`.
+3. Writes all five refs to `$HOME/secrets/data-platform/qa/images.env`.
 4. Runs `dbt compile` in the deployed dbt image with QA credentials.
 5. Pulls runtime images and recreates the QA Airflow stack.
 6. Waits for every Compose service health check, then requires the complete
@@ -1388,8 +1389,9 @@ Also replace all generated Airflow/Postgres passwords and secrets. Keep
 `PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Before validating the runtime,
 create the wremotely service-account credential, publication-hold policy, and
 artifacts directory at the configured paths.
-Prod DAG import requires all three schedule values because prod is the
-scheduled environment; use QA for manual-only validation.
+Prod DAG import requires the personal-finance and ClickHouse Wremotely
+schedule values because prod is the scheduled environment. The legacy
+Wremotely GCP lifecycle and artifact-cleanup schedules must remain unset.
 
 Useful host values:
 
