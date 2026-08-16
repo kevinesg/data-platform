@@ -116,7 +116,7 @@ models:
         tests:
           - accepted_values:
               arguments:
-                values: [ACTIVE, CLOSED, TERMINAL, UNKNOWN]
+                values: [ACTIVE, CLOSED, REACHABLE, TERMINAL, UNKNOWN]
       - name: latest_lifecycle_checked_at
         tests:
           - not_null
