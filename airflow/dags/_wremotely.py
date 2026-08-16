@@ -20,6 +20,7 @@ WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH = "/credentials/wremotely-etl-service-a
 DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 PUBLICATION_HOLD_POLICY_CONTAINER_PATH = "/run/secrets/wremotely-publication-hold-policy.md"
 WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH = "/artifacts/wremotely-etl"
+WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH = "/warehouse/workmichi"
 WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH = (
     f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/dbt-build/run_results.json"
 )
@@ -90,6 +91,13 @@ def optional_env(name: str, default: str) -> str:
 
 def required_host_path_env(name: str) -> str:
     value = required_env(name)
+    if not value.startswith("/"):
+        raise RuntimeError(f"{name} must be an absolute host path")
+    return value
+
+
+def optional_host_path_env(name: str, default: str) -> str:
+    value = os.environ.get(name, "").strip() or default
     if not value.startswith("/"):
         raise RuntimeError(f"{name} must be an absolute host path")
     return value
@@ -509,6 +517,61 @@ clickhouse_dbt_mounts = [
     ),
 ]
 
+onprem_wremotely_environment = {
+    "ENVIRONMENT": ENVIRONMENT,
+    "WREMOTELY_WAREHOUSE_ROOT": WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+    "WREMOTELY_CLICKHOUSE_URL": optional_env(
+        "WREMOTELY_CLICKHOUSE_URL", "http://127.0.0.1:8123"
+    ),
+    "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
+        "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"
+    ),
+    "WREMOTELY_CLICKHOUSE_TABLE_PREFIX": optional_env(
+        "WREMOTELY_CLICKHOUSE_TABLE_PREFIX", "wremotely__landing"
+    ),
+    "WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX": optional_env(
+        "WREMOTELY_CLICKHOUSE_RAW_TABLE_PREFIX", "wremotely__"
+    ),
+    "WREMOTELY_CLICKHOUSE_USER": optional_env(
+        "WREMOTELY_CLICKHOUSE_USER", "wremotely_dev"
+    ),
+    "WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS": optional_env(
+        "WREMOTELY_CLICKHOUSE_TIMEOUT_SECONDS", "60"
+    ),
+}
+onprem_wremotely_private_environment = {}
+if os.environ.get("WREMOTELY_CLICKHOUSE_PASSWORD", "").strip():
+    onprem_wremotely_private_environment["WREMOTELY_CLICKHOUSE_PASSWORD"] = os.environ[
+        "WREMOTELY_CLICKHOUSE_PASSWORD"
+    ]
+
+onprem_wremotely_mounts = [
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
+        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+        type="bind",
+    ),
+    Mount(
+        source=optional_host_path_env(
+            "WREMOTELY_WAREHOUSE_ROOT", "/srv/data/warehouse/workmichi"
+        ),
+        target=WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        type="bind",
+    ),
+]
+
+onprem_clickhouse_dbt_environment = {
+    "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
+        "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"
+    ),
+    "WREMOTELY_CLICKHOUSE_HOST": optional_env("WREMOTELY_CLICKHOUSE_HOST", "127.0.0.1"),
+    "WREMOTELY_CLICKHOUSE_PORT": optional_env("WREMOTELY_CLICKHOUSE_PORT", "8123"),
+    "WREMOTELY_CLICKHOUSE_USER": optional_env(
+        "WREMOTELY_CLICKHOUSE_USER", "wremotely_dev"
+    ),
+}
+onprem_clickhouse_dbt_private_environment = clickhouse_dbt_private_environment
+
 
 def create_dbt_build_task() -> DockerOperator:
     return docker_task(
@@ -555,6 +618,30 @@ def create_clickhouse_dbt_build_task() -> DockerOperator:
         private_environment=clickhouse_dbt_private_environment,
         mounts=clickhouse_dbt_mounts,
         execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_onprem_clickhouse_dbt_build_task() -> DockerOperator:
+    return docker_task(
+        task_id="dbt_build",
+        image=CLICKHOUSE_DBT_IMAGE,
+        command=[
+            "build",
+            "--project-dir",
+            "/app",
+            "--profiles-dir",
+            "/app/profiles",
+            "--target-path",
+            f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/clickhouse-dbt/{{{{ dag_run.run_id }}}}",
+            "--exclude-resource-type",
+            "unit_test",
+        ],
+        environment=onprem_clickhouse_dbt_environment,
+        private_environment=onprem_clickhouse_dbt_private_environment,
+        mounts=clickhouse_dbt_mounts,
+        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
