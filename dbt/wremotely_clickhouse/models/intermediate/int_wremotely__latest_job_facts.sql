@@ -1,4 +1,9 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='table',
+    query_settings={
+        'max_bytes_before_external_sort': 1073741824
+    }
+) }}
 
 with ranked as (
     select

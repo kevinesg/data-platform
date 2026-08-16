@@ -50,10 +50,10 @@ select
         , '|', ifNull(company_identity_basis, '')
         , '|', ifNull(source_domain, '')
         , '|', toString(open_job_count)
-        , '|', toString(first_source_publication_at)
-        , '|', toString(first_observed_at)
-        , '|', toString(latest_observed_at)
-        , '|', toString(source_updated_at)
-        , '|', toString(dbt_updated_at)
+        , '|', ifNull(toString(first_source_publication_at), '')
+        , '|', ifNull(toString(first_observed_at), '')
+        , '|', ifNull(toString(latest_observed_at), '')
+        , '|', ifNull(toString(source_updated_at), '')
+        , '|', ifNull(toString(dbt_updated_at), '')
     ))) as company_row_sha256
 from aggregated
