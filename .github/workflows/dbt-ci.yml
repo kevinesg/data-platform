@@ -120,3 +120,13 @@ jobs:
           tags: data-platform-dbt:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build isolated Wremotely ClickHouse dbt image
+        uses: docker/build-push-action@v7
+        with:
+          context: dbt/wremotely_clickhouse
+          file: dbt/wremotely_clickhouse/Dockerfile
+          push: false
+          tags: data-platform-wremotely-clickhouse-dbt:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

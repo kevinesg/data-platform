@@ -59,6 +59,12 @@ Published runtime image tags use this form:
 ghcr.io/kevinesg/data-platform-<component>:sha-<commit-sha>
 ```
 
+The isolated Wremotely ClickHouse dbt runtime is published as
+`ghcr.io/kevinesg/data-platform-wremotely-clickhouse-dbt:sha-<commit-sha>`.
+It is intentionally separate from `data-platform-dbt`; the former uses the
+dbt-clickhouse-supported Core 1.10 line while the latter remains the shared
+BigQuery Core 1.12 runtime.
+
 Do not use mutable `latest`, `qa`, or `prod` tags for deployed runtime
 selection. Deployed environments should pin image refs through their external
 `images.env` manifest.
