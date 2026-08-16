@@ -1,1 +1,106 @@
-../../wremotely/seeds/wremotely__location_country_aliases.csv
+country_code,location_alias,source_platform_guess
+US,San Francisco,ashby
+US,San Francisco,lever
+US,"New York, NY",
+US,California,
+US,"San Francisco, CA",
+US,Seattle,ashby
+US,Seattle,jobvite
+US,Seattle,lever
+US,Tennessee,
+US,Memphis,jobvite
+US,"Memphis, Tennessee",
+US,"Brooklyn, NY",
+US,New York,
+US,Hawaii,
+US,Honolulu,jobvite
+US,MANHATTAN,smartrecruiters
+US,"Various, USA",
+US,Cadet,jobvite
+US,"Cadet, Missouri",
+US,Colorado,
+US,"Honolulu, Hawaii",
+US,"Los Angeles, CA",
+US,Missouri,
+US,"New York City, NY",
+US,USA | Remote,
+US,Boulder,jobvite
+US,"Irvine, California",
+US,NYC-ALL BOROS,smartrecruiters
+US,New York City,ashby
+US,Washington,ashby
+US,Washington,jobvite
+US,"Baltimore, Maryland",
+US,"Boulder, Colorado",
+US,Sunnyvale,ashby
+US,Texas,
+US,US - Remote,
+US,"Austin, TX",
+US,"Queens, NY",
+US,"District Of Columbia",
+US,"Naperville, Illinois",
+US,"San Clemente, California",
+US,"Boulder, CO",
+US,"Chicago, IL",
+US,"Hoboken,NJ",
+GB,London,ashby
+GB,London,lever
+GB,England,
+GB,"London, UK",
+GB,London - The River Building HQ,ashby
+BR,Sao Paulo,jobvite
+BR,Sao Paulo,workday
+BR,Sumaré,jobvite
+BR,"Sumaré, Sao Paulo",
+CA,Toronto,ashby
+CA,"Barrie, Ontario",
+CA,"Vancouver, British Columbia",
+CA,"Windsor, Ontario",
+CA,"Gatineau, Quebec",
+CA,"Montréal, QC",
+CO,Bogota,lever
+CO,Bogota,workday
+DE,Berlin,ashby
+IN,"Mumbai, MH",
+KR,"Seoul, Korea",
+MX,JUBILEE CANCUN,workday
+PL,Warsaw,lever
+PL,Warsaw,workday
+SS,Juba,bamboohr
+AE,Dubai - Main Office,ashby
+IE,Dublin - Main Office,ashby
+GB,Newcastle,ashby
+US,"Weave - Headquarters (Lehi, UT)",ashby
+GH,"Berekuso, Eastern Region",bamboohr
+US,"Jacksonville, Florida",bamboohr
+PL,Jawczyce,bamboohr
+JM,"MONTEGO BAY, ST JAMES",bamboohr
+US,"Macon, Georgia",bamboohr
+US,"Long Island City, NY",jobvite
+US,"Arlington, VA",lever
+US,Alameda HQ,lever
+US,Atlanta,lever
+US,"Branson, MO",lever
+HU,Budapest,lever
+US,"Chantilly, VA",lever
+US,Chicago,lever
+US,"Dallas, TX",lever
+US,"Groveland, FL",lever
+ID,Jakarta,lever
+PL,Krakow,lever
+US,"Lansing, MI",lever
+US,"Lehi, UT, US",lever
+US,"Louisville, KY",lever
+US,"Richmond, KY",lever
+ES,Madrid,lever
+US,"Monroe, NC",lever
+IN,New Delhi,lever
+US,"Oracle Park, SF",lever
+US,"Plano, TX - DAL5",lever
+US,"Quantico, VA",lever
+CA,Quebec,lever
+US,"Scottsdale, AZ",lever
+US,"Tempe, AZ - PHX1",lever
+IT,Trento,lever
+US,BROOKLYN,smartrecruiters
+US,QUEENS,smartrecruiters

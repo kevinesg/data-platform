@@ -1,1 +1,270 @@
-../../wremotely/seeds/wremotely__country_cldr_aliases.csv
+country_code,alias,match_kind
+AD,Andorra,phrase
+AE,United Arab Emirates,phrase
+AF,Afghanistan,phrase
+AG,Antigua & Barbuda,phrase
+AI,Anguilla,phrase
+AL,Albania,phrase
+AM,Armenia,phrase
+AO,Angola,phrase
+AQ,Antarctica,phrase
+AR,Argentina,phrase
+AS,American Samoa,phrase
+AT,Austria,phrase
+AU,Australia,phrase
+AW,Aruba,phrase
+AX,Åland Islands,phrase
+AZ,Azerbaijan,phrase
+BA,Bosnia,phrase
+BA,Bosnia & Herzegovina,phrase
+BB,Barbados,phrase
+BD,Bangladesh,phrase
+BE,Belgium,phrase
+BF,Burkina Faso,phrase
+BG,Bulgaria,phrase
+BH,Bahrain,phrase
+BI,Burundi,phrase
+BJ,Benin,phrase
+BL,St. Barthélemy,phrase
+BM,Bermuda,phrase
+BN,Brunei,phrase
+BO,Bolivia,phrase
+BQ,Caribbean Netherlands,phrase
+BR,Brazil,phrase
+BS,Bahamas,phrase
+BT,Bhutan,phrase
+BV,Bouvet Island,phrase
+BW,Botswana,phrase
+BY,Belarus,phrase
+BZ,Belize,phrase
+CA,Canada,phrase
+CC,Cocos (Keeling) Islands,phrase
+CC,Cocos Islands,phrase
+CD,Congo (DRC),phrase
+CD,Congo - Kinshasa,phrase
+CF,Central African Republic,phrase
+CG,Congo (Republic),phrase
+CG,Congo - Brazzaville,phrase
+CH,Switzerland,phrase
+CI,Côte d’Ivoire,phrase
+CI,Ivory Coast,phrase
+CK,Cook Islands,phrase
+CL,Chile,phrase
+CM,Cameroon,phrase
+CN,China,phrase
+CO,Colombia,phrase
+CR,Costa Rica,phrase
+CU,Cuba,phrase
+CV,Cabo Verde,phrase
+CV,Cape Verde,phrase
+CW,Curaçao,phrase
+CX,Christmas Island,phrase
+CY,Cyprus,phrase
+CZ,Czech Republic,phrase
+CZ,Czechia,phrase
+DE,Germany,phrase
+DJ,Djibouti,phrase
+DK,Denmark,phrase
+DM,Dominica,phrase
+DO,Dominican Republic,phrase
+DZ,Algeria,phrase
+EC,Ecuador,phrase
+EE,Estonia,phrase
+EG,Egypt,phrase
+EH,Western Sahara,phrase
+ER,Eritrea,phrase
+ES,Spain,phrase
+ET,Ethiopia,phrase
+FI,Finland,phrase
+FJ,Fiji,phrase
+FK,Falkland Islands,phrase
+FK,Falkland Islands (Islas Malvinas),phrase
+FM,Micronesia,phrase
+FO,Faroe Islands,phrase
+FR,France,phrase
+GA,Gabon,phrase
+GB,UK,exact_code
+GB,United Kingdom,phrase
+GD,Grenada,phrase
+GE,Georgia,phrase
+GF,French Guiana,phrase
+GG,Guernsey,phrase
+GH,Ghana,phrase
+GI,Gibraltar,phrase
+GL,Greenland,phrase
+GM,Gambia,phrase
+GN,Guinea,phrase
+GP,Guadeloupe,phrase
+GQ,Equatorial Guinea,phrase
+GR,Greece,phrase
+GS,South Georgia & South Sandwich Islands,phrase
+GT,Guatemala,phrase
+GU,Guam,phrase
+GW,Guinea-Bissau,phrase
+GY,Guyana,phrase
+HK,Hong Kong,phrase
+HK,Hong Kong SAR China,phrase
+HM,Heard & McDonald Islands,phrase
+HN,Honduras,phrase
+HR,Croatia,phrase
+HT,Haiti,phrase
+HU,Hungary,phrase
+ID,Indonesia,phrase
+IE,Ireland,phrase
+IL,Israel,phrase
+IM,Isle of Man,phrase
+IN,India,phrase
+IO,British Indian Ocean Territory,phrase
+IO,Chagos Archipelago,phrase
+IQ,Iraq,phrase
+IR,Iran,phrase
+IS,Iceland,phrase
+IT,Italy,phrase
+JE,Jersey,phrase
+JM,Jamaica,phrase
+JO,Jordan,phrase
+JP,Japan,phrase
+KE,Kenya,phrase
+KG,Kyrgyzstan,phrase
+KH,Cambodia,phrase
+KI,Kiribati,phrase
+KM,Comoros,phrase
+KN,St. Kitts & Nevis,phrase
+KP,North Korea,phrase
+KR,South Korea,phrase
+KW,Kuwait,phrase
+KY,Cayman Islands,phrase
+KZ,Kazakhstan,phrase
+LA,Laos,phrase
+LB,Lebanon,phrase
+LC,St. Lucia,phrase
+LI,Liechtenstein,phrase
+LK,Sri Lanka,phrase
+LR,Liberia,phrase
+LS,Lesotho,phrase
+LT,Lithuania,phrase
+LU,Luxembourg,phrase
+LV,Latvia,phrase
+LY,Libya,phrase
+MA,Morocco,phrase
+MC,Monaco,phrase
+MD,Moldova,phrase
+ME,Montenegro,phrase
+MF,St. Martin,phrase
+MG,Madagascar,phrase
+MH,Marshall Islands,phrase
+MK,North Macedonia,phrase
+ML,Mali,phrase
+MM,Myanmar,phrase
+MM,Myanmar (Burma),phrase
+MN,Mongolia,phrase
+MO,Macao,phrase
+MO,Macao SAR China,phrase
+MP,Northern Mariana Islands,phrase
+MQ,Martinique,phrase
+MR,Mauritania,phrase
+MS,Montserrat,phrase
+MT,Malta,phrase
+MU,Mauritius,phrase
+MV,Maldives,phrase
+MW,Malawi,phrase
+MX,Mexico,phrase
+MY,Malaysia,phrase
+MZ,Mozambique,phrase
+NA,Namibia,phrase
+NC,New Caledonia,phrase
+NE,Niger,phrase
+NF,Norfolk Island,phrase
+NG,Nigeria,phrase
+NI,Nicaragua,phrase
+NL,Netherlands,phrase
+NO,Norway,phrase
+NP,Nepal,phrase
+NR,Nauru,phrase
+NU,Niue,phrase
+NZ,Aotearoa New Zealand,phrase
+NZ,New Zealand,phrase
+OM,Oman,phrase
+PA,Panama,phrase
+PE,Peru,phrase
+PF,French Polynesia,phrase
+PG,Papua New Guinea,phrase
+PH,Philippines,phrase
+PK,Pakistan,phrase
+PL,Poland,phrase
+PM,St. Pierre & Miquelon,phrase
+PN,Pitcairn,phrase
+PN,Pitcairn Islands,phrase
+PR,Puerto Rico,phrase
+PS,Palestine,phrase
+PS,Palestinian Territories,phrase
+PT,Portugal,phrase
+PW,Palau,phrase
+PY,Paraguay,phrase
+QA,Qatar,phrase
+RE,Réunion,phrase
+RO,Romania,phrase
+RS,Serbia,phrase
+RU,Russia,phrase
+RW,Rwanda,phrase
+SA,Saudi Arabia,phrase
+SB,Solomon Islands,phrase
+SC,Seychelles,phrase
+SD,Sudan,phrase
+SE,Sweden,phrase
+SG,Singapore,phrase
+SH,St. Helena,phrase
+SI,Slovenia,phrase
+SJ,Svalbard & Jan Mayen,phrase
+SK,Slovakia,phrase
+SL,Sierra Leone,phrase
+SM,San Marino,phrase
+SN,Senegal,phrase
+SO,Somalia,phrase
+SR,Suriname,phrase
+SS,South Sudan,phrase
+ST,São Tomé & Príncipe,phrase
+SV,El Salvador,phrase
+SX,Sint Maarten,phrase
+SY,Syria,phrase
+SZ,Eswatini,phrase
+SZ,Swaziland,phrase
+TC,Turks & Caicos Islands,phrase
+TD,Chad,phrase
+TF,French Southern Territories,phrase
+TG,Togo,phrase
+TH,Thailand,phrase
+TJ,Tajikistan,phrase
+TK,Tokelau,phrase
+TL,East Timor,phrase
+TL,Timor-Leste,phrase
+TM,Turkmenistan,phrase
+TN,Tunisia,phrase
+TO,Tonga,phrase
+TR,Turkey,phrase
+TR,Türkiye,phrase
+TT,Trinidad & Tobago,phrase
+TV,Tuvalu,phrase
+TW,Taiwan,phrase
+TZ,Tanzania,phrase
+UA,Ukraine,phrase
+UG,Uganda,phrase
+UM,U.S. Outlying Islands,phrase
+US,US,exact_code
+US,United States,phrase
+UY,Uruguay,phrase
+UZ,Uzbekistan,phrase
+VA,Vatican City,phrase
+VC,St. Vincent & Grenadines,phrase
+VE,Venezuela,phrase
+VG,British Virgin Islands,phrase
+VI,U.S. Virgin Islands,phrase
+VN,Vietnam,phrase
+VU,Vanuatu,phrase
+WF,Wallis & Futuna,phrase
+WS,Samoa,phrase
+YE,Yemen,phrase
+YT,Mayotte,phrase
+ZA,South Africa,phrase
+ZM,Zambia,phrase
+ZW,Zimbabwe,phrase
