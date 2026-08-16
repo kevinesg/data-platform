@@ -3,13 +3,13 @@
 with raw_evidence as (
     select
         raw.*
-        , latest.remote_scope as classification_remote_scope
-        , latest.country_eligibility_scope as classification_country_scope
+        , latest.latest_remote_scope as classification_remote_scope
+        , latest.latest_country_eligibility_scope as classification_country_scope
     from {{ ref('stg_wremotely__country_eligibility_extractions') }} as raw
     inner join {{ ref('int_wremotely__latest_classifications') }} as latest
         on raw.candidate_id = latest.candidate_id
-        and raw.stage_run_id = latest.stage_run_id
-        and raw.classification_run_id = latest.classification_run_id
+        and raw.stage_run_id = latest.latest_classification_stage_run_id
+        and raw.classification_run_id = latest.latest_classification_run_id
 ),
 
 prepared_roles as (
