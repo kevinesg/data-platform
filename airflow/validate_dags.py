@@ -108,6 +108,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
+    onprem_ingestion = require_dag(modules, "etl__wremotely_onprem")
     repair = require_dag(modules, "repair__wremotely_job_urls")
     classification_repair = require_dag(modules, "repair__wremotely_classifications")
     warehouse_classification_repair = require_dag(
@@ -163,6 +164,21 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ],
     )
     assert_task_contract(clickhouse_build, ["dbt_build"])
+    assert_task_contract(
+        onprem_ingestion,
+        [
+            "crawl",
+            "select",
+            "extract",
+            "job_facts",
+            "classify",
+            "stage",
+            "land_filesystem",
+            "load_clickhouse_raw",
+            "dbt_build",
+        ],
+    )
+    assert_onprem_ingestion_task_contract(onprem_ingestion)
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     if environment == "prod":
@@ -206,6 +222,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("ClickHouse dbt build DAG must always be manual")
     if clickhouse_build.max_active_runs != 1:
         raise AssertionError("ClickHouse dbt build DAG must serialize builds")
+    if onprem_ingestion.schedule is not None:
+        raise AssertionError("on-prem ingestion DAG must always be manual")
+    if onprem_ingestion.max_active_runs != 1:
+        raise AssertionError("on-prem ingestion DAG must serialize runs")
 
     assert_pool(ingestion, "crawl", "wremotely_network")
     assert_pool(ingestion, "extract", "wremotely_network")
@@ -222,6 +242,10 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(publication, "publication_hold", "wremotely_warehouse")
     assert_pool(publication, "publish_serving_snapshot", "wremotely_warehouse")
     assert_pool(clickhouse_build, "dbt_build", "wremotely_warehouse")
+    assert_pool(onprem_ingestion, "crawl", "wremotely_network")
+    assert_pool(onprem_ingestion, "extract", "wremotely_network")
+    for task_id in ("stage", "land_filesystem", "load_clickhouse_raw", "dbt_build"):
+        assert_pool(onprem_ingestion, task_id, "wremotely_warehouse")
 
     dbt_build = publication.get_task("dbt_build")
     if dbt_build.execution_timeout != timedelta(minutes=30):
@@ -453,6 +477,41 @@ def assert_ingestion_task_contract(ingestion: DAG) -> None:
         "acknowledge_refresh_request"
     }:
         raise AssertionError("refresh request must be acknowledged after publication")
+
+
+def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
+    for task_id in ingestion.task_ids:
+        task = ingestion.get_task(task_id)
+        if task.task_id == "dbt_build":
+            continue
+        if not isinstance(task.command, list):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} command must be an argv list")
+        if any(argument in task.command for argument in ("--gcp-project", "--raw-dataset")):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} must not call BigQuery")
+        if task.environment.get("GOOGLE_CLOUD_PROJECT"):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} must not receive GCP settings")
+
+    select_command = ingestion.get_task("select").command
+    if "--skip-known-url-lookup" not in select_command:
+        raise AssertionError("on-prem select must use local artifact deduplication")
+
+    classify_command = ingestion.get_task("classify").command
+    for option in ("--work-arrangement-mode", "--country-eligibility-mode"):
+        if command_argument(classify_command, option) != "raw_only":
+            raise AssertionError(f"on-prem classify must keep {option} raw_only")
+
+    land_command = ingestion.get_task("land_filesystem").command
+    if command_argument(land_command, "--step") != "land-filesystem":
+        raise AssertionError("on-prem landing task must use the filesystem landing step")
+    raw_load_command = ingestion.get_task("load_clickhouse_raw").command
+    if command_argument(raw_load_command, "--step") != "load-clickhouse-raw":
+        raise AssertionError("on-prem warehouse task must load ClickHouse raw relations")
+
+    dbt_command = ingestion.get_task("dbt_build").command
+    if command_argument(dbt_command, "--project-dir") != "/app":
+        raise AssertionError("on-prem dbt task must run the ClickHouse project")
+    if dbt_command[-2:] != ["--exclude-resource-type", "unit_test"]:
+        raise AssertionError("on-prem dbt task must exclude development unit tests")
 
 
 def assert_pool(dag: DAG, task_id: str, expected_pool: str) -> None:
