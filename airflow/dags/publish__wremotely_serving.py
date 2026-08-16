@@ -17,7 +17,10 @@ SERVING_SNAPSHOT_RUN_ID = f"{BASE_RUN_ID}-serving-snapshot"
 
 with DAG(
     dag_id="publish__wremotely_serving",
-    description="Build and publish wremotely serving state for one completed producer load.",
+    description=(
+        "Legacy BigQuery/GCS publication path retained for historical recovery only; "
+        "normal wremotely publication is part of etl__wremotely."
+    ),
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,

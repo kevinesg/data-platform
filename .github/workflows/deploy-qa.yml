@@ -142,6 +142,13 @@ jobs:
             ":(exclude)dbt/.env.example" \
             ":(exclude)dbt/**/.gitignore" \
             ":(exclude)dbt/**/.gitkeep"
+          set_image_from_latest_published_tag wremotely-clickhouse-dbt DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE \
+            "dbt/wremotely_clickhouse/**" \
+            ":(exclude)dbt/wremotely_clickhouse/*.md" \
+            ":(exclude)dbt/wremotely_clickhouse/**/*.md" \
+            ":(exclude)dbt/wremotely_clickhouse/.user.yml" \
+            ":(exclude)dbt/wremotely_clickhouse/**/.gitignore" \
+            ":(exclude)dbt/wremotely_clickhouse/**/.gitkeep"
 
           docker pull "$WREMOTELY_ETL_QA_CANDIDATE_IMAGE"
           wremotely_etl_revision="$(
@@ -184,12 +191,14 @@ jobs:
           test -n "${DATA_PLATFORM_AIRFLOW_IMAGE:-}"
           test -n "${DATA_PLATFORM_SCRIPTS_IMAGE:-}"
           test -n "${DATA_PLATFORM_DBT_IMAGE:-}"
+          test -n "${DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE:-}"
           test -n "${DATA_PLATFORM_WREMOTELY_ETL_IMAGE:-}"
 
           {
             printf 'DATA_PLATFORM_AIRFLOW_IMAGE=%s\n' "$DATA_PLATFORM_AIRFLOW_IMAGE"
             printf 'DATA_PLATFORM_SCRIPTS_IMAGE=%s\n' "$DATA_PLATFORM_SCRIPTS_IMAGE"
             printf 'DATA_PLATFORM_DBT_IMAGE=%s\n' "$DATA_PLATFORM_DBT_IMAGE"
+            printf 'DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE"
             printf 'DATA_PLATFORM_WREMOTELY_ETL_IMAGE=%s\n' "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
           } > "$QA_IMAGE_ENV_FILE"
           chmod 600 "$QA_IMAGE_ENV_FILE"
@@ -248,6 +257,7 @@ jobs:
           docker manifest inspect "$DATA_PLATFORM_AIRFLOW_IMAGE" >/dev/null
           docker manifest inspect "$DATA_PLATFORM_SCRIPTS_IMAGE" >/dev/null
           docker manifest inspect "$DATA_PLATFORM_DBT_IMAGE" >/dev/null
+          docker manifest inspect "$DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE" >/dev/null
           docker manifest inspect "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE" >/dev/null
 
           # DockerOperator starts sibling containers through the host Docker daemon.
@@ -256,6 +266,7 @@ jobs:
           docker pull "$DATA_PLATFORM_AIRFLOW_IMAGE"
           docker pull "$DATA_PLATFORM_SCRIPTS_IMAGE"
           docker pull "$DATA_PLATFORM_DBT_IMAGE"
+          docker pull "$DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE"
           docker pull "$DATA_PLATFORM_WREMOTELY_ETL_IMAGE"
 
           cd "$QA_REPO_DIR/airflow"
@@ -276,6 +287,7 @@ jobs:
           expected_dag_ids=(
             etl__personal_finance
             etl__wremotely
+            build__wremotely_clickhouse
             maintenance__wremotely_artifacts
             maintenance__wremotely_lifecycle
             publish__wremotely_serving

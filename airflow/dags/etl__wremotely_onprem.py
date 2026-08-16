@@ -7,6 +7,7 @@ from airflow.sdk import DAG
 from _wremotely import (
     APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
     CRAWL_TASK_EXECUTION_TIMEOUT,
+    ENVIRONMENT,
     EXTRACT_TASK_EXECUTION_TIMEOUT,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
@@ -17,6 +18,7 @@ from _wremotely import (
     create_onprem_clickhouse_dbt_build_task,
     create_onprem_clickhouse_publication_signal_task,
     create_onprem_clickhouse_publication_snapshot_task,
+    dag_schedule,
     docker_task,
     etl_command,
     onprem_wremotely_environment,
@@ -43,13 +45,13 @@ CLICKHOUSE_SNAPSHOT_RUN_ID = f"{BASE_RUN_ID}-clickhouse-snapshot"
 
 
 with DAG(
-    dag_id="etl__wremotely_onprem",
+    dag_id="etl__wremotely",
     description=(
-        "Run the manual GCP-free wremotely pipeline through ClickHouse raw loading "
-        "and the isolated ClickHouse dbt graph."
+        "Run the scheduled ClickHouse-backed wremotely pipeline through local landing, "
+        "ClickHouse raw loading, dbt, and Pub/Sub signalling."
     ),
     start_date=datetime(2026, 1, 1),
-    schedule=None,
+    schedule=dag_schedule(ENVIRONMENT, "ETL__WREMOTELY_SCHEDULE"),
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=timedelta(hours=24),

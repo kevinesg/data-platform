@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from airflow.sdk import DAG, Param
 
 from _wremotely import (
-    ENVIRONMENT,
     RECHECK_TASK_EXECUTION_TIMEOUT,
     WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
@@ -14,7 +13,6 @@ from _wremotely import (
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
     create_publication_trigger_task,
-    dag_schedule,
     docker_task,
     etl_command,
     optional_env,
@@ -37,9 +35,12 @@ DAG_RUN_TIMEOUT = timedelta(hours=12)
 
 with DAG(
     dag_id="maintenance__wremotely_lifecycle",
-    description="Recheck one stable active-job bucket and trigger serialized publication.",
+    description=(
+        "Legacy BigQuery/GCS lifecycle recheck retained for historical recovery only; "
+        "disabled after the ClickHouse cutover."
+    ),
     start_date=datetime(2026, 1, 1),
-    schedule=dag_schedule(ENVIRONMENT, "WREMOTELY_LIFECYCLE_SCHEDULE"),
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,

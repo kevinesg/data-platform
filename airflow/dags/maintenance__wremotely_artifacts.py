@@ -5,13 +5,11 @@ from datetime import datetime, timedelta
 from airflow.sdk import DAG
 
 from _wremotely import (
-    ENVIRONMENT,
     WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
-    dag_schedule,
     docker_task,
     etl_command,
     required_env,
@@ -26,9 +24,12 @@ DAG_RUN_TIMEOUT = timedelta(hours=12)
 
 with DAG(
     dag_id="maintenance__wremotely_artifacts",
-    description="Delete verified-safe wremotely local and GCS artifacts after three days.",
+    description=(
+        "Legacy GCS artifact cleanup retained for historical recovery only; disabled "
+        "after the ClickHouse cutover."
+    ),
     start_date=datetime(2026, 1, 1),
-    schedule=dag_schedule(ENVIRONMENT, "WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE"),
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
