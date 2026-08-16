@@ -15,6 +15,7 @@ from _wremotely import (
     WREMOTELY_WAREHOUSE_POOL,
     WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
     create_onprem_clickhouse_dbt_build_task,
+    create_onprem_clickhouse_publication_signal_task,
     create_onprem_clickhouse_publication_snapshot_task,
     docker_task,
     etl_command,
@@ -281,6 +282,9 @@ with DAG(
     publish_clickhouse_snapshot = create_onprem_clickhouse_publication_snapshot_task(
         CLICKHOUSE_SNAPSHOT_RUN_ID
     )
+    signal_publication = create_onprem_clickhouse_publication_signal_task(
+        CLICKHOUSE_SNAPSHOT_RUN_ID
+    )
 
     (
         crawl
@@ -293,4 +297,5 @@ with DAG(
         >> load_clickhouse_raw
         >> dbt_build
         >> publish_clickhouse_snapshot
+        >> signal_publication
     )

@@ -177,6 +177,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "load_clickhouse_raw",
             "dbt_build",
             "publish_clickhouse_snapshot",
+            "signal_publication",
         ],
     )
     assert_onprem_ingestion_task_contract(onprem_ingestion)
@@ -251,6 +252,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "load_clickhouse_raw",
         "dbt_build",
         "publish_clickhouse_snapshot",
+        "signal_publication",
     ):
         assert_pool(onprem_ingestion, task_id, "wremotely_warehouse")
 
@@ -498,6 +500,7 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         "load_clickhouse_raw",
         "dbt_build",
         "publish_clickhouse_snapshot",
+        "signal_publication",
     }
     if set(ingestion.task_ids) != expected_task_ids:
         raise AssertionError(f"{ingestion.dag_id} task set does not match its contract")
@@ -507,7 +510,9 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
             continue
         if not isinstance(task.command, list):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} command must be an argv list")
-        if any(argument in task.command for argument in ("--gcp-project", "--raw-dataset")):
+        if task_id != "signal_publication" and any(
+            argument in task.command for argument in ("--gcp-project", "--raw-dataset")
+        ):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} must not call BigQuery")
         if task.environment.get("GOOGLE_CLOUD_PROJECT"):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} must not receive GCP settings")
@@ -549,6 +554,20 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         "dbt_build"
     ).downstream_task_ids:
         raise AssertionError("on-prem dbt build must precede ClickHouse snapshot export")
+    signal_command = ingestion.get_task("signal_publication").command
+    if command_argument(signal_command, "--publication-artifact") != (
+        "/warehouse/workmichi/control/clickhouse-publication/"
+        "{{ dag_run.logical_date.strftime('%Y%m%dT%H%M%SZ') "
+        "if dag_run.logical_date else dag_run.run_after.strftime('%Y%m%dT%H%M%S%fZ') }}"
+        "-wremotely-onprem-clickhouse-snapshot/manifest.json"
+    ):
+        raise AssertionError("on-prem signal must read the snapshot manifest artifact")
+    if "--publication-topic" not in signal_command:
+        raise AssertionError("on-prem signal must publish to the configured topic")
+    if "publish_clickhouse_snapshot" not in ingestion.get_task(
+        "signal_publication"
+    ).upstream_task_ids:
+        raise AssertionError("on-prem signal must follow the ClickHouse snapshot export")
 
 
 def assert_pool(dag: DAG, task_id: str, expected_pool: str) -> None:
