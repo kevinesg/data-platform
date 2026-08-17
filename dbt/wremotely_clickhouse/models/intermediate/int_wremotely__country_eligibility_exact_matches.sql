@@ -1,19 +1,6 @@
 {{ config(
-    materialized='incremental',
-    incremental_strategy='delete_insert',
-    unique_key='match_id',
-    on_schema_change='append_new_columns',
-    order_by="(ifNull(source_landing_run_id, ''), ifNull(evidence_id, ''), ifNull(match_id, ''))",
-    query_settings={
-        'max_threads': 2,
-        'max_bytes_before_external_sort': 268435456,
-        'max_bytes_before_external_group_by': 268435456,
-        'max_memory_usage': 1073741824
-    }
+    materialized='view'
 ) }}
-
-{% set incremental_watermark_ready = is_incremental()
-    and relation_has_columns(this, ['source_landing_run_id']) %}
 
 with combined as (
     select
@@ -25,23 +12,13 @@ with combined as (
         , matched_country_group_code
         , match_source
     from {{ ref('int_wremotely__country_eligibility_combined_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
 ),
 
 country_match_counts as (
     select
         evidence_id
-        , uniqExactIf(
-            matched_country_code
-            , notEmpty(ifNull(matched_country_code, ''))
-        ) as matched_country_count
-    from combined
-    group by evidence_id
+        , matched_country_count
+    from {{ ref('int_wremotely__country_eligibility_match_counts') }}
 ),
 
 annotated as (

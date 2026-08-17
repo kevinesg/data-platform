@@ -123,7 +123,7 @@ The equality-based country-evidence boundary is physically split into four
 incremental match relations: country aliases, country-group aliases, reviewed
 platform locations, and subdivisions. `int_wremotely__country_eligibility_atomic_matches`
 remains as the compatibility union consumed by downstream models. The
-deduplicated union is now persisted before the final ambiguity annotation, so
-the status pass does not repeatedly inline the large source union. Keeping the
-joins and final aggregation independent limits peak memory while preserving the
-existing downstream relation and match-source contract.
+cross-stage union remains a read-only view, while compact evidence-level
+country-match counts are persisted before the final ambiguity annotation. This
+avoids writing or aggregating the wide cross-stage union in one materialization
+while preserving the existing downstream relation and match-source contract.

@@ -1,60 +1,20 @@
 {{ config(
-    materialized='incremental',
-    incremental_strategy='append',
-    on_schema_change='append_new_columns',
-    order_by="ifNull(match_id, '')",
-    query_settings={
-        'max_threads': 1,
-        'max_bytes_before_external_sort': 268435456,
-        'max_bytes_before_external_group_by': 268435456,
-        'max_memory_usage': 1073741824
-    }
+    materialized='view'
 ) }}
 
-{% set incremental_watermark_ready = is_incremental()
-    and relation_has_columns(this, ['source_landing_run_id']) %}
-
--- Match rows are immutable and the source watermark excludes already-landed runs.
--- Append avoids dbt-clickhouse's temporary-table delete/insert rewrite for this
--- append-only union, which keeps the bounded country graph within memory.
+-- Match rows are immutable stage outputs. Keeping this compatibility union as a
+-- view avoids materializing the full cross-stage relation in one query.
 with combined_raw as (
     select * from {{ ref('int_wremotely__country_eligibility_atomic_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
     union all
 
     select * from {{ ref('int_wremotely__country_eligibility_country_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
     union all
 
     select * from {{ ref('int_wremotely__country_eligibility_country_group_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
     union all
 
     select * from {{ ref('int_wremotely__country_eligibility_subdivision_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
 )
 
 select
