@@ -9,7 +9,7 @@
         'max_bytes_before_external_sort': 16777216,
         'max_bytes_before_external_group_by': 67108864,
         'join_algorithm': 'full_sorting_merge',
-        'max_memory_usage': 2147483648
+        'max_memory_usage': 5368709120
     }
 ) }}
 
