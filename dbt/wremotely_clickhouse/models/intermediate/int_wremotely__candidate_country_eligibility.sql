@@ -1,16 +1,45 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(candidate_id, ''))",
+    query_settings={
+        'max_threads': 2,
+        'max_bytes_before_external_sort': 268435456,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_memory_usage': 2147483648
+    }
+) }}
 
-with evidence as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_landing_run_id']) %}
+
+with changed_candidates as (
+    select distinct candidate_id
+    from {{ ref('int_wremotely__country_eligibility_inputs') }}
+    {% if incremental_watermark_ready %}
+    where source_landing_run_id > (
+        select coalesce(max(source_landing_run_id), '')
+        from {{ this }}
+    )
+    {% endif %}
+),
+
+evidence as (
     select
-        inputs.candidate_id
-        , inputs.evidence_id
-        , inputs.evidence_direction
-        , matches.matched_country_code
-        , matches.matched_country_group_code
-        , matches.match_status
+        inputs.candidate_id as candidate_id
+        , inputs.source_landing_run_id as source_landing_run_id
+        , inputs.evidence_id as evidence_id
+        , inputs.evidence_direction as evidence_direction
+        , matches.matched_country_code as matched_country_code
+        , matches.matched_country_group_code as matched_country_group_code
+        , matches.match_status as match_status
     from {{ ref('int_wremotely__country_eligibility_inputs') }} as inputs
     left join {{ ref('int_wremotely__country_eligibility_exact_matches') }} as matches
         on inputs.evidence_id = matches.evidence_id
+    inner join changed_candidates as changed
+        on inputs.candidate_id = changed.candidate_id
 ),
 
 group_memberships as (
@@ -71,27 +100,29 @@ group_rollup as (
 
 evidence_rollup as (
     select
-        candidate_id
-        , max(evidence_direction = 'GLOBAL') as has_global_evidence
-        , max(evidence_direction = 'UNKNOWN') as has_unknown_evidence
-        , uniqExact(evidence_id) as country_eligibility_evidence_count
+        evidence_rows.candidate_id
+        , max(evidence_rows.source_landing_run_id) as source_landing_run_id
+        , max(evidence_rows.evidence_direction = 'GLOBAL') as has_global_evidence
+        , max(evidence_rows.evidence_direction = 'UNKNOWN') as has_unknown_evidence
+        , uniqExact(evidence_rows.evidence_id) as country_eligibility_evidence_count
         , uniqExactIf(
-            evidence_id
-            , match_status = 'MATCHED'
-                and notEmpty(ifNull(matched_country_code, ''))
+            evidence_rows.evidence_id
+            , evidence_rows.match_status = 'MATCHED'
+                and notEmpty(ifNull(evidence_rows.matched_country_code, ''))
         ) as matched_country_evidence_count
         , uniqExactIf(
-            evidence_id
-            , match_status = 'MATCHED'
-                and notEmpty(ifNull(matched_country_group_code, ''))
+            evidence_rows.evidence_id
+            , evidence_rows.match_status = 'MATCHED'
+                and notEmpty(ifNull(evidence_rows.matched_country_group_code, ''))
         ) as matched_country_group_evidence_count
-    from evidence
-    group by candidate_id
+    from (select * from evidence) as evidence_rows
+    group by evidence_rows.candidate_id
 ),
 
 combined as (
     select
         er.candidate_id as candidate_id
+        , er.source_landing_run_id
         , case
             when length(ifNull(cr.included_country_codes, [])) > 0 then 'SPECIFIC'
             when er.has_global_evidence
@@ -112,6 +143,7 @@ combined as (
         , er.country_eligibility_evidence_count
         , er.matched_country_evidence_count
         , er.matched_country_group_evidence_count
+        , now64(3) as dbt_updated_at
     from evidence_rollup as er
     left join country_rollup as cr
         on er.candidate_id = cr.candidate_id

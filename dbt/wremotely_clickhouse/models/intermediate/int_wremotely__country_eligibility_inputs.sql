@@ -1,4 +1,13 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='evidence_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(normalized_raw_value, ''), ifNull(country_match_mode, ''), ifNull(evidence_id, ''))"
+) }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_landing_run_id']) %}
 
 with raw_evidence as (
     select
@@ -10,6 +19,12 @@ with raw_evidence as (
         on raw.candidate_id = latest.candidate_id
         and raw.stage_run_id = latest.latest_classification_stage_run_id
         and raw.classification_run_id = latest.latest_classification_run_id
+    {% if incremental_watermark_ready %}
+        and raw.landing_run_id > (
+            select coalesce(max(source_landing_run_id), '')
+            from {{ this }}
+        )
+    {% endif %}
 ),
 
 prepared_roles as (
@@ -121,6 +136,7 @@ final as (
             , '|', source_artifact_sha256
             , '|', toString(source_record_index)
         ) as evidence_id
+        , landing_run_id as source_landing_run_id
         , candidate_id
         , stage_run_id
         , classification_run_id
