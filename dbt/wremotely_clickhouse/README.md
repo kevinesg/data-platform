@@ -118,3 +118,10 @@ reviewed platform-location consumption, restrictive evidence values, atomic
 match unambiguity, and taxonomy alias hygiene. BigQuery-specific dbt unit tests
 remain in the shared BigQuery project until an equivalent ClickHouse unit-test
 implementation is available and validated.
+
+The equality-based country-evidence boundary is physically split into four
+incremental match relations: country aliases, country-group aliases, reviewed
+platform locations, and subdivisions. `int_wremotely__country_eligibility_atomic_matches`
+remains as the compatibility union consumed by downstream models. Keeping the
+joins independent limits peak memory for each ClickHouse query while preserving
+the existing downstream relation and match-source contract.

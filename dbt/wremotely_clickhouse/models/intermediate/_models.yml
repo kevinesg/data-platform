@@ -209,7 +209,15 @@ models:
   - name: int_wremotely__country_eligibility_match_inputs
     description: Narrow country-evidence projection used by the independent exact-match stages.
   - name: int_wremotely__country_eligibility_atomic_matches
-    description: Equality-based country, group, reviewed-location, and subdivision matches.
+    description: Compatibility union of the independently materialized equality-based country, group, reviewed-location, and subdivision match stages.
+  - name: int_wremotely__country_eligibility_atomic_country_matches
+    description: Equality-based country-code, country-name, and country-alias matches for prepared evidence.
+  - name: int_wremotely__country_eligibility_atomic_country_group_matches
+    description: Equality-based country-group alias matches for atomic prepared evidence.
+  - name: int_wremotely__country_eligibility_atomic_reviewed_location_matches
+    description: Equality-based reviewed platform-location country matches for restricting evidence.
+  - name: int_wremotely__country_eligibility_atomic_subdivision_matches
+    description: Equality-based country-subdivision name and code matches for restricting evidence.
   - name: int_wremotely__country_eligibility_country_text_matches
     description: Bounded country-name phrase matches for prepared evidence.
   - name: int_wremotely__country_eligibility_country_group_text_matches
