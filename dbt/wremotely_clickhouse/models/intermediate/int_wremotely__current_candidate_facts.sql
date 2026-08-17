@@ -1,48 +1,147 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(candidate_id, ''))"
+) }}
 
-with candidate_keys as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['dbt_updated_at']) %}
+{% set country_incremental_ready = incremental_watermark_ready
+    and relation_has_columns(ref('int_wremotely__candidate_country_eligibility'), ['source_landing_run_id']) %}
+{% set titles_incremental_ready = incremental_watermark_ready
+    and relation_has_columns(ref('int_wremotely__candidate_job_titles'), ['source_updated_at']) %}
+
+with changed_candidates as (
     select candidate_id
     from {{ ref('int_wremotely__latest_selected_job_urls') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
 
-    union distinct
+    union all
 
     select candidate_id
     from {{ ref('int_wremotely__latest_job_facts') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select candidate_id
+    from {{ ref('int_wremotely__latest_extraction_page_results') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select candidate_id
+    from {{ ref('int_wremotely__latest_classifications') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select candidate_id
+    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select candidate_id
+    from {{ ref('int_wremotely__candidate_country_eligibility') }}
+    {% if country_incremental_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select candidate_id
+    from {{ ref('int_wremotely__candidate_job_titles') }}
+    {% if titles_incremental_ready %}
+    where source_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+),
+
+candidate_keys as (
+    select distinct candidate_id
+    from changed_candidates
 ),
 
 selected_job_urls as (
-    select *
-    from {{ ref('int_wremotely__latest_selected_job_urls') }}
+    select selected_job_urls.*
+    from {{ ref('int_wremotely__latest_selected_job_urls') }} as selected_job_urls
+    inner join candidate_keys as changed
+        on selected_job_urls.candidate_id = changed.candidate_id
 ),
 
 job_facts as (
-    select *
-    from {{ ref('int_wremotely__latest_job_facts') }}
+    select job_facts.*
+    from {{ ref('int_wremotely__latest_job_facts') }} as job_facts
+    inner join candidate_keys as changed
+        on job_facts.candidate_id = changed.candidate_id
 ),
 
 extractions as (
-    select *
-    from {{ ref('int_wremotely__latest_extraction_page_results') }}
+    select extractions.*
+    from {{ ref('int_wremotely__latest_extraction_page_results') }} as extractions
+    inner join candidate_keys as changed
+        on extractions.candidate_id = changed.candidate_id
 ),
 
 classifications as (
-    select *
-    from {{ ref('int_wremotely__latest_classifications') }}
+    select classifications.*
+    from {{ ref('int_wremotely__latest_classifications') }} as classifications
+    inner join candidate_keys as changed
+        on classifications.candidate_id = changed.candidate_id
 ),
 
 lifecycle_rechecks as (
-    select *
-    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }}
+    select lifecycle_rechecks.*
+    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }} as lifecycle_rechecks
+    inner join candidate_keys as changed
+        on lifecycle_rechecks.candidate_id = changed.candidate_id
 ),
 
 country_eligibility as (
-    select *
-    from {{ ref('int_wremotely__candidate_country_eligibility') }}
+    select country_eligibility.*
+    from {{ ref('int_wremotely__candidate_country_eligibility') }} as country_eligibility
+    inner join candidate_keys as changed
+        on country_eligibility.candidate_id = changed.candidate_id
 ),
 
 candidate_titles as (
-    select *
-    from {{ ref('int_wremotely__candidate_job_titles') }}
+    select candidate_titles.*
+    from {{ ref('int_wremotely__candidate_job_titles') }} as candidate_titles
+    inner join candidate_keys as changed
+        on candidate_titles.candidate_id = changed.candidate_id
 ),
 
 joined as (

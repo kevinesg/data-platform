@@ -1,8 +1,23 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='job_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(job_id, ''))"
+) }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['dbt_updated_at']) %}
 
 with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__publishable_job_facts') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
 ),
 
 employment_values as (
@@ -74,6 +89,7 @@ select
     jobs.job_id as job_id
     , ifNull(employment.employment_types, []) as employment_types
     , ifNull(tags.search_tags, []) as search_tags
+    , jobs.dbt_updated_at as dbt_updated_at
 from publishable_jobs as jobs
 left join employment_types as employment
     on jobs.job_id = employment.job_id

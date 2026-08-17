@@ -1,10 +1,55 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(candidate_id, ''))"
+) }}
 
-with job_facts as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at']) %}
+
+with candidate_keys as (
     select
         candidate_id
-        , raw_payload
+        , dbt_updated_at as source_updated_at
     from {{ ref('int_wremotely__latest_job_facts') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(source_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+
+    union all
+
+    select
+        candidate_id
+        , dbt_updated_at as source_updated_at
+    from {{ ref('int_wremotely__latest_selected_job_urls') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(source_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    {% endif %}
+),
+
+candidate_key_rollup as (
+    select
+        candidate_id
+        , max(source_updated_at) as source_updated_at
+    from candidate_keys
+    group by candidate_id
+),
+
+job_facts as (
+    select
+        facts.candidate_id
+        , facts.raw_payload
+    from {{ ref('int_wremotely__latest_job_facts') }} as facts
+    inner join candidate_key_rollup as changed
+        on facts.candidate_id = changed.candidate_id
 ),
 
 typed_page_title_evidence as (
@@ -46,24 +91,16 @@ preferred_page_titles as (
     where title_rank = 1
 ),
 
-candidate_keys as (
-    select candidate_id
-    from {{ ref('int_wremotely__latest_job_facts') }}
-
-    union distinct
-
-    select candidate_id
-    from {{ ref('int_wremotely__latest_selected_job_urls') }}
-),
-
 selected_job_urls as (
     select
-        candidate_id
-        , source_link_title_candidate
-        , source_link_title_candidate_status
-        , source_link_text
-        , source_link_text_char_count
-    from {{ ref('int_wremotely__latest_selected_job_urls') }}
+        selected.candidate_id
+        , selected.source_link_title_candidate
+        , selected.source_link_title_candidate_status
+        , selected.source_link_text
+        , selected.source_link_text_char_count
+    from {{ ref('int_wremotely__latest_selected_job_urls') }} as selected
+    inner join candidate_key_rollup as changed
+        on selected.candidate_id = changed.candidate_id
 ),
 
 final as (
@@ -95,7 +132,8 @@ final as (
                     then 'LEGACY_BOUNDED_LINK_TEXT'
             end
         ) as title_source
-    from candidate_keys as k
+        , k.source_updated_at
+    from candidate_key_rollup as k
     left join preferred_page_titles as p
         on k.candidate_id = p.candidate_id
     left join selected_job_urls as s
