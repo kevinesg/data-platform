@@ -257,6 +257,17 @@ models:
     description: Bounded country-group phrase matches for prepared evidence.
   - name: int_wremotely__country_eligibility_subdivision_text_matches
     description: Bounded subdivision phrase matches for restricting location evidence.
+  - name: int_wremotely__candidate_country_eligibility_evidence
+    description: Persisted candidate-level evidence and exact-match annotations used by the country eligibility rollup.
+    columns:
+      - name: candidate_id
+        tests: [not_null]
+      - name: evidence_row_id
+        tests:
+          - not_null
+          - unique
+      - name: evidence_id
+        tests: [not_null]
   - name: int_wremotely__candidate_country_eligibility
     description: Candidate-level country eligibility rollup with group expansion and ambiguity exclusion.
     columns:

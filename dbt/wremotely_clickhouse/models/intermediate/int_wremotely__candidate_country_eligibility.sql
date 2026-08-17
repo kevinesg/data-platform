@@ -27,42 +27,19 @@ with changed_candidates as (
     {% endif %}
 ),
 
-changed_evidence as (
-    select
-        inputs.candidate_id as candidate_id
-        , inputs.source_landing_run_id as source_landing_run_id
-        , inputs.evidence_id as evidence_id
-        , inputs.evidence_direction as evidence_direction
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as inputs
-    inner join changed_candidates as changed
-        on inputs.candidate_id = changed.candidate_id
-),
-
-exact_matches as (
-    select
-        matches.evidence_id
-        , matches.matched_country_code
-        , matches.matched_country_group_code
-        , matches.match_status
-    from {{ ref('int_wremotely__country_eligibility_exact_match_store') }} as matches
-    where matches.candidate_id in (
-        select candidate_id
-        from changed_candidates
-    )
-),
-
 evidence as (
     select
-        inputs.candidate_id
-        , inputs.source_landing_run_id
-        , inputs.evidence_id
-        , inputs.evidence_direction
-        , matches.matched_country_code
-        , matches.matched_country_group_code
-        , matches.match_status
-    from changed_evidence as inputs
-    left join exact_matches as matches
-        on inputs.evidence_id = matches.evidence_id
+        candidate_evidence.candidate_id
+        , candidate_evidence.source_landing_run_id
+        , candidate_evidence.evidence_id
+        , candidate_evidence.evidence_direction
+        , candidate_evidence.matched_country_code
+        , candidate_evidence.matched_country_group_code
+        , candidate_evidence.match_status
+    from {{ ref('int_wremotely__candidate_country_eligibility_evidence') }} as candidate_evidence
+    where candidate_evidence.candidate_id in (
+        select candidate_id from changed_candidates
+    )
 ),
 
 group_memberships as (
