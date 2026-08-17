@@ -105,50 +105,64 @@ candidate_keys as (
 selected_job_urls as (
     select selected_job_urls.*
     from {{ ref('int_wremotely__latest_selected_job_urls') }} as selected_job_urls
-    any inner join candidate_keys as changed
-        on selected_job_urls.candidate_id = changed.candidate_id
+    where selected_job_urls.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 job_facts as (
     select job_facts.*
     from {{ ref('int_wremotely__latest_job_facts') }} as job_facts
-    any inner join candidate_keys as changed
-        on job_facts.candidate_id = changed.candidate_id
+    where job_facts.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 extractions as (
     select extractions.*
     from {{ ref('int_wremotely__latest_extraction_page_results') }} as extractions
-    any inner join candidate_keys as changed
-        on extractions.candidate_id = changed.candidate_id
+    where extractions.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 classifications as (
     select classifications.*
     from {{ ref('int_wremotely__latest_classifications') }} as classifications
-    any inner join candidate_keys as changed
-        on classifications.candidate_id = changed.candidate_id
+    where classifications.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 lifecycle_rechecks as (
     select lifecycle_rechecks.*
     from {{ ref('int_wremotely__latest_lifecycle_rechecks') }} as lifecycle_rechecks
-    any inner join candidate_keys as changed
-        on lifecycle_rechecks.candidate_id = changed.candidate_id
+    where lifecycle_rechecks.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 country_eligibility as (
     select country_eligibility.*
     from {{ ref('int_wremotely__candidate_country_eligibility') }} as country_eligibility
-    any inner join candidate_keys as changed
-        on country_eligibility.candidate_id = changed.candidate_id
+    where country_eligibility.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 candidate_titles as (
     select candidate_titles.*
     from {{ ref('int_wremotely__candidate_job_titles') }} as candidate_titles
-    any inner join candidate_keys as changed
-        on candidate_titles.candidate_id = changed.candidate_id
+    where candidate_titles.candidate_id in (
+        select candidate_id
+        from candidate_keys
+    )
 ),
 
 joined as (
