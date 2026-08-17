@@ -77,7 +77,11 @@ Exact matching covers normalized country, group, reviewed location, and
 subdivision aliases, and marks evidence that resolves to multiple countries as
 ambiguous rather than selecting one silently. Phrase substring matching and
 country bridge expansion are represented in the candidate rollup and
-serving-country bridge. Lifecycle
+serving-country bridge. The intermediate country bridge is a read-only view;
+the serving mart materializes only active bridge rows. Country-eligibility
+joins use one thread, grace-hash joins, and external sort/group spill
+thresholds so the bounded mini-PC does not build several large in-memory hash
+tables at once. Lifecycle
 closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
 observations; missing lifecycle history remains open and is never treated as
 closure. The on-prem Airflow DAG runs this graph after loading local raw
