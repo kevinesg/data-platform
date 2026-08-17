@@ -6,9 +6,11 @@
     order_by="(ifNull(candidate_id, ''))",
     query_settings={
         'max_threads': 1,
-        'max_bytes_before_external_sort': 67108864,
+        'max_bytes_before_external_sort': 16777216,
         'max_bytes_before_external_group_by': 67108864,
-        'join_algorithm': 'partial_merge',
+        'join_algorithm': 'grace_hash',
+        'grace_hash_join_initial_buckets': 16,
+        'max_bytes_in_join': 268435456,
         'max_memory_usage': 2147483648
     }
 ) }}
