@@ -3,7 +3,14 @@
     incremental_strategy='delete_insert',
     unique_key='candidate_id',
     on_schema_change='append_new_columns',
-    order_by="(ifNull(candidate_id, ''))"
+    order_by="(ifNull(candidate_id, ''))",
+    query_settings={
+        'max_threads': 1,
+        'max_bytes_before_external_sort': 67108864,
+        'max_bytes_before_external_group_by': 67108864,
+        'join_algorithm': 'grace_hash',
+        'max_memory_usage': 2147483648
+    }
 ) }}
 
 {% set incremental_watermark_ready = is_incremental()
@@ -98,49 +105,49 @@ candidate_keys as (
 selected_job_urls as (
     select selected_job_urls.*
     from {{ ref('int_wremotely__latest_selected_job_urls') }} as selected_job_urls
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on selected_job_urls.candidate_id = changed.candidate_id
 ),
 
 job_facts as (
     select job_facts.*
     from {{ ref('int_wremotely__latest_job_facts') }} as job_facts
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on job_facts.candidate_id = changed.candidate_id
 ),
 
 extractions as (
     select extractions.*
     from {{ ref('int_wremotely__latest_extraction_page_results') }} as extractions
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on extractions.candidate_id = changed.candidate_id
 ),
 
 classifications as (
     select classifications.*
     from {{ ref('int_wremotely__latest_classifications') }} as classifications
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on classifications.candidate_id = changed.candidate_id
 ),
 
 lifecycle_rechecks as (
     select lifecycle_rechecks.*
     from {{ ref('int_wremotely__latest_lifecycle_rechecks') }} as lifecycle_rechecks
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on lifecycle_rechecks.candidate_id = changed.candidate_id
 ),
 
 country_eligibility as (
     select country_eligibility.*
     from {{ ref('int_wremotely__candidate_country_eligibility') }} as country_eligibility
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on country_eligibility.candidate_id = changed.candidate_id
 ),
 
 candidate_titles as (
     select candidate_titles.*
     from {{ ref('int_wremotely__candidate_job_titles') }} as candidate_titles
-    inner join candidate_keys as changed
+    any inner join candidate_keys as changed
         on candidate_titles.candidate_id = changed.candidate_id
 ),
 
@@ -375,19 +382,19 @@ joined as (
         , country_eligibility.candidate_id is not null
             as has_country_eligibility_evidence
     from candidate_keys as keys
-    left join selected_job_urls as selected
+    any left join selected_job_urls as selected
         on keys.candidate_id = selected.candidate_id
-    left join job_facts as facts
+    any left join job_facts as facts
         on keys.candidate_id = facts.candidate_id
-    left join extractions
+    any left join extractions
         on keys.candidate_id = extractions.candidate_id
-    left join classifications
+    any left join classifications
         on keys.candidate_id = classifications.candidate_id
-    left join lifecycle_rechecks
+    any left join lifecycle_rechecks
         on keys.candidate_id = lifecycle_rechecks.candidate_id
-    left join country_eligibility
+    any left join country_eligibility
         on keys.candidate_id = country_eligibility.candidate_id
-    left join candidate_titles as titles
+    any left join candidate_titles as titles
         on keys.candidate_id = titles.candidate_id
 ),
 
