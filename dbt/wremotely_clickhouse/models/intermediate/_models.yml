@@ -206,6 +206,15 @@ models:
           - accepted_values:
               arguments:
                 values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+  - name: int_wremotely__country_eligibility_combined_matches
+    description: Persisted deduplicated union of the independent country-eligibility match stages.
+    columns:
+      - name: match_id
+        tests:
+          - not_null
+          - unique
+      - name: evidence_id
+        tests: [not_null]
   - name: int_wremotely__country_eligibility_match_inputs
     description: Narrow country-evidence projection used by the independent exact-match stages.
   - name: int_wremotely__country_eligibility_atomic_matches

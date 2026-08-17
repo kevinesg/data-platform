@@ -15,48 +15,8 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_landing_run_id']) %}
 
-with combined_raw as (
-    select * from {{ ref('int_wremotely__country_eligibility_atomic_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
-    union all
-
-    select * from {{ ref('int_wremotely__country_eligibility_country_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
-    union all
-
-    select * from {{ ref('int_wremotely__country_eligibility_country_group_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-
-    union all
-
-    select * from {{ ref('int_wremotely__country_eligibility_subdivision_text_matches') }}
-    {% if incremental_watermark_ready %}
-    where source_landing_run_id > (
-        select coalesce(max(source_landing_run_id), '')
-        from {{ this }}
-    )
-    {% endif %}
-),
-
-combined as (
-    select distinct
+with combined as (
+    select
         evidence_id
         , source_landing_run_id
         , candidate_id
@@ -64,7 +24,13 @@ combined as (
         , matched_country_code
         , matched_country_group_code
         , match_source
-    from combined_raw
+    from {{ ref('int_wremotely__country_eligibility_combined_matches') }}
+    {% if incremental_watermark_ready %}
+    where source_landing_run_id > (
+        select coalesce(max(source_landing_run_id), '')
+        from {{ this }}
+    )
+    {% endif %}
 ),
 
 country_match_counts as (
