@@ -58,22 +58,10 @@ with combined_raw as (
 select
     match_id
     , evidence_id
-    , latest_source_landing_run_id as source_landing_run_id
+    , source_landing_run_id
     , candidate_id
     , evidence_direction
     , matched_country_code
     , matched_country_group_code
     , match_source
-from (
-    select
-        match_id
-        , any(evidence_id) as evidence_id
-        , max(source_landing_run_id) as latest_source_landing_run_id
-        , argMax(candidate_id, source_landing_run_id) as candidate_id
-        , argMax(evidence_direction, source_landing_run_id) as evidence_direction
-        , any(matched_country_code) as matched_country_code
-        , any(matched_country_group_code) as matched_country_group_code
-        , any(match_source) as match_source
-    from combined_raw
-    group by match_id
-)
+from combined_raw
