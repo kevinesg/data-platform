@@ -67,6 +67,9 @@ current candidate facts, publication eligibility, publishable job facts,
 search facets, serving jobs, companies, the serving-country bridge, and a
 deterministic publication manifest. The model and seed tests run against real
 raw relations.
+The current-candidate-facts model filters each wide source projection through
+the bounded changed-candidate key set before joining the retained rows, so an
+incremental run does not sort or materialize unrelated source history.
 The prepared country relation aligns evidence to the latest classification and
 assigns deterministic direction and match-mode fields. Country matching first
 materializes a narrow evidence projection, then runs equality, country phrase,
