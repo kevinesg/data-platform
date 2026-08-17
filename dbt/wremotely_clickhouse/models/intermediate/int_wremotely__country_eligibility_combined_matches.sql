@@ -3,7 +3,7 @@
     incremental_strategy='delete_insert',
     unique_key='match_id',
     on_schema_change='append_new_columns',
-    order_by="(ifNull(source_landing_run_id, ''), ifNull(evidence_id, ''), ifNull(match_id, ''))",
+    order_by="match_id",
     query_settings={
         'max_threads': 1,
         'max_bytes_before_external_sort': 268435456,
