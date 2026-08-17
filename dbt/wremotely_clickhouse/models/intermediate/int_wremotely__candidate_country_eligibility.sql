@@ -9,7 +9,7 @@
         'max_bytes_before_external_sort': 67108864,
         'max_bytes_before_external_group_by': 67108864,
         'join_algorithm': 'grace_hash',
-        'max_memory_usage': 2147483648
+        'max_memory_usage': 1073741824
     }
 ) }}
 
@@ -37,9 +37,8 @@ evidence as (
         , candidate_evidence.matched_country_group_code
         , candidate_evidence.match_status
     from {{ ref('int_wremotely__candidate_country_eligibility_evidence') }} as candidate_evidence
-    where candidate_evidence.candidate_id in (
-        select candidate_id from changed_candidates
-    )
+    any inner join changed_candidates as changed
+        on candidate_evidence.candidate_id = changed.candidate_id
 ),
 
 group_memberships as (
