@@ -122,6 +122,8 @@ implementation is available and validated.
 The equality-based country-evidence boundary is physically split into four
 incremental match relations: country aliases, country-group aliases, reviewed
 platform locations, and subdivisions. `int_wremotely__country_eligibility_atomic_matches`
-remains as the compatibility union consumed by downstream models. Keeping the
-joins independent limits peak memory for each ClickHouse query while preserving
-the existing downstream relation and match-source contract.
+remains as the compatibility union consumed by downstream models. The
+deduplicated union is now persisted before the final ambiguity annotation, so
+the status pass does not repeatedly inline the large source union. Keeping the
+joins and final aggregation independent limits peak memory while preserving the
+existing downstream relation and match-source contract.
