@@ -5,9 +5,9 @@
     on_schema_change='append_new_columns',
     order_by="(ifNull(candidate_id, ''))",
     query_settings={
-        'max_threads': 2,
-        'max_bytes_before_external_sort': 268435456,
-        'max_bytes_before_external_group_by': 268435456,
+        'max_threads': 1,
+        'max_bytes_before_external_sort': 67108864,
+        'max_bytes_before_external_group_by': 67108864,
         'max_memory_usage': 2147483648
     }
 ) }}
@@ -26,20 +26,44 @@ with changed_candidates as (
     {% endif %}
 ),
 
-evidence as (
+changed_evidence as (
     select
         inputs.candidate_id as candidate_id
         , inputs.source_landing_run_id as source_landing_run_id
         , inputs.evidence_id as evidence_id
         , inputs.evidence_direction as evidence_direction
-        , matches.matched_country_code as matched_country_code
-        , matches.matched_country_group_code as matched_country_group_code
-        , matches.match_status as match_status
     from {{ ref('int_wremotely__country_eligibility_inputs') }} as inputs
-    left join {{ ref('int_wremotely__country_eligibility_exact_matches') }} as matches
-        on inputs.evidence_id = matches.evidence_id
     inner join changed_candidates as changed
         on inputs.candidate_id = changed.candidate_id
+),
+
+changed_evidence_ids as (
+    select distinct evidence_id
+    from changed_evidence
+),
+
+exact_matches as (
+    select
+        matches.evidence_id
+        , matches.matched_country_code
+        , matches.matched_country_group_code
+        , matches.match_status
+    from {{ ref('int_wremotely__country_eligibility_exact_matches') }} as matches
+    where matches.evidence_id in (select evidence_id from changed_evidence_ids)
+),
+
+evidence as (
+    select
+        inputs.candidate_id
+        , inputs.source_landing_run_id
+        , inputs.evidence_id
+        , inputs.evidence_direction
+        , matches.matched_country_code
+        , matches.matched_country_group_code
+        , matches.match_status
+    from changed_evidence as inputs
+    left join exact_matches as matches
+        on inputs.evidence_id = matches.evidence_id
 ),
 
 group_memberships as (
