@@ -45,8 +45,10 @@ exact_matches as (
         , matches.matched_country_group_code
         , matches.match_status
     from {{ ref('int_wremotely__country_eligibility_exact_match_store') }} as matches
-    any inner join changed_candidates as changed
-        on matches.candidate_id = changed.candidate_id
+    where matches.candidate_id in (
+        select candidate_id
+        from changed_candidates
+    )
 ),
 
 evidence as (
