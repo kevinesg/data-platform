@@ -14,14 +14,20 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
-with source_page_results as (
-    select *
+with source_page_result_keys as (
+    select
+        ingest_key
+        , candidate_id
+        , retrieved_at
+        , stage_run_id
+        , extraction_run_id
+        , source_record_index
     from {{ ref('stg_wremotely__extraction_page_results') }}
 ),
 
 changed_candidates as (
     select distinct source.candidate_id
-    from source_page_results as source
+    from source_page_result_keys as source
     where source.candidate_id is not null
     {% if incremental_watermark_ready %}
         and (
@@ -38,21 +44,29 @@ changed_candidates as (
     {% endif %}
 ),
 
-ranked as (
+ranked_keys as (
     select
-        *
+        source.ingest_key
         , row_number() over (
-            partition by candidate_id
+            partition by source.candidate_id
             order by
-                if(retrieved_at is null, 1, 0)
-                , retrieved_at desc
-                , stage_run_id desc
-                , extraction_run_id desc
-                , source_record_index desc
+                if(source.retrieved_at is null, 1, 0)
+                , source.retrieved_at desc
+                , source.stage_run_id desc
+                , source.extraction_run_id desc
+                , source.source_record_index desc
         ) as page_result_rank
-    from source_page_results as source
+    from source_page_result_keys as source
     inner join changed_candidates as changed
-        using (candidate_id)
+        on source.candidate_id = changed.candidate_id
+),
+
+latest_source_rows as (
+    select source.*
+    from {{ ref('stg_wremotely__extraction_page_results') }} as source
+    inner join ranked_keys as latest
+        on source.ingest_key = latest.ingest_key
+    where latest.page_result_rank = 1
 )
 
 select
@@ -95,5 +109,4 @@ select
     , raw_payload
     , retrieved_at as source_updated_at
     , now64(3) as dbt_updated_at
-from ranked
-where page_result_rank = 1
+from latest_source_rows

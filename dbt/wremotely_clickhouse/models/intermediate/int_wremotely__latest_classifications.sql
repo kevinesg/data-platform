@@ -14,14 +14,20 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
-with source_classifications as (
-    select *
+with source_classification_keys as (
+    select
+        ingest_key
+        , candidate_id
+        , classified_at
+        , stage_run_id
+        , classification_run_id
+        , source_record_index
     from {{ ref('stg_wremotely__classification_classifications') }}
 ),
 
 changed_candidates as (
     select distinct source.candidate_id
-    from source_classifications as source
+    from source_classification_keys as source
     where source.candidate_id is not null
     {% if incremental_watermark_ready %}
         and (
@@ -38,21 +44,29 @@ changed_candidates as (
     {% endif %}
 ),
 
-ranked as (
+ranked_keys as (
     select
-        *
+        source.ingest_key
         , row_number() over (
-            partition by candidate_id
+            partition by source.candidate_id
             order by
-                if(classified_at is null, 1, 0)
-                , classified_at desc
-                , stage_run_id desc
-                , classification_run_id desc
-                , source_record_index desc
+                if(source.classified_at is null, 1, 0)
+                , source.classified_at desc
+                , source.stage_run_id desc
+                , source.classification_run_id desc
+                , source.source_record_index desc
         ) as classification_rank
-    from source_classifications as source
+    from source_classification_keys as source
     inner join changed_candidates as changed
-        using (candidate_id)
+        on source.candidate_id = changed.candidate_id
+),
+
+latest_source_rows as (
+    select source.*
+    from {{ ref('stg_wremotely__classification_classifications') }} as source
+    inner join ranked_keys as latest
+        on source.ingest_key = latest.ingest_key
+    where latest.classification_rank = 1
 )
 
 select
@@ -91,5 +105,4 @@ select
     , raw_payload
     , classified_at as source_updated_at
     , now64(3) as dbt_updated_at
-from ranked
-where classification_rank = 1
+from latest_source_rows

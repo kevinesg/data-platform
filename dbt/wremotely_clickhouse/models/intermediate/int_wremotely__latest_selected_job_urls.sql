@@ -14,8 +14,14 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
-with selected_job_urls as (
-    select *
+with selected_job_url_keys as (
+    select
+        ingest_key
+        , candidate_id
+        , selected_at
+        , stage_run_id
+        , selection_run_id
+        , source_record_index
     from {{ ref('stg_wremotely__selected_job_urls') }}
 ),
 
@@ -26,7 +32,7 @@ selection_results as (
 
 changed_candidates as (
     select distinct source.candidate_id
-    from selected_job_urls as source
+    from selected_job_url_keys as source
     where source.candidate_id is not null
     {% if incremental_watermark_ready %}
         and (
@@ -43,6 +49,31 @@ changed_candidates as (
     {% endif %}
 ),
 
+ranked_keys as (
+    select
+        source.ingest_key
+        , row_number() over (
+            partition by source.candidate_id
+            order by
+                if(source.selected_at is null, 1, 0)
+                , source.selected_at desc
+                , source.stage_run_id desc
+                , source.selection_run_id desc
+                , source.source_record_index desc
+        ) as selected_job_url_rank
+    from selected_job_url_keys as source
+    inner join changed_candidates as changed
+        on source.candidate_id = changed.candidate_id
+),
+
+latest_selected_job_urls as (
+    select source.*
+    from {{ ref('stg_wremotely__selected_job_urls') }} as source
+    inner join ranked_keys as latest
+        on source.ingest_key = latest.ingest_key
+    where latest.selected_job_url_rank = 1
+),
+
 selected_with_result_context as (
     select
         selected.*
@@ -56,28 +87,11 @@ selected_with_result_context as (
         , results.selection_reason
         , results.known_url_match
         , results.duplicate_url_identity
-    from selected_job_urls as selected
-    inner join changed_candidates as changed
-        using (candidate_id)
+    from latest_selected_job_urls as selected
     left join selection_results as results
         on selected.selection_run_id = results.selection_run_id
         and selected.source_job_url_id = results.job_url_id
     where selected.candidate_id is not null
-),
-
-ranked as (
-    select
-        *
-        , row_number() over (
-            partition by candidate_id
-            order by
-                if(selected_at is null, 1, 0)
-                , selected_at desc
-                , stage_run_id desc
-                , selection_run_id desc
-                , source_record_index desc
-        ) as selected_job_url_rank
-    from selected_with_result_context
 )
 
 select
@@ -113,5 +127,4 @@ select
     , raw_payload
     , selected_at as source_updated_at
     , now64(3) as dbt_updated_at
-from ranked
-where selected_job_url_rank = 1
+from selected_with_result_context

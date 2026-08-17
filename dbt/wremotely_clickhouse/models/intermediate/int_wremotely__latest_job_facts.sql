@@ -14,14 +14,22 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
 
-with job_facts as (
-    select *
+with job_fact_keys as (
+    select
+        ingest_key
+        , candidate_id
+        , record_updated_at
+        , job_fact_extracted_at
+        , retrieved_at
+        , stage_run_id
+        , job_facts_run_id
+        , source_record_index
     from {{ ref('stg_wremotely__job_facts') }}
 ),
 
 changed_candidates as (
     select distinct source.candidate_id
-    from job_facts as source
+    from job_fact_keys as source
     where source.candidate_id is not null
     {% if incremental_watermark_ready %}
         and (
@@ -38,23 +46,31 @@ changed_candidates as (
     {% endif %}
 ),
 
-ranked as (
+ranked_keys as (
     select
-        *
+        source.ingest_key
         , row_number() over (
-            partition by candidate_id
+            partition by source.candidate_id
             order by
-                if(record_updated_at is null, 1, 0)
-                , record_updated_at desc
-                , if(job_fact_extracted_at is null, 1, 0)
-                , job_fact_extracted_at desc
-                , stage_run_id desc
-                , job_facts_run_id desc
-                , source_record_index desc
+                if(source.record_updated_at is null, 1, 0)
+                , source.record_updated_at desc
+                , if(source.job_fact_extracted_at is null, 1, 0)
+                , source.job_fact_extracted_at desc
+                , source.stage_run_id desc
+                , source.job_facts_run_id desc
+                , source.source_record_index desc
         ) as job_fact_rank
-    from job_facts as source
+    from job_fact_keys as source
     inner join changed_candidates as changed
-        using (candidate_id)
+        on source.candidate_id = changed.candidate_id
+),
+
+latest_source_rows as (
+    select source.*
+    from {{ ref('stg_wremotely__job_facts') }} as source
+    inner join ranked_keys as latest
+        on source.ingest_key = latest.ingest_key
+    where latest.job_fact_rank = 1
 )
 
 select
@@ -131,5 +147,4 @@ select
     , raw_payload
     , coalesce(record_updated_at, job_fact_extracted_at, retrieved_at) as source_updated_at
     , now64(3) as dbt_updated_at
-from ranked
-where job_fact_rank = 1
+from latest_source_rows
