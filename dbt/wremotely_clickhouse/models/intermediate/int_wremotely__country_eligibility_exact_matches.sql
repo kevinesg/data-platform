@@ -1,5 +1,11 @@
 {{ config(
-    materialized='view'
+    materialized='view',
+    query_settings={
+        'max_threads': 1,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_bytes_before_external_sort': 268435456,
+        'max_memory_usage': 1073741824
+    }
 ) }}
 
 with combined as (
@@ -58,3 +64,13 @@ select
     , annotated.match_source
     , annotated.match_status
 from annotated
+group by
+    match_id
+    , annotated.evidence_id
+    , annotated.source_landing_run_id
+    , annotated.candidate_id
+    , annotated.evidence_direction
+    , matched_country_code
+    , matched_country_group_code
+    , annotated.match_source
+    , annotated.match_status
