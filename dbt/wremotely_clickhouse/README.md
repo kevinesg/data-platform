@@ -79,9 +79,15 @@ closure. The on-prem Airflow DAG runs this graph after loading local raw
 relations, then exports a READY ClickHouse publication artifact and signals its
 content-addressed publication ID over the existing Pub/Sub topic. ClickHouse
 grants, the private VPS snapshot-read route, worker cutover, and production
-authority remain separate operational work. The graph uses replay-safe
-full-table materialization; incremental merge behavior is deferred until the
-full source-history and lifecycle semantics are validated.
+authority remain separate operational work. The five latest-per-candidate
+source projections use replay-safe ClickHouse `delete_insert` incremental
+materialization. Each run identifies candidates whose source watermark
+advanced (plus candidates not yet present in the target), ranks only those
+candidates against immutable source history, and replaces their target rows
+by `candidate_id`. The profile enables the adapter's lightweight-delete
+support; model query settings spill large sort/group operations and cap
+per-query memory. Use `--full-refresh` when a source contract or model schema
+changes.
 
 ## Contract parity
 
