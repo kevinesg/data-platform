@@ -16,6 +16,12 @@
 
 with match_inputs as (
     select *
+        , arrayJoin(
+            arrayDistinct(arrayFilter(
+                token -> token != ''
+                , splitByChar(' ', ifNull(normalized_raw_value, ''))
+            ))
+        ) as input_first_token
     from {{ ref('int_wremotely__country_eligibility_match_inputs') }}
     where country_match_mode = 'TEXT'
     {% if incremental_watermark_ready %}
@@ -56,7 +62,7 @@ select
     , 'COUNTRY_GROUP_TEXT_ALIAS' as match_source
 from match_inputs as e
 inner join country_group_text_aliases as c
-    on has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), c.first_token)
+    on e.input_first_token = c.first_token
     and position(
         concat(' ', e.normalized_raw_value, ' ')
         , concat(' ', c.alias_search_text, ' ')
