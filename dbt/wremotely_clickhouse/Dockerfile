@@ -19,6 +19,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY profiles.yml.example ./profiles/profiles.yml
 COPY dbt_project.yml ./dbt_project.yml
+COPY macros ./macros
 COPY models ./models
 COPY seeds ./seeds
 

@@ -2,6 +2,7 @@ name: wremotely_clickhouse
 version: "1.0.0"
 config-version: 2
 profile: wremotely_clickhouse
+macro-paths: [macros]
 model-paths: [models]
 seed-paths: [seeds]
 clean-targets: [target, dbt_packages]

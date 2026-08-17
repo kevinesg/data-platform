@@ -9,4 +9,5 @@ wremotely_clickhouse:
       user: "{{ env_var('WREMOTELY_CLICKHOUSE_USER', 'wremotely_dev') }}"
       password: "{{ env_var('WREMOTELY_CLICKHOUSE_PASSWORD', '') }}"
       secure: false
+      use_lw_deletes: true
       threads: 1
