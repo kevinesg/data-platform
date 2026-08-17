@@ -64,13 +64,4 @@ select
     , annotated.match_source
     , annotated.match_status
 from annotated
-group by
-    match_id
-    , annotated.evidence_id
-    , annotated.source_landing_run_id
-    , annotated.candidate_id
-    , annotated.evidence_direction
-    , matched_country_code
-    , matched_country_group_code
-    , annotated.match_source
-    , annotated.match_status
+limit 1 by match_id
