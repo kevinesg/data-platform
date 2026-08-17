@@ -48,7 +48,7 @@ exact_matches as (
         , matches.matched_country_code
         , matches.matched_country_group_code
         , matches.match_status
-    from {{ ref('int_wremotely__country_eligibility_exact_matches') }} as matches
+    from {{ ref('int_wremotely__country_eligibility_exact_match_store') }} as matches
     where matches.evidence_id in (select evidence_id from changed_evidence_ids)
 ),
 
