@@ -61,18 +61,23 @@ fingerprints; identical declared input should produce identical fingerprints.
 
 This slice proves the separate runtime, source contract, JSON payload
 projection, latest-per-candidate source projections, candidate-title
-projection, prepared country-eligibility inputs, exact country-eligibility
-matches, candidate country-eligibility rollup, lifecycle latest-observation
-semantics, current candidate facts, publication eligibility, publishable job
-facts, search facets, serving jobs, companies, the serving-country bridge, and
-a deterministic publication manifest. The model and seed tests run against
-real raw relations.
+projection, prepared country-eligibility inputs, bounded country-match stages,
+candidate country-eligibility rollup, lifecycle latest-observation semantics,
+current candidate facts, publication eligibility, publishable job facts,
+search facets, serving jobs, companies, the serving-country bridge, and a
+deterministic publication manifest. The model and seed tests run against real
+raw relations.
 The prepared country relation aligns evidence to the latest classification and
-assigns deterministic direction and match-mode fields. Exact matching covers
-normalized country, group, reviewed location, and subdivision aliases, and
-marks evidence that resolves to multiple countries as ambiguous rather than
-selecting one silently. Phrase substring matching and country bridge expansion
-are represented in the candidate rollup and serving-country bridge. Lifecycle
+assigns deterministic direction and match-mode fields. Country matching first
+materializes a narrow evidence projection, then runs equality, country phrase,
+country-group phrase, and subdivision phrase stages independently before the
+compatibility exact-match relation applies ambiguity annotation. This keeps
+large text scans bounded without changing the downstream relation contract.
+Exact matching covers normalized country, group, reviewed location, and
+subdivision aliases, and marks evidence that resolves to multiple countries as
+ambiguous rather than selecting one silently. Phrase substring matching and
+country bridge expansion are represented in the candidate rollup and
+serving-country bridge. Lifecycle
 closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
 observations; missing lifecycle history remains open and is never treated as
 closure. The on-prem Airflow DAG runs this graph after loading local raw
@@ -96,8 +101,9 @@ contract or model schema changes.
 
 The ClickHouse graph is intentionally not required to have the same dbt
 resource count as the BigQuery graph. The country-evidence implementation is
-split into prepared-input and exact-match relations, while adapter-specific
-SQL is kept out of the shared project. Parity means preserving the same
+split into a narrow prepared-input relation, independent match stages, and a
+compatibility exact-match relation, while adapter-specific SQL is kept out of
+the shared project. Parity means preserving the same
 publication, lifecycle, country-eligibility, company, taxonomy, and identity
 guarantees—not duplicating BigQuery syntax or forcing identical model names.
 
