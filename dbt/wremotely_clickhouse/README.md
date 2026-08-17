@@ -99,10 +99,13 @@ candidates against immutable source history, and replaces their target rows
 by `candidate_id`. The classification, extraction, job-facts, and selected-URL
 projections rank a narrow key relation first, then join the winning
 `ingest_key` back to the full source row; large payload columns therefore do
-not participate in the window sort. The profile enables the adapter's
-lightweight-delete support; model query settings spill large sort/group
-operations and cap per-query memory. Use `--full-refresh` when a source
-contract or model schema changes.
+not participate in the window sort. The current-candidate model also removes
+the unused `raw_payload` column before its merge-sort joins, so the wide
+candidate assembly does not decompress or sort evidence payloads that are not
+part of its output contract. The profile enables the adapter's lightweight-
+delete support; model query settings spill large sort/group operations and cap
+per-query memory. Use `--full-refresh` when a source contract or model schema
+changes.
 
 ## Contract parity
 

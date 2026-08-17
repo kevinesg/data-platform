@@ -103,7 +103,7 @@ candidate_keys as (
 ),
 
 selected_job_urls as (
-    select selected_job_urls.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__latest_selected_job_urls') }} as selected_job_urls
     where selected_job_urls.candidate_id in (
         select candidate_id
@@ -112,7 +112,7 @@ selected_job_urls as (
 ),
 
 job_facts as (
-    select job_facts.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__latest_job_facts') }} as job_facts
     where job_facts.candidate_id in (
         select candidate_id
@@ -121,7 +121,7 @@ job_facts as (
 ),
 
 extractions as (
-    select extractions.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__latest_extraction_page_results') }} as extractions
     where extractions.candidate_id in (
         select candidate_id
@@ -130,7 +130,7 @@ extractions as (
 ),
 
 classifications as (
-    select classifications.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__latest_classifications') }} as classifications
     where classifications.candidate_id in (
         select candidate_id
@@ -139,7 +139,7 @@ classifications as (
 ),
 
 lifecycle_rechecks as (
-    select lifecycle_rechecks.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__latest_lifecycle_rechecks') }} as lifecycle_rechecks
     where lifecycle_rechecks.candidate_id in (
         select candidate_id
@@ -148,7 +148,7 @@ lifecycle_rechecks as (
 ),
 
 country_eligibility as (
-    select country_eligibility.*
+    select * except (raw_payload)
     from {{ ref('int_wremotely__candidate_country_eligibility') }} as country_eligibility
     where country_eligibility.candidate_id in (
         select candidate_id
