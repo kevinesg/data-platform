@@ -1,8 +1,27 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(candidate_id, ''))"
+) }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['dbt_updated_at']) %}
 
 with candidate_facts as (
     select *
     from {{ ref('int_wremotely__current_candidate_facts') }}
+    {% if incremental_watermark_ready %}
+    where dbt_updated_at > (
+        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        from {{ this }}
+    )
+    or (
+        latest_job_fact_raw_valid_through_at >= now64(3)
+        and latest_job_fact_raw_valid_through_at <= now64(3) + interval 1 day
+    )
+    {% endif %}
 ),
 
 evaluated as (

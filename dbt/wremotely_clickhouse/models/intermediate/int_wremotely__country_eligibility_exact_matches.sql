@@ -1,6 +1,32 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='match_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(source_landing_run_id, ''), ifNull(evidence_id, ''), ifNull(match_id, ''))",
+    query_settings={
+        'max_threads': 2,
+        'max_bytes_before_external_sort': 268435456,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_memory_usage': 2147483648
+    }
+) }}
 
-with country_aliases as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_landing_run_id']) %}
+
+with eligible_inputs as (
+    select *
+    from {{ ref('int_wremotely__country_eligibility_inputs') }}
+    {% if incremental_watermark_ready %}
+    where source_landing_run_id > (
+        select coalesce(max(source_landing_run_id), '')
+        from {{ this }}
+    )
+    {% endif %}
+),
+
+country_aliases as (
     select distinct
         country_code
         , nullIf(
@@ -129,6 +155,7 @@ subdivision_text_aliases as (
 country_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , c.country_code as matched_country_code
@@ -137,7 +164,7 @@ country_matches as (
             when c.match_kind = 'exact_code' then 'ATOMIC_COUNTRY_ALIAS'
             else 'COUNTRY_TEXT_ALIAS'
         end as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join country_aliases as c
         on e.normalized_raw_value = c.alias_search_text
     where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
@@ -147,12 +174,13 @@ country_matches as (
 country_text_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , c.matched_country_code as matched_country_code
         , nullIf('', '') as matched_country_group_code
         , 'COUNTRY_TEXT_ALIAS' as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join country_text_aliases as c
         on e.country_match_mode = 'TEXT'
         and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), c.first_token)
@@ -166,12 +194,13 @@ country_text_matches as (
 country_group_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , nullIf('', '') as matched_country_code
         , g.country_group_code as matched_country_group_code
         , 'ATOMIC_COUNTRY_GROUP_ALIAS' as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join country_group_aliases as g
         on e.normalized_raw_value = g.alias_search_text
     where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
@@ -182,12 +211,13 @@ country_group_matches as (
 country_group_text_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , nullIf('', '') as matched_country_code
         , g.matched_country_group_code as matched_country_group_code
         , 'COUNTRY_GROUP_TEXT_ALIAS' as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join country_group_text_aliases as g
         on e.country_match_mode = 'TEXT'
         and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), g.first_token)
@@ -201,12 +231,13 @@ country_group_text_matches as (
 reviewed_location_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , r.country_code as matched_country_code
         , nullIf('', '') as matched_country_group_code
         , 'REVIEWED_LOCATION_COUNTRY_ALIAS' as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join reviewed_location_aliases as r
         on e.normalized_raw_value = r.alias_search_text
         and (
@@ -221,6 +252,7 @@ reviewed_location_matches as (
 subdivision_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , s.country_code as matched_country_code
@@ -229,7 +261,7 @@ subdivision_matches as (
             when e.country_match_mode = 'ATOMIC' then 'ATOMIC_COUNTRY_SUBDIVISION_ALIAS'
             else 'COUNTRY_SUBDIVISION_TEXT_ALIAS'
         end as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join subdivision_aliases as s
         on e.normalized_raw_value = s.alias_search_text
     where e.evidence_direction in ('INCLUDED', 'EXCLUDED')
@@ -240,12 +272,13 @@ subdivision_matches as (
 subdivision_text_matches as (
     select distinct
         e.evidence_id
+        , e.source_landing_run_id
         , e.candidate_id
         , e.evidence_direction
         , s.matched_country_code as matched_country_code
         , nullIf('', '') as matched_country_group_code
         , 'COUNTRY_SUBDIVISION_TEXT_ALIAS' as match_source
-    from {{ ref('int_wremotely__country_eligibility_inputs') }} as e
+    from eligible_inputs as e
     inner join subdivision_text_aliases as s
         on e.country_match_mode = 'TEXT'
         and has(splitByChar(' ', ifNull(e.normalized_raw_value, '')), s.first_token)
@@ -275,6 +308,7 @@ combined_raw as (
 combined as (
     select distinct
         evidence_id
+        , source_landing_run_id
         , candidate_id
         , evidence_direction
         , matched_country_code
@@ -315,6 +349,7 @@ select
         , '|', annotated.match_source
     ) as match_id
     , annotated.evidence_id
+    , annotated.source_landing_run_id
     , annotated.candidate_id
     , annotated.evidence_direction
     , if(

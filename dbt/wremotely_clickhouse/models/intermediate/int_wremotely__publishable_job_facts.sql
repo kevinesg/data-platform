@@ -1,9 +1,24 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='job_id',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(job_id, ''))"
+) }}
+
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['dbt_updated_at']) %}
 
 with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__job_publication_status') }}
     where publication_status in ('PUBLISHABLE', 'CLOSED')
+    {% if incremental_watermark_ready %}
+        and dbt_updated_at > (
+            select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+            from {{ this }}
+        )
+    {% endif %}
 ),
 
 prepared as (

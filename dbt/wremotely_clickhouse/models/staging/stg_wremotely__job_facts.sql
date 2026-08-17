@@ -1,6 +1,9 @@
 {{ config(
-    materialized='table',
-    order_by='(source_artifact_sha256, source_record_index, ingest_key)'
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='ingest_key',
+    on_schema_change='append_new_columns',
+    order_by="(ifNull(candidate_id, ''), ingest_key)"
 ) }}
 
 select
@@ -130,3 +133,9 @@ select
         as record_updated_by_step
     , payload as raw_payload
 from {{ source('wremotely', 'job_facts') }}
+{% if is_incremental() %}
+where landing_run_id > (
+    select coalesce(max(landing_run_id), '')
+    from {{ this }}
+)
+{% endif %}
