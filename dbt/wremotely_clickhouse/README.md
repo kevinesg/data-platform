@@ -84,10 +84,13 @@ source projections use replay-safe ClickHouse `delete_insert` incremental
 materialization. Each run identifies candidates whose source watermark
 advanced (plus candidates not yet present in the target), ranks only those
 candidates against immutable source history, and replaces their target rows
-by `candidate_id`. The profile enables the adapter's lightweight-delete
-support; model query settings spill large sort/group operations and cap
-per-query memory. Use `--full-refresh` when a source contract or model schema
-changes.
+by `candidate_id`. The classification, extraction, job-facts, and selected-URL
+projections rank a narrow key relation first, then join the winning
+`ingest_key` back to the full source row; large payload columns therefore do
+not participate in the window sort. The profile enables the adapter's
+lightweight-delete support; model query settings spill large sort/group
+operations and cap per-query memory. Use `--full-refresh` when a source
+contract or model schema changes.
 
 ## Contract parity
 
