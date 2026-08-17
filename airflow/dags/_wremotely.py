@@ -35,6 +35,7 @@ EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 SERVING_DBT_TASK_EXECUTION_TIMEOUT = timedelta(minutes=30)
+ONPREM_CLICKHOUSE_DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=4)
 PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
@@ -661,7 +662,7 @@ def create_onprem_clickhouse_dbt_build_task() -> DockerOperator:
         environment=onprem_clickhouse_dbt_environment,
         private_environment=onprem_clickhouse_dbt_private_environment,
         mounts=clickhouse_dbt_mounts,
-        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
+        execution_timeout=ONPREM_CLICKHOUSE_DBT_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
