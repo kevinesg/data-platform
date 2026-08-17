@@ -1,7 +1,6 @@
 {{ config(
     materialized='incremental',
-    incremental_strategy='delete_insert',
-    unique_key='match_id',
+    incremental_strategy='append',
     on_schema_change='append_new_columns',
     order_by="ifNull(match_id, '')",
     query_settings={
@@ -15,6 +14,9 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['source_landing_run_id']) %}
 
+-- Match rows are immutable and the source watermark excludes already-landed runs.
+-- Append avoids dbt-clickhouse's temporary-table delete/insert rewrite for this
+-- append-only union, which keeps the bounded country graph within memory.
 with combined_raw as (
     select * from {{ ref('int_wremotely__country_eligibility_atomic_matches') }}
     {% if incremental_watermark_ready %}
