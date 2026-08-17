@@ -206,20 +206,6 @@ models:
           - accepted_values:
               arguments:
                 values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
-  - name: int_wremotely__country_eligibility_exact_match_store
-    description: Incremental, evidence-ordered store of exact country-eligibility matches used by candidate rollups.
-    columns:
-      - name: match_id
-        tests: [not_null, unique]
-      - name: evidence_id
-        tests: [not_null]
-      - name: source_landing_run_id
-        tests: [not_null]
-      - name: match_status
-        tests:
-          - accepted_values:
-              arguments:
-                values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
   - name: int_wremotely__country_eligibility_combined_matches
     description: Read-only compatibility union of the independent country-eligibility match stages.
     columns:
