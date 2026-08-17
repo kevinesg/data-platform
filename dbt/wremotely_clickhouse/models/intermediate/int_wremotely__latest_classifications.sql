@@ -1,6 +1,44 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    query_settings={
+        'max_bytes_before_external_sort': 268435456,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_memory_usage': 4294967296,
+        'max_threads': 2
+    }
+) }}
 
-with ranked as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+
+with source_classifications as (
+    select *
+    from {{ ref('stg_wremotely__classification_classifications') }}
+),
+
+changed_candidates as (
+    select distinct source.candidate_id
+    from source_classifications as source
+    where source.candidate_id is not null
+    {% if incremental_watermark_ready %}
+        and (
+            source.classified_at > (
+                select coalesce(max(source_updated_at), toDateTime('1970-01-01 00:00:00'))
+                from {{ this }}
+            )
+            or not exists (
+                select 1
+                from {{ this }} as current_candidate
+                where current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
+),
+
+ranked as (
     select
         *
         , row_number() over (
@@ -12,8 +50,9 @@ with ranked as (
                 , classification_run_id desc
                 , source_record_index desc
         ) as classification_rank
-    from {{ ref('stg_wremotely__classification_classifications') }}
-    where candidate_id is not null
+    from source_classifications as source
+    inner join changed_candidates as changed
+        using (candidate_id)
 )
 
 select

@@ -1,24 +1,60 @@
 {{ config(
-    materialized='table',
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
     query_settings={
-        'max_bytes_before_external_sort': 1073741824
+        'max_bytes_before_external_sort': 268435456,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_memory_usage': 4294967296,
+        'max_threads': 2
     }
 ) }}
 
-with ranked as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+
+with job_facts as (
+    select *
+    from {{ ref('stg_wremotely__job_facts') }}
+),
+
+changed_candidates as (
+    select distinct source.candidate_id
+    from job_facts as source
+    where source.candidate_id is not null
+    {% if incremental_watermark_ready %}
+        and (
+            coalesce(source.record_updated_at, source.job_fact_extracted_at, source.retrieved_at) > (
+                select coalesce(max(source_updated_at), toDateTime('1970-01-01 00:00:00'))
+                from {{ this }}
+            )
+            or not exists (
+                select 1
+                from {{ this }} as current_candidate
+                where current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
+),
+
+ranked as (
     select
         *
         , row_number() over (
             partition by candidate_id
             order by
-                if(job_fact_extracted_at is null, 1, 0)
+                if(record_updated_at is null, 1, 0)
+                , record_updated_at desc
+                , if(job_fact_extracted_at is null, 1, 0)
                 , job_fact_extracted_at desc
                 , stage_run_id desc
                 , job_facts_run_id desc
                 , source_record_index desc
         ) as job_fact_rank
-    from {{ ref('stg_wremotely__job_facts') }}
-    where candidate_id is not null
+    from job_facts as source
+    inner join changed_candidates as changed
+        using (candidate_id)
 )
 
 select

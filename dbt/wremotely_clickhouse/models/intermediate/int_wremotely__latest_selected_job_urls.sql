@@ -1,6 +1,49 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
+    on_schema_change='append_new_columns',
+    query_settings={
+        'max_bytes_before_external_sort': 268435456,
+        'max_bytes_before_external_group_by': 268435456,
+        'max_memory_usage': 4294967296,
+        'max_threads': 2
+    }
+) }}
 
-with selected_with_result_context as (
+{% set incremental_watermark_ready = is_incremental()
+    and relation_has_columns(this, ['source_updated_at', 'dbt_updated_at']) %}
+
+with selected_job_urls as (
+    select *
+    from {{ ref('stg_wremotely__selected_job_urls') }}
+),
+
+selection_results as (
+    select *
+    from {{ ref('stg_wremotely__job_url_selection_results') }}
+),
+
+changed_candidates as (
+    select distinct source.candidate_id
+    from selected_job_urls as source
+    where source.candidate_id is not null
+    {% if incremental_watermark_ready %}
+        and (
+            source.selected_at > (
+                select coalesce(max(latest_selected_at), toDateTime('1970-01-01 00:00:00'))
+                from {{ this }}
+            )
+            or not exists (
+                select 1
+                from {{ this }} as current_candidate
+                where current_candidate.candidate_id = source.candidate_id
+            )
+        )
+    {% endif %}
+),
+
+selected_with_result_context as (
     select
         selected.*
         , results.link_text as source_link_text
@@ -13,8 +56,10 @@ with selected_with_result_context as (
         , results.selection_reason
         , results.known_url_match
         , results.duplicate_url_identity
-    from {{ ref('stg_wremotely__selected_job_urls') }} as selected
-    left join {{ ref('stg_wremotely__job_url_selection_results') }} as results
+    from selected_job_urls as selected
+    inner join changed_candidates as changed
+        using (candidate_id)
+    left join selection_results as results
         on selected.selection_run_id = results.selection_run_id
         and selected.source_job_url_id = results.job_url_id
     where selected.candidate_id is not null
