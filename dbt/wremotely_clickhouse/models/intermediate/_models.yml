@@ -206,6 +206,16 @@ models:
           - accepted_values:
               arguments:
                 values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
+  - name: int_wremotely__country_eligibility_match_inputs
+    description: Narrow country-evidence projection used by the independent exact-match stages.
+  - name: int_wremotely__country_eligibility_atomic_matches
+    description: Equality-based country, group, reviewed-location, and subdivision matches.
+  - name: int_wremotely__country_eligibility_country_text_matches
+    description: Bounded country-name phrase matches for prepared evidence.
+  - name: int_wremotely__country_eligibility_country_group_text_matches
+    description: Bounded country-group phrase matches for prepared evidence.
+  - name: int_wremotely__country_eligibility_subdivision_text_matches
+    description: Bounded subdivision phrase matches for restricting location evidence.
   - name: int_wremotely__candidate_country_eligibility
     description: Candidate-level country eligibility rollup with group expansion and ambiguity exclusion.
     columns:
