@@ -38,11 +38,6 @@ changed_evidence as (
         on inputs.candidate_id = changed.candidate_id
 ),
 
-changed_evidence_ids as (
-    select distinct evidence_id
-    from changed_evidence
-),
-
 exact_matches as (
     select
         matches.evidence_id
@@ -50,8 +45,8 @@ exact_matches as (
         , matches.matched_country_group_code
         , matches.match_status
     from {{ ref('int_wremotely__country_eligibility_exact_match_store') }} as matches
-    any inner join changed_evidence_ids as changed
-        on matches.evidence_id = changed.evidence_id
+    any inner join changed_candidates as changed
+        on matches.candidate_id = changed.candidate_id
 ),
 
 evidence as (
