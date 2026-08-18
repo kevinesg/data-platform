@@ -97,6 +97,14 @@ Keep `AIRFLOW_FERNET_KEY` stable after creating real Airflow connections or
 variables. Changing it later without key rotation can make existing encrypted
 values unreadable.
 
+The deployed Compose file defaults
+`AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT` to 900 seconds. This is
+deliberate: a DockerOperator task can remain quiet while a long ClickHouse or
+dbt query is executing, and a short heartbeat timeout can incorrectly classify
+that healthy task as a zombie. The task's DAG-level `execution_timeout` remains
+the upper runtime bound. Override the value only in the external environment
+file when a measured workload requires it; do not put secrets in this setting.
+
 Validate the external environment file before running Docker:
 
 ```bash
