@@ -8,6 +8,7 @@ from airflow.sdk import DAG
 from _wremotely import (
     create_onprem_clickhouse_publication_signal_task,
     create_onprem_clickhouse_publication_snapshot_task,
+    create_onprem_clickhouse_dbt_build_task,
     create_dbt_build_task,
     create_publication_hold_task,
     create_publication_signal_task,
@@ -61,6 +62,7 @@ with DAG(
         task_id="legacy_signal_publication",
     )
 
+    dbt_build = create_onprem_clickhouse_dbt_build_task()
     publish_clickhouse_snapshot = create_onprem_clickhouse_publication_snapshot_task(
         BASE_RUN_ID
     )
@@ -71,4 +73,4 @@ with DAG(
 
     choose_mode >> legacy_dbt_build >> legacy_publication_hold
     legacy_publication_hold >> legacy_publish_serving_snapshot >> legacy_signal_publication
-    choose_mode >> publish_clickhouse_snapshot >> signal_clickhouse_publication
+    choose_mode >> dbt_build >> publish_clickhouse_snapshot >> signal_clickhouse_publication

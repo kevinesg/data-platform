@@ -85,13 +85,13 @@ def assert_idempotent_docker_timeout_cleanup(task: DockerOperator) -> None:
 
 
 def validate_dbt_project_boundaries(modules: dict[str, ModuleType]) -> None:
-    expected_projects = {
-        "etl__personal_finance": "personal_finance",
-        "publish__wremotely_serving": "wremotely",
+    expected_tasks = {
+        ("etl__personal_finance", "dbt_build"): "personal_finance",
+        ("publish__wremotely_serving", "legacy_dbt_build"): "wremotely",
+        ("publish__wremotely_serving", "dbt_build"): "/app",
     }
-    for module_name, expected_project in expected_projects.items():
+    for (module_name, task_id), expected_project in expected_tasks.items():
         dag = require_dag(modules, module_name)
-        task_id = "legacy_dbt_build" if module_name == "publish__wremotely_serving" else "dbt_build"
         command = dag.get_task(task_id).command
         if not isinstance(command, list):
             raise AssertionError(f"{dag.dag_id}.dbt_build command must be an argv list")
@@ -130,7 +130,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "stage_recheck",
             "land_filesystem",
             "load_clickhouse_raw",
-            "dbt_build",
             "trigger_publication",
         ],
     )
@@ -162,6 +161,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "legacy_publication_hold",
         "legacy_publish_serving_snapshot",
         "legacy_signal_publication",
+        "dbt_build",
         "publish_clickhouse_snapshot",
         "signal_clickhouse_publication",
     }
@@ -179,13 +179,17 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "legacy_signal_publication",
     }:
         raise AssertionError("legacy serving snapshot must precede its signal")
+    if publication.get_task("dbt_build").downstream_task_ids != {
+        "publish_clickhouse_snapshot",
+    }:
+        raise AssertionError("ClickHouse dbt build must precede its snapshot")
     if publication.get_task("publish_clickhouse_snapshot").downstream_task_ids != {
         "signal_clickhouse_publication",
     }:
         raise AssertionError("ClickHouse snapshot must precede its signal")
     if publication.get_task("choose_publication_mode").downstream_task_ids != {
         "legacy_dbt_build",
-        "publish_clickhouse_snapshot",
+        "dbt_build",
     }:
         raise AssertionError("publication mode branch must expose legacy and ClickHouse paths")
     assert_task_contract(clickhouse_build, ["dbt_build"])
@@ -200,7 +204,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "stage",
             "land_filesystem",
             "load_clickhouse_raw",
-            "dbt_build",
             "trigger_publication",
         ],
     )
@@ -263,7 +266,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "stage_recheck",
         "land_filesystem",
         "load_clickhouse_raw",
-        "dbt_build",
     ):
         assert_pool(lifecycle, task_id, "wremotely_warehouse")
     assert_pool(lifecycle, "recheck", "wremotely_network")
@@ -289,6 +291,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "legacy_dbt_build",
         "legacy_publication_hold",
         "legacy_publish_serving_snapshot",
+        "dbt_build",
         "publish_clickhouse_snapshot",
     ):
         assert_pool(publication, task_id, "wremotely_warehouse")
@@ -299,7 +302,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "stage",
         "land_filesystem",
         "load_clickhouse_raw",
-        "dbt_build",
     ):
         assert_pool(onprem_ingestion, task_id, "wremotely_warehouse")
 
@@ -545,14 +547,13 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         "stage",
         "land_filesystem",
         "load_clickhouse_raw",
-        "dbt_build",
         "trigger_publication",
     }
     if set(ingestion.task_ids) != expected_task_ids:
         raise AssertionError(f"{ingestion.dag_id} task set does not match its contract")
     for task_id in ingestion.task_ids:
         task = ingestion.get_task(task_id)
-        if task.task_id in {"dbt_build", "trigger_publication"}:
+        if task.task_id in {"trigger_publication"}:
             continue
         if not isinstance(task.command, list):
             raise AssertionError(f"{ingestion.dag_id}.{task_id} command must be an argv list")
@@ -587,14 +588,8 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
     if command_argument(raw_load_command, "--step") != "load-clickhouse-raw":
         raise AssertionError("on-prem warehouse task must load ClickHouse raw relations")
 
-    dbt_command = ingestion.get_task("dbt_build").command
-    if command_argument(dbt_command, "--project-dir") != "/app":
-        raise AssertionError("on-prem dbt task must run the ClickHouse project")
-    if dbt_command[-2:] != ["--exclude-resource-type", "unit_test"]:
-        raise AssertionError("on-prem dbt task must exclude development unit tests")
-
-    if "trigger_publication" not in ingestion.get_task("dbt_build").downstream_task_ids:
-        raise AssertionError("on-prem dbt build must trigger the single-flight publication DAG")
+    if "trigger_publication" not in ingestion.get_task("load_clickhouse_raw").downstream_task_ids:
+        raise AssertionError("on-prem raw load must trigger the single-flight publication DAG")
     trigger = ingestion.get_task("trigger_publication")
     if trigger.conf.get("publication_mode") != "clickhouse":
         raise AssertionError("on-prem ingestion must select the ClickHouse publication path")
@@ -614,10 +609,8 @@ def assert_onprem_lifecycle_task_contract(lifecycle: DAG) -> None:
         raise AssertionError("lifecycle must land recheck rows on the filesystem")
     if command_argument(lifecycle.get_task("load_clickhouse_raw").command, "--step") != "load-clickhouse-raw":
         raise AssertionError("lifecycle must load recheck rows into ClickHouse")
-    if command_argument(lifecycle.get_task("dbt_build").command, "--project-dir") != "/app":
-        raise AssertionError("lifecycle dbt must run the ClickHouse project")
-    if "trigger_publication" not in lifecycle.get_task("dbt_build").downstream_task_ids:
-        raise AssertionError("lifecycle dbt must trigger the single-flight publication DAG")
+    if "trigger_publication" not in lifecycle.get_task("load_clickhouse_raw").downstream_task_ids:
+        raise AssertionError("lifecycle raw load must trigger the single-flight publication DAG")
     if lifecycle.get_task("trigger_publication").conf.get("publication_mode") != "clickhouse":
         raise AssertionError("lifecycle must select the ClickHouse publication path")
 
