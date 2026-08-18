@@ -202,8 +202,8 @@ Use the same pattern for future helper modules such as `_dag_factory.py`.
 
 The scheduled wremotely workflow is the ClickHouse/on-prem path:
 
-- `etl__wremotely` runs crawl, extraction, filesystem landing, ClickHouse raw
-  loading, ClickHouse dbt, immutable snapshot export, and the Pub/Sub signal;
+- `etl__wremotely` runs crawl, extraction, filesystem landing, and ClickHouse
+  raw loading, then hands off to the serialized publication DAG;
 - `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
   already-loaded raw relations;
 - `etl__wremotely_gcp_legacy`, `maintenance__wremotely_artifacts`, and the
@@ -211,8 +211,8 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   production cutover is verified; they are not scheduled production paths;
 - `maintenance__wremotely_lifecycle` is the native ClickHouse lifecycle path:
   it selects due candidates from ClickHouse, rechecks them, lands and loads
-  lifecycle facts locally, rebuilds ClickHouse dbt models, and signals the
-  resulting snapshot through Pub/Sub;
+  lifecycle facts locally, then hands off the build and publication to the
+  serialized publication DAG;
 - `repair__wremotely_classifications` is manual-only and replays completed
   historical extraction artifacts through raw classification load;
 - `repair__wremotely_warehouse_classifications` is manual-only and rebuilds

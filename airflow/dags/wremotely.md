@@ -1,9 +1,10 @@
 # wremotely Airflow runbook
 
 The scheduled production DAG is `etl__wremotely`. It runs the private ETL
-container through local filesystem landing, ClickHouse raw loading, the
-isolated ClickHouse dbt project, an immutable ClickHouse publication snapshot,
-and a final Pub/Sub signal containing only the publication identifier.
+container through local filesystem landing and ClickHouse raw loading, then
+hands the run to a serialized publication DAG for the isolated ClickHouse dbt
+project, immutable publication snapshot, and final Pub/Sub signal containing
+only the publication identifier.
 
 BigQuery and GCS are no longer part of the scheduled wremotely path. The
 personal-finance DAG remains a separate BigQuery workload. The old
@@ -12,13 +13,15 @@ recovery tooling only and must not be used for normal wremotely runs.
 
 `maintenance__wremotely_lifecycle` is the native maintenance path. It selects
 due jobs from ClickHouse, rechecks their source pages, lands the lifecycle
-facts under the local warehouse root, loads ClickHouse raw relations, runs the
-ClickHouse dbt project, publishes a local snapshot, and sends only the
+facts under the local warehouse root, and loads ClickHouse raw relations before
+handing the run to the serialized publication DAG. The publication DAG runs
+the ClickHouse dbt project, publishes a local snapshot, and sends only the
 content-addressed publication ID through Pub/Sub.
 
-Both scheduled paths hand off after dbt to the trigger-only
-`publish__wremotely_serving` DAG. That DAG has one active-run boundary and
-selects the ClickHouse snapshot-and-signal path for `publication_mode=clickhouse`.
+Both scheduled paths hand off after raw loading to the serialized
+`publish__wremotely_serving` DAG. That DAG has one active-run boundary and runs
+the ClickHouse dbt, snapshot, and signal sequence for
+`publication_mode=clickhouse`.
 The former BigQuery/GCS dbt, hold, snapshot, and signal tasks remain available
 only when an operator explicitly triggers the DAG with
 `publication_mode=legacy` for historical recovery. Do not run both publication
