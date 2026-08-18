@@ -95,8 +95,17 @@ closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
 observations; missing lifecycle history remains open and is never treated as
 closure. The on-prem Airflow DAG runs this graph after loading local raw
 relations, then exports a READY ClickHouse publication artifact and signals its
-content-addressed publication ID over the existing Pub/Sub topic. ClickHouse
-grants, the private VPS snapshot-read route, worker cutover, and production
+content-addressed publication ID over the existing Pub/Sub topic. Lifecycle
+recheck assignments are append-only and source-stratified across seven logical
+buckets. The assignment model initially backfills jobs with a known posting date
+at least 21 days old as well as jobs with no posting date, then adds newly
+eligible jobs on later incremental builds without moving existing candidates
+between buckets. Unknown dates are retained so lifecycle checks can eventually
+close those jobs; known dates remain subject to the 21-day minimum at selection
+time. Replaying the same input is idempotent because existing candidate
+assignments are preserved by their unique key. The maintenance selector joins
+these assignments rather than deriving a transient bucket from the job ID.
+ClickHouse grants, the private VPS snapshot-read route, worker cutover, and production
 authority remain separate operational work. The five latest-per-candidate
 source projections use replay-safe ClickHouse `delete_insert` incremental
 materialization. Each run identifies candidates whose source watermark
