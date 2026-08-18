@@ -22,6 +22,13 @@ Both scheduled paths hand off after raw loading to the serialized
 `publish__wremotely_serving` DAG. That DAG has one active-run boundary and runs
 the ClickHouse dbt, snapshot, and signal sequence for
 `publication_mode=clickhouse`.
+Lifecycle selection requires the ClickHouse dbt assignment model to have
+completed first. That model keeps append-only, source-stratified assignments
+across seven logical buckets. It assigns known dates only after they are at least
+21 days old and also assigns jobs with no posting date so they can eventually be
+closed; the selector applies the known-date age gate at selection time. The
+maintenance DAG rotates one logical bucket every
+12-hour schedule slot; it does not require pre-created bucket directories.
 The former BigQuery/GCS dbt, hold, snapshot, and signal tasks remain available
 only when an operator explicitly triggers the DAG with
 `publication_mode=legacy` for historical recovery. Do not run both publication

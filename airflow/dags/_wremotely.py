@@ -503,6 +503,9 @@ clickhouse_dbt_environment = {
     "WREMOTELY_CLICKHOUSE_USER": optional_env(
         "WREMOTELY_CLICKHOUSE_USER", "wremotely_dev"
     ),
+    "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS": optional_env(
+        "WREMOTELY_LIFECYCLE_MIN_POSTING_AGE_DAYS", "21"
+    ),
 }
 clickhouse_dbt_private_environment = {}
 if os.environ.get("WREMOTELY_CLICKHOUSE_PASSWORD", "").strip():

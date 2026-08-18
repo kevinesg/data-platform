@@ -120,6 +120,35 @@ models:
       - name: latest_lifecycle_checked_at
         tests:
           - not_null
+  - name: int_wremotely__lifecycle_recheck_assignments
+    description: Immutable source-stratified lifecycle bucket assignment per eligible candidate.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: source_key
+        tests:
+          - not_null
+      - name: source_position
+        tests:
+          - not_null
+      - name: bucket_count
+        tests:
+          - not_null
+      - name: bucket_index
+        tests:
+          - not_null
+      - name: assignment_version
+        tests:
+          - not_null
+      - name: posting_date_known
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: source_publication_at
   - name: int_wremotely__latest_selected_job_urls
     description: Latest selected URL per candidate with selection evidence context.
     columns:
