@@ -16,6 +16,14 @@ facts under the local warehouse root, loads ClickHouse raw relations, runs the
 ClickHouse dbt project, publishes a local snapshot, and sends only the
 content-addressed publication ID through Pub/Sub.
 
+Both scheduled paths hand off after dbt to the trigger-only
+`publish__wremotely_serving` DAG. That DAG has one active-run boundary and
+selects the ClickHouse snapshot-and-signal path for `publication_mode=clickhouse`.
+The former BigQuery/GCS dbt, hold, snapshot, and signal tasks remain available
+only when an operator explicitly triggers the DAG with
+`publication_mode=legacy` for historical recovery. Do not run both publication
+paths for the same publication ID.
+
 ## Required external configuration
 
 Keep the environment file and credentials outside Git. The Airflow image and
