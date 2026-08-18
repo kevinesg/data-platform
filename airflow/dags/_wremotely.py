@@ -595,9 +595,9 @@ onprem_clickhouse_dbt_environment = {
 onprem_clickhouse_dbt_private_environment = clickhouse_dbt_private_environment
 
 
-def create_dbt_build_task() -> DockerOperator:
+def create_dbt_build_task(*, task_id: str = "dbt_build") -> DockerOperator:
     return docker_task(
-        task_id="dbt_build",
+        task_id=task_id,
         image=DBT_IMAGE,
         command=[
             "--output",
@@ -694,9 +694,13 @@ def create_onprem_clickhouse_publication_snapshot_task(run_id: str) -> DockerOpe
     )
 
 
-def create_onprem_clickhouse_publication_signal_task(snapshot_run_id: str) -> DockerOperator:
+def create_onprem_clickhouse_publication_signal_task(
+    snapshot_run_id: str,
+    *,
+    task_id: str = "signal_publication",
+) -> DockerOperator:
     return docker_task(
-        task_id="signal_publication",
+        task_id=task_id,
         image=SCRIPTS_IMAGE,
         entrypoint=["python", "src/clickhouse_publication_signal.py"],
         command=[
@@ -719,9 +723,13 @@ def create_onprem_clickhouse_publication_signal_task(snapshot_run_id: str) -> Do
     )
 
 
-def create_publication_hold_task(run_id: str) -> DockerOperator:
+def create_publication_hold_task(
+    run_id: str,
+    *,
+    task_id: str = "publication_hold",
+) -> DockerOperator:
     return docker_task(
-        task_id="publication_hold",
+        task_id=task_id,
         image=WREMOTELY_ETL_IMAGE,
         command=etl_command(
             "--step",
@@ -758,9 +766,13 @@ def create_publication_hold_task(run_id: str) -> DockerOperator:
     )
 
 
-def create_serving_snapshot_task(run_id: str) -> DockerOperator:
+def create_serving_snapshot_task(
+    run_id: str,
+    *,
+    task_id: str = "publish_serving_snapshot",
+) -> DockerOperator:
     return docker_task(
-        task_id="publish_serving_snapshot",
+        task_id=task_id,
         image=WREMOTELY_ETL_IMAGE,
         command=etl_command(
             "--step",
@@ -787,9 +799,13 @@ def create_serving_snapshot_task(run_id: str) -> DockerOperator:
     )
 
 
-def create_publication_signal_task(snapshot_run_id: str) -> DockerOperator:
+def create_publication_signal_task(
+    snapshot_run_id: str,
+    *,
+    task_id: str = "signal_publication",
+) -> DockerOperator:
     return docker_task(
-        task_id="signal_publication",
+        task_id=task_id,
         image=SCRIPTS_IMAGE,
         entrypoint=["python", "src/publication_signal.py"],
         command=[
@@ -818,13 +834,16 @@ def create_publication_signal_task(snapshot_run_id: str) -> DockerOperator:
 def create_publication_trigger_task(
     publication_run_id: str,
     *,
+    publication_mode: str = "legacy",
     trigger_rule: str = "all_success",
 ) -> TriggerDagRunOperator:
+    if publication_mode not in {"legacy", "clickhouse"}:
+        raise ValueError(f"unsupported publication mode: {publication_mode}")
     return TriggerDagRunOperator(
         task_id="trigger_publication",
         trigger_dag_id=WREMOTELY_PUBLICATION_DAG_ID,
         trigger_run_id="publication__{{ dag.dag_id }}__{{ run_id }}",
-        conf={"publication_run_id": publication_run_id},
+        conf={"publication_run_id": publication_run_id, "publication_mode": publication_mode},
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=30,
