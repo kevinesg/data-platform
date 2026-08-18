@@ -10,4 +10,11 @@ wremotely_clickhouse:
       password: "{{ env_var('WREMOTELY_CLICKHOUSE_PASSWORD', '') }}"
       secure: false
       use_lw_deletes: true
+      # Wide incremental models can legitimately stream results for several
+      # minutes. Keep the client alive long enough for ClickHouse to finish
+      # instead of abandoning a still-running query at the adapter default.
+      send_receive_timeout: 900
+      # A timed-out query must not leave its dbt session locked for the next
+      # model in the same process. Open and close an isolated client per model.
+      reuse_connections: false
       threads: 1

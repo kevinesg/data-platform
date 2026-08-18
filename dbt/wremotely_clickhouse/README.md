@@ -53,6 +53,12 @@ uv run dbt build --profiles-dir .
 `profiles.yml` is local-only and must not be committed. The model reads the
 stable `wremotely_dev.wremotely__*` raw relations and materializes the full
 typed staging, intermediate, and mart graph in the same ClickHouse database.
+The profile template uses a 900-second ClickHouse HTTP receive timeout because
+wide incremental models can legitimately run longer than the adapter's
+300-second default. It also disables connection reuse so a client-side timeout
+cannot leave a still-running query's dbt session locked for the next model.
+Keep these settings aligned in any environment-specific profile; do not solve
+the issue by raising the server-wide memory limit.
 For a replay check, run the same build a second time and compare the
 `wremotely__publication_manifest` row and the serving/company row-hash
 fingerprints; identical declared input should produce identical fingerprints.
