@@ -384,7 +384,10 @@ models:
       - name: source_url
         tests: [not_null]
       - name: title
-        tests: [not_null]
+        tests:
+          - not_null
+          - no_company_suffix:
+              company_column: company_name
       - name: remote_scope
         tests:
           - not_null
@@ -409,6 +412,8 @@ models:
       - name: job_id
         tests: [not_null, unique]
       - name: employment_types
+        tests: [not_null]
+      - name: title_cleanup_version
         tests: [not_null]
       - name: search_tags
         tests: [not_null]
