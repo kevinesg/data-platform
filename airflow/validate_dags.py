@@ -202,25 +202,15 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     }:
         raise AssertionError("publication mode branch must expose legacy and ClickHouse paths")
     assert_task_contract(clickhouse_build, ["dbt_build"])
-    assert_task_contract(
-        onprem_ingestion,
-        [
-            "crawl",
-            "select",
-            "extract",
-            "job_facts",
-            "classify",
-            "stage",
-            "land_filesystem",
-            "load_clickhouse_raw",
-            "trigger_publication",
-        ],
-    )
     if onprem_ingestion.dag_id != "etl__wremotely":
         raise AssertionError("ClickHouse ingestion must own the canonical etl__wremotely DAG ID")
     if ingestion.dag_id != "etl__wremotely_gcp_legacy":
         raise AssertionError("legacy GCP ingestion must not own the canonical DAG ID")
     assert_onprem_ingestion_task_contract(onprem_ingestion)
+    validate_onprem_ingestion_refresh_contract(
+        onprem_ingestion,
+        modules["etl__wremotely_onprem"],
+    )
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     if environment == "prod":
@@ -554,6 +544,9 @@ def assert_ingestion_task_contract(ingestion: DAG) -> None:
 
 def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
     expected_task_ids = {
+        "read_refresh_request",
+        "choose_refresh_start",
+        "acknowledge_refresh_request",
         "crawl",
         "select",
         "extract",
@@ -563,6 +556,14 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         "land_filesystem",
         "load_clickhouse_raw",
         "trigger_publication",
+        "refresh_start_crawl",
+        "refresh_start_select",
+        "refresh_start_extract",
+        "refresh_start_job_facts",
+        "refresh_start_classify",
+        "refresh_start_stage",
+        "refresh_start_land_filesystem",
+        "refresh_start_load_clickhouse_raw",
     }
     if set(ingestion.task_ids) != expected_task_ids:
         raise AssertionError(f"{ingestion.dag_id} task set does not match its contract")
@@ -570,10 +571,19 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
         task = ingestion.get_task(task_id)
         if task.task_id in {"trigger_publication"}:
             continue
-        if not isinstance(task.command, list):
-            raise AssertionError(f"{ingestion.dag_id}.{task_id} command must be an argv list")
+        if task.task_id in {
+            "read_refresh_request",
+            "choose_refresh_start",
+            "acknowledge_refresh_request",
+        } or task.task_id.startswith("refresh_start_"):
+            continue
+        if not isinstance(task.command, (list, str)):
+            raise AssertionError(
+                f"{ingestion.dag_id}.{task_id} command must be an argv list or template"
+            )
+        command_text = task.command if isinstance(task.command, str) else " ".join(task.command)
         if any(
-            argument in task.command
+            argument in command_text
             for argument in (
                 "--gcp-project",
                 "--raw-dataset",
@@ -588,19 +598,25 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
             raise AssertionError(f"{ingestion.dag_id}.{task_id} must not receive GCP settings")
 
     select_command = ingestion.get_task("select").command
+    if not isinstance(select_command, str):
+        select_command = " ".join(select_command)
     if "--skip-known-url-lookup" not in select_command:
         raise AssertionError("on-prem select must use local artifact deduplication")
 
     classify_command = ingestion.get_task("classify").command
+    if not isinstance(classify_command, str):
+        classify_command = " ".join(classify_command)
     for option in ("--work-arrangement-mode", "--country-eligibility-mode"):
-        if command_argument(classify_command, option) != "raw_only":
+        if f'"{option}", "raw_only"' not in classify_command:
             raise AssertionError(f"on-prem classify must keep {option} raw_only")
 
     land_command = ingestion.get_task("land_filesystem").command
-    if command_argument(land_command, "--step") != "land-filesystem":
+    land_text = land_command if isinstance(land_command, str) else " ".join(land_command)
+    if "\"land-filesystem\"" not in land_text and "land-filesystem" not in land_text:
         raise AssertionError("on-prem landing task must use the filesystem landing step")
     raw_load_command = ingestion.get_task("load_clickhouse_raw").command
-    if command_argument(raw_load_command, "--step") != "load-clickhouse-raw":
+    raw_load_text = raw_load_command if isinstance(raw_load_command, str) else " ".join(raw_load_command)
+    if "\"load-clickhouse-raw\"" not in raw_load_text and "load-clickhouse-raw" not in raw_load_text:
         raise AssertionError("on-prem warehouse task must load ClickHouse raw relations")
 
     if "trigger_publication" not in ingestion.get_task("load_clickhouse_raw").downstream_task_ids:
@@ -608,6 +624,135 @@ def assert_onprem_ingestion_task_contract(ingestion: DAG) -> None:
     trigger = ingestion.get_task("trigger_publication")
     if trigger.conf.get("publication_mode") != "clickhouse":
         raise AssertionError("on-prem ingestion must select the ClickHouse publication path")
+    if trigger.trigger_rule != "none_failed_min_one_success":
+        raise AssertionError("on-prem publication must tolerate skipped refresh branches")
+
+
+def validate_onprem_ingestion_refresh_contract(
+    ingestion: DAG,
+    ingestion_module: ModuleType,
+) -> None:
+    steps = tuple(ingestion_module.WREMOTELY_ONPREM_REFRESH_STEPS)
+    boundaries = tuple(ingestion_module.WREMOTELY_ONPREM_REFRESH_BOUNDARIES)
+    expected_steps = (
+        "crawl",
+        "select",
+        "extract",
+        "job_facts",
+        "classify",
+        "stage",
+        "land_filesystem",
+        "load_clickhouse_raw",
+    )
+    if steps != expected_steps or boundaries != expected_steps:
+        raise AssertionError("on-prem refresh steps changed without validator review")
+    if ingestion.get_task("read_refresh_request").downstream_task_ids != {
+        "choose_refresh_start"
+    }:
+        raise AssertionError("on-prem refresh request must precede branch selection")
+    expected_gates = {f"refresh_start_{step}" for step in steps}
+    if ingestion.get_task("choose_refresh_start").downstream_task_ids != expected_gates:
+        raise AssertionError("on-prem refresh branch must control every EL step gate")
+    for step in steps:
+        if ingestion.get_task(f"refresh_start_{step}").downstream_task_ids != {step}:
+            raise AssertionError(f"on-prem refresh gate does not precede {step}")
+        if ingestion.get_task(step).trigger_rule != "none_failed_min_one_success":
+            raise AssertionError(f"on-prem {step} cannot cross skipped upstream tasks")
+    for upstream_step, downstream_step in zip(steps, steps[1:]):
+        if downstream_step not in ingestion.get_task(upstream_step).downstream_task_ids:
+            raise AssertionError(f"on-prem ingestion is missing edge {upstream_step} -> {downstream_step}")
+    if ingestion.get_task("load_clickhouse_raw").downstream_task_ids != {"trigger_publication"}:
+        raise AssertionError("on-prem raw load must trigger publication")
+    if ingestion.get_task("trigger_publication").downstream_task_ids != {
+        "acknowledge_refresh_request"
+    }:
+        raise AssertionError("on-prem refresh request must be acknowledged after publication")
+
+    environment = Environment()
+    logical_date = datetime(2026, 8, 3, 0, 15, tzinfo=UTC)
+    run_after = datetime(2026, 8, 3, 4, 6, 15, 123456, tzinfo=UTC)
+    dag_run = SimpleNamespace(logical_date=logical_date, run_after=run_after)
+
+    def render_request(raw_request: object) -> tuple[dict[str, object], SimpleNamespace]:
+        request = ingestion_module.normalize_onprem_wremotely_refresh_request(
+            raw_request,
+            logical_date=logical_date,
+            run_after=run_after,
+        )
+        ti = SimpleNamespace(xcom_pull=lambda task_ids: request)
+        return request, ti
+
+    def render_command(task_id: str, ti: SimpleNamespace) -> list[str]:
+        command = ingestion.get_task(task_id).command
+        if not isinstance(command, str):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} must use a templated argv string")
+        rendered = environment.from_string(command).render(dag_run=dag_run, ti=ti)
+        argv = DockerOperator.format_command(rendered)
+        if not isinstance(argv, list):
+            raise AssertionError(f"{ingestion.dag_id}.{task_id} did not render an argv list")
+        return argv
+
+    normal_request, normal_ti = render_request(None)
+    expected_base = "20260803T001500Z-wremotely-onprem"
+    if normal_request["base_run_id"] != expected_base:
+        raise AssertionError("normal on-prem ingestion changed its scheduled run identity")
+    normal_crawl = render_command("crawl", normal_ti)
+    if "--full-refresh" in normal_crawl:
+        raise AssertionError("normal on-prem ingestion unexpectedly requested a full refresh")
+    if command_argument(normal_crawl, "--run-id") != expected_base:
+        raise AssertionError("normal on-prem ingestion changed its crawl run identity")
+    if command_argument(render_command("select", normal_ti), "--source-crawl-run-id") != expected_base:
+        raise AssertionError("normal on-prem selection changed its crawl lineage")
+
+    refresh_request, refresh_ti = render_request(
+        {
+            "refresh_id": "country-evidence-20260805",
+            "from_step": "classify",
+            "input_run_id": expected_base,
+        }
+    )
+    refresh_base = "refresh-country-evidence-20260805-wremotely-onprem"
+    if refresh_request["base_run_id"] != refresh_base:
+        raise AssertionError("on-prem refresh identity is not stable")
+    if refresh_request["run_ids"]["extract"] != f"{expected_base}-extract":
+        raise AssertionError("on-prem refresh changed retained extraction lineage")
+    if "--full-refresh" in render_command("extract", refresh_ti):
+        raise AssertionError("skipped on-prem extraction must not receive a refresh flag")
+    classify_command = render_command("classify", refresh_ti)
+    if "--full-refresh" not in classify_command:
+        raise AssertionError("on-prem refresh boundary did not receive --full-refresh")
+    if command_argument(classify_command, "--run-id") != f"{refresh_base}-classify":
+        raise AssertionError("on-prem refresh boundary did not receive a stable run ID")
+    if command_argument(classify_command, "--extraction-run-id") != f"{expected_base}-extract":
+        raise AssertionError("on-prem classification refresh did not reuse extraction evidence")
+    if "--full-refresh" not in render_command("stage", refresh_ti):
+        raise AssertionError("on-prem refresh descendants did not receive --full-refresh")
+    if "--full-refresh" in render_command("land_filesystem", refresh_ti):
+        raise AssertionError("filesystem landing must remain a deterministic materialization")
+    if "--full-refresh" in render_command("load_clickhouse_raw", refresh_ti):
+        raise AssertionError("ClickHouse raw loading must remain a deterministic materialization")
+
+    full_refresh_steps = set(ingestion_module.WREMOTELY_ONPREM_FULL_REFRESH_STEPS)
+    for boundary in boundaries:
+        boundary_index = steps.index(boundary)
+        _, ti = render_request(
+            {
+                "refresh_id": f"boundary-{boundary_index}",
+                "from_step": boundary,
+                "input_run_id": expected_base,
+            }
+        )
+        for step_index, task_id in enumerate(steps):
+            expected_refresh = step_index >= boundary_index and task_id in full_refresh_steps
+            has_refresh = "--full-refresh" in render_command(task_id, ti)
+            if has_refresh != expected_refresh:
+                raise AssertionError(f"on-prem refresh from {boundary} propagated incorrectly to {task_id}")
+    try:
+        render_request({"refresh_id": "missing-input", "from_step": "classify"})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("on-prem downstream refresh without input_run_id must fail closed")
 
 
 def assert_onprem_lifecycle_task_contract(lifecycle: DAG) -> None:
