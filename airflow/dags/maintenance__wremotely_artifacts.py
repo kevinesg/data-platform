@@ -12,7 +12,6 @@ from _wremotely import (
     WREMOTELY_WAREHOUSE_POOL,
     docker_task,
     etl_command,
-    required_env,
     wremotely_environment,
     wremotely_mounts,
 )
@@ -25,8 +24,8 @@ DAG_RUN_TIMEOUT = timedelta(hours=12)
 with DAG(
     dag_id="maintenance__wremotely_artifacts",
     description=(
-        "Legacy GCS artifact cleanup retained for historical recovery only; disabled "
-        "after the ClickHouse cutover."
+        "Filesystem artifact cleanup for completed on-prem Wremotely runs; manual "
+        "until its production retention policy is enabled."
     ),
     start_date=datetime(2026, 1, 1),
     schedule=None,
@@ -47,14 +46,7 @@ with DAG(
             WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
             "--cleanup-min-age-days",
             CLEANUP_MIN_AGE_DAYS,
-            "--cleanup-gcs",
             "--cleanup-apply",
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--gcs-bucket",
-            required_env("WREMOTELY_GCS_BUCKET"),
-            "--gcs-prefix",
-            required_env("WREMOTELY_GCS_PREFIX"),
         ),
         environment=wremotely_environment,
         mounts=wremotely_mounts,
