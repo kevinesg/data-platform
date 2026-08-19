@@ -10,7 +10,9 @@ from _wremotely import (
     WREMOTELY_ETL_IMAGE,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
+    ENVIRONMENT,
     docker_task,
+    dag_schedule,
     etl_command,
     wremotely_environment,
     wremotely_mounts,
@@ -24,11 +26,10 @@ DAG_RUN_TIMEOUT = timedelta(hours=12)
 with DAG(
     dag_id="maintenance__wremotely_artifacts",
     description=(
-        "Filesystem artifact cleanup for completed on-prem Wremotely runs; manual "
-        "until its production retention policy is enabled."
+        "Filesystem artifact cleanup for completed on-prem Wremotely runs."
     ),
     start_date=datetime(2026, 1, 1),
-    schedule=None,
+    schedule=dag_schedule(ENVIRONMENT, "WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE"),
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
