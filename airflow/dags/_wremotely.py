@@ -69,6 +69,20 @@ WREMOTELY_REFRESH_BOUNDARIES = (
     "evaluate",
     "stage",
 )
+WREMOTELY_ONPREM_REFRESH_STEPS = (
+    "crawl",
+    "select",
+    "extract",
+    "job_facts",
+    "classify",
+    "stage",
+    "land_filesystem",
+    "load_clickhouse_raw",
+)
+WREMOTELY_ONPREM_REFRESH_BOUNDARIES = WREMOTELY_ONPREM_REFRESH_STEPS
+WREMOTELY_ONPREM_FULL_REFRESH_STEPS = frozenset(
+    {"crawl", "select", "extract", "job_facts", "classify", "stage"}
+)
 _REFRESH_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 WREMOTELY_DAG_RUN_TIMESTAMP = (
@@ -185,6 +199,20 @@ def refreshable_etl_command(step: str, *args: str) -> str:
     )
 
 
+def refreshable_onprem_etl_command(step: str, *args: str) -> str:
+    """Render an on-prem argv list with full refresh on supported descendants."""
+    if step not in WREMOTELY_ONPREM_REFRESH_STEPS:
+        raise ValueError(f"unsupported on-prem wremotely refresh step: {step}")
+    serialized = json.dumps(list(args))
+    if step not in WREMOTELY_ONPREM_FULL_REFRESH_STEPS:
+        return serialized
+    condition = (
+        f"'{step}' in "
+        "(ti.xcom_pull(task_ids='read_refresh_request') or {}).get('full_refresh_steps', [])"
+    )
+    return f"{serialized[:-1]}{{% if {condition} %}}, \"--full-refresh\"{{% endif %}}]"
+
+
 def _run_timestamp(logical_date: Any, run_after: Any) -> str:
     if logical_date is not None:
         return logical_date.strftime("%Y%m%dT%H%M%SZ")
@@ -276,6 +304,80 @@ def normalize_wremotely_refresh_request(
     }
 
 
+def normalize_onprem_wremotely_refresh_request(
+    raw_request: Any,
+    *,
+    logical_date: Any,
+    run_after: Any,
+) -> dict[str, Any]:
+    """Validate an on-prem refresh request and derive stable run identities."""
+    timestamp = _run_timestamp(logical_date, run_after)
+    default_base_run_id = f"{timestamp}-wremotely-onprem"
+    if raw_request in (None, "", {}):
+        return {
+            "refresh": False,
+            "refresh_id": None,
+            "from_step": "crawl",
+            "input_base_run_id": default_base_run_id,
+            "base_run_id": default_base_run_id,
+            "full_refresh_steps": [],
+            "run_ids": {
+                step: f"{default_base_run_id}{_onprem_run_id_suffix(step)}"
+                for step in WREMOTELY_ONPREM_REFRESH_STEPS
+            },
+            "declaration": None,
+        }
+    if not isinstance(raw_request, dict):
+        raise ValueError(
+            f"{WREMOTELY_REFRESH_REQUEST_VARIABLE} must contain a JSON object"
+        )
+    if set(raw_request) - {"refresh_id", "from_step", "input_run_id"}:
+        raise ValueError(
+            f"{WREMOTELY_REFRESH_REQUEST_VARIABLE} contains unsupported fields"
+        )
+    refresh_id = raw_request.get("refresh_id")
+    if not isinstance(refresh_id, str) or not _REFRESH_ID_PATTERN.fullmatch(refresh_id):
+        raise ValueError(
+            "wremotely on-prem refresh request refresh_id must match "
+            "^[a-z0-9][a-z0-9._-]{0,63}$"
+        )
+    from_step = raw_request.get("from_step")
+    if from_step not in WREMOTELY_ONPREM_REFRESH_BOUNDARIES:
+        raise ValueError(
+            "wremotely on-prem refresh request from_step must be one of "
+            + ", ".join(WREMOTELY_ONPREM_REFRESH_BOUNDARIES)
+        )
+    step_index = WREMOTELY_ONPREM_REFRESH_STEPS.index(from_step)
+    input_base_run_id = raw_request.get("input_run_id")
+    if step_index > 0:
+        input_base_run_id = _validate_run_id(input_base_run_id, "input_run_id")
+    elif input_base_run_id is not None:
+        input_base_run_id = _validate_run_id(input_base_run_id, "input_run_id")
+    else:
+        input_base_run_id = default_base_run_id
+
+    base_run_id = f"refresh-{refresh_id}-wremotely-onprem"
+    full_refresh_steps = list(WREMOTELY_ONPREM_REFRESH_STEPS[step_index:])
+    run_ids = {
+        step: (
+            f"{input_base_run_id}{_onprem_run_id_suffix(step)}"
+            if index < step_index
+            else f"{base_run_id}{_onprem_run_id_suffix(step)}"
+        )
+        for index, step in enumerate(WREMOTELY_ONPREM_REFRESH_STEPS)
+    }
+    return {
+        "refresh": True,
+        "refresh_id": refresh_id,
+        "from_step": from_step,
+        "input_base_run_id": input_base_run_id,
+        "base_run_id": base_run_id,
+        "full_refresh_steps": full_refresh_steps,
+        "run_ids": run_ids,
+        "declaration": dict(raw_request),
+    }
+
+
 def _run_id_suffix(step: str) -> str:
     return {
         "crawl": "",
@@ -288,6 +390,19 @@ def _run_id_suffix(step: str) -> str:
         "stage": "-stage",
         "upload": "-stage",
         "load": "-stage",
+    }[step]
+
+
+def _onprem_run_id_suffix(step: str) -> str:
+    return {
+        "crawl": "",
+        "select": "",
+        "extract": "-extract",
+        "job_facts": "-job-facts",
+        "classify": "-classify",
+        "stage": "-stage",
+        "land_filesystem": "-landing",
+        "load_clickhouse_raw": "-clickhouse-raw",
     }[step]
 
 
@@ -306,6 +421,21 @@ def read_wremotely_refresh_request() -> dict[str, Any]:
     )
 
 
+def read_onprem_wremotely_refresh_request() -> dict[str, Any]:
+    context = get_current_context()
+    dag_run = context["dag_run"]
+    raw_request = Variable.get(
+        WREMOTELY_REFRESH_REQUEST_VARIABLE,
+        default=None,
+        deserialize_json=True,
+    )
+    return normalize_onprem_wremotely_refresh_request(
+        raw_request,
+        logical_date=dag_run.logical_date,
+        run_after=dag_run.run_after,
+    )
+
+
 def choose_wremotely_refresh_start() -> str:
     context = get_current_context()
     request = context["ti"].xcom_pull(task_ids=WREMOTELY_REFRESH_REQUEST_TASK_ID)
@@ -314,6 +444,17 @@ def choose_wremotely_refresh_start() -> str:
         or request.get("from_step") not in WREMOTELY_REFRESH_BOUNDARIES
     ):
         raise RuntimeError("refresh request task did not return a validated request")
+    return f"{WREMOTELY_REFRESH_GATE_PREFIX}{request['from_step']}"
+
+
+def choose_onprem_wremotely_refresh_start() -> str:
+    context = get_current_context()
+    request = context["ti"].xcom_pull(task_ids=WREMOTELY_REFRESH_REQUEST_TASK_ID)
+    if (
+        not isinstance(request, dict)
+        or request.get("from_step") not in WREMOTELY_ONPREM_REFRESH_BOUNDARIES
+    ):
+        raise RuntimeError("on-prem refresh request task did not return a validated request")
     return f"{WREMOTELY_REFRESH_GATE_PREFIX}{request['from_step']}"
 
 
@@ -346,10 +487,32 @@ def create_wremotely_refresh_request_task() -> PythonOperator:
     )
 
 
+def create_onprem_wremotely_refresh_request_task() -> PythonOperator:
+    return PythonOperator(
+        task_id=WREMOTELY_REFRESH_REQUEST_TASK_ID,
+        python_callable=read_onprem_wremotely_refresh_request,
+        execution_timeout=timedelta(minutes=5),
+        retries=TASK_RETRIES,
+        retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
+    )
+
+
 def create_wremotely_refresh_branch_task() -> BranchPythonOperator:
     return BranchPythonOperator(
         task_id=WREMOTELY_REFRESH_BRANCH_TASK_ID,
         python_callable=choose_wremotely_refresh_start,
+        execution_timeout=timedelta(minutes=5),
+        retries=TASK_RETRIES,
+        retry_delay=TASK_RETRY_DELAY,
+        on_failure_callback=send_failure_alert,
+    )
+
+
+def create_onprem_wremotely_refresh_branch_task() -> BranchPythonOperator:
+    return BranchPythonOperator(
+        task_id=WREMOTELY_REFRESH_BRANCH_TASK_ID,
+        python_callable=choose_onprem_wremotely_refresh_start,
         execution_timeout=timedelta(minutes=5),
         retries=TASK_RETRIES,
         retry_delay=TASK_RETRY_DELAY,
@@ -368,8 +531,12 @@ def create_wremotely_refresh_ack_task() -> PythonOperator:
     )
 
 
-def create_wremotely_refresh_gate_task(step: str) -> EmptyOperator:
-    if step not in WREMOTELY_REFRESH_STEPS:
+def create_wremotely_refresh_gate_task(
+    step: str,
+    *,
+    steps: tuple[str, ...] = WREMOTELY_REFRESH_STEPS,
+) -> EmptyOperator:
+    if step not in steps:
         raise ValueError(f"unsupported wremotely refresh step: {step}")
     return EmptyOperator(
         task_id=f"{WREMOTELY_REFRESH_GATE_PREFIX}{step}",
