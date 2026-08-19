@@ -16,7 +16,7 @@ from docker.errors import NotFound as DockerNotFound
 from jinja2 import Environment
 
 EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
-EXPECTED_PROD_LIFECYCLE_SCHEDULE = "0 6,18 * * *"
+EXPECTED_PROD_LIFECYCLE_SCHEDULE = "30 6,18 * * *"
 EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE = "0 3 * * *"
 
 
@@ -235,8 +235,14 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("legacy GCP ingestion DAG must be disabled")
     if artifact_cleanup.schedule is not None:
         raise AssertionError("legacy GCS artifact cleanup DAG must be disabled")
-    if lifecycle.schedule is not None:
-        raise AssertionError("lifecycle DAG must remain manual until explicitly scheduled")
+    if environment == "prod":
+        if lifecycle.schedule != EXPECTED_PROD_LIFECYCLE_SCHEDULE:
+            raise AssertionError(
+                "prod lifecycle DAG schedule must be "
+                f"{EXPECTED_PROD_LIFECYCLE_SCHEDULE!r}, got {lifecycle.schedule!r}"
+            )
+    elif lifecycle.schedule is not None:
+        raise AssertionError("non-prod lifecycle DAG must be manual")
     if artifact_cleanup.max_active_runs != 1:
         raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
     if repair.schedule is not None:
