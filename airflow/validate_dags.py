@@ -224,7 +224,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     if ingestion.schedule is not None:
         raise AssertionError("legacy GCP ingestion DAG must be disabled")
     if artifact_cleanup.schedule is not None:
-        raise AssertionError("legacy GCS artifact cleanup DAG must be disabled")
+        raise AssertionError("filesystem artifact cleanup DAG must remain manual")
     if environment == "prod":
         if lifecycle.schedule != EXPECTED_PROD_LIFECYCLE_SCHEDULE:
             raise AssertionError(
@@ -1168,15 +1168,18 @@ def validate_artifact_cleanup_contract(artifact_cleanup: DAG) -> None:
         raise AssertionError("artifact cleanup must use the private cleanup step")
     if command_argument(cleanup_command, "--cleanup-min-age-days") != "3":
         raise AssertionError("artifact cleanup must retain three complete days")
-    for required_flag in ("--cleanup-gcs", "--cleanup-apply"):
-        if required_flag not in cleanup_command:
-            raise AssertionError(f"artifact cleanup command is missing {required_flag}")
-    if command_argument(cleanup_command, "--gcp-project") != os.environ["PROJECT_ID"]:
-        raise AssertionError("artifact cleanup must use the environment GCP project")
-    if command_argument(cleanup_command, "--gcs-bucket") != os.environ["WREMOTELY_GCS_BUCKET"]:
-        raise AssertionError("artifact cleanup must use the environment GCS bucket")
-    if command_argument(cleanup_command, "--gcs-prefix") != os.environ["WREMOTELY_GCS_PREFIX"]:
-        raise AssertionError("artifact cleanup must use the environment wremotely GCS prefix")
+    if "--cleanup-apply" not in cleanup_command:
+        raise AssertionError("artifact cleanup command must apply the local cleanup report")
+    for retired_flag in (
+        "--cleanup-gcs",
+        "--gcp-project",
+        "--gcs-bucket",
+        "--gcs-prefix",
+    ):
+        if retired_flag in cleanup_command:
+            raise AssertionError(
+                f"filesystem artifact cleanup must not use retired {retired_flag}"
+            )
     if cleanup_task.execution_timeout != timedelta(hours=8):
         raise AssertionError("artifact cleanup task must have its bounded extended timeout")
 

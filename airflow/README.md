@@ -206,9 +206,10 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   raw loading, then hands off to the serialized publication DAG;
 - `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
   already-loaded raw relations;
-- `etl__wremotely_gcp_legacy`, `maintenance__wremotely_artifacts`, and the
-  `repair__wremotely_*` DAGs remain paused recovery tooling while the final
-  production cutover is verified; they are not scheduled production paths;
+- `etl__wremotely_gcp_legacy` and the `repair__wremotely_*` DAGs remain paused
+  recovery tooling while the final production cutover is verified; they are not
+  scheduled production paths. `maintenance__wremotely_artifacts` is a manual
+  filesystem cleanup diagnostic and never receives GCP or GCS arguments;
 - `maintenance__wremotely_lifecycle` is the native ClickHouse lifecycle path:
   it selects due candidates from ClickHouse, rechecks them, lands and loads
   lifecycle facts locally, then hands off the build and publication to the

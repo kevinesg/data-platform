@@ -118,6 +118,8 @@ publication contract through its private serving boundary.
 ## Retention and lifecycle
 
 The former GCS cleanup and BigQuery lifecycle paths are not part of normal
-operation. Do not enable their schedules or trigger them manually. Filesystem
-retention and ClickHouse lifecycle runs must preserve the latest successful
-publication and its control manifest.
+operation. Keep legacy GCP DAGs paused. The artifact cleanup DAG is
+filesystem-only, manual, and deletes only exact eligible local run directories
+described by the ETL cleanup manifest. Filesystem retention and ClickHouse
+lifecycle runs must preserve the latest successful publication and its control
+manifest.
