@@ -108,6 +108,15 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     artifact_cleanup = require_dag(modules, "maintenance__wremotely_artifacts")
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
+    publication_branch_task_id = getattr(
+        modules["publish__wremotely_serving"], "publication_branch_task_id", None
+    )
+    if publication_branch_task_id is None:
+        raise AssertionError("publication DAG must expose its branch contract")
+    if publication_branch_task_id("clickhouse") != "dbt_build":
+        raise AssertionError("ClickHouse publication mode must branch to dbt_build")
+    if publication_branch_task_id("legacy") != "legacy_dbt_build":
+        raise AssertionError("legacy publication mode must branch to legacy_dbt_build")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
     onprem_ingestion = require_dag(modules, "etl__wremotely_onprem")
     repair = require_dag(modules, "repair__wremotely_job_urls")

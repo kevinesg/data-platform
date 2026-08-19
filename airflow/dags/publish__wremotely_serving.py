@@ -18,15 +18,19 @@ from _wremotely import (
 BASE_RUN_ID = "{{ dag_run.conf['publication_run_id'] }}"
 
 
+def publication_branch_task_id(mode: str) -> str:
+    if mode == "clickhouse":
+        return "dbt_build"
+    if mode == "legacy":
+        return "legacy_dbt_build"
+    raise ValueError(f"unsupported publication mode: {mode}")
+
+
 def choose_publication_mode() -> str:
     from airflow.sdk import get_current_context
 
     mode = get_current_context()["dag_run"].conf.get("publication_mode", "legacy")
-    if mode == "clickhouse":
-        return "publish_clickhouse_snapshot"
-    if mode == "legacy":
-        return "legacy_dbt_build"
-    raise ValueError(f"unsupported publication mode: {mode}")
+    return publication_branch_task_id(mode)
 
 
 with DAG(
