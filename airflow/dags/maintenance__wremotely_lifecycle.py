@@ -13,7 +13,9 @@ from _wremotely import (
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
     WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+    ENVIRONMENT,
     create_publication_trigger_task,
+    dag_schedule,
     docker_task,
     etl_command,
     onprem_wremotely_environment,
@@ -43,7 +45,7 @@ with DAG(
         "rebuild ClickHouse dbt models, and signal the immutable snapshot through Pub/Sub."
     ),
     start_date=datetime(2026, 1, 1),
-    schedule=None,
+    schedule=dag_schedule(ENVIRONMENT, "WREMOTELY_LIFECYCLE_SCHEDULE"),
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
