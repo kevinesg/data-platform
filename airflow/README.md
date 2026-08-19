@@ -206,9 +206,10 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   raw loading, then hands off to the serialized publication DAG;
 - `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
   already-loaded raw relations;
-- `etl__wremotely_gcp_legacy` and the `repair__wremotely_*` DAGs remain paused
-  recovery tooling while the final production cutover is verified; they are not
-  scheduled production paths. `maintenance__wremotely_artifacts` runs daily in
+- The former GCP ingestion and publication DAGs are removed from the packaged
+  runtime. The `repair__wremotely_*` DAGs remain paused legacy recovery tooling
+  until their ClickHouse equivalents are ported; they are not scheduled
+  production paths. `maintenance__wremotely_artifacts` runs daily in
   production from `WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE`, remains manual in dev
   and QA, and never receives GCP or GCS arguments;
 - `maintenance__wremotely_lifecycle` is the native ClickHouse lifecycle path:
@@ -221,9 +222,9 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   current classifications from exact-lineage raw warehouse facts;
 - `repair__wremotely_job_urls` is manual-only and reprocesses 1-100 exact URLs
   before triggering publication;
-The legacy publication DAG remains trigger-only for a controlled recovery
-window. Do not trigger it or the other legacy Wremotely DAGs for normal
-production operation. Personal-finance DAGs continue to use BigQuery.
+Personal-finance DAGs continue to use BigQuery. The remaining paused repair
+DAGs are not part of the production path and must not be triggered until their
+ClickHouse contracts are implemented.
 
 ### On-prem restart and full-refresh requests
 

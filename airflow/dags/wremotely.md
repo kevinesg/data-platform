@@ -7,9 +7,10 @@ project, immutable publication snapshot, and final Pub/Sub signal containing
 only the publication identifier.
 
 BigQuery and GCS are no longer part of the scheduled wremotely path. The
-personal-finance DAG remains a separate BigQuery workload. The old
-`etl__wremotely_gcp_legacy`, publication, cleanup, and repair DAGs are paused
-recovery tooling only and must not be used for normal wremotely runs.
+personal-finance DAG remains a separate BigQuery workload. The former GCP
+ingestion and publication DAGs are removed from the packaged runtime. The
+remaining repair DAGs are paused legacy recovery tooling and must not be used
+for normal wremotely runs until their ClickHouse contracts are implemented.
 
 `maintenance__wremotely_lifecycle` is the native maintenance path. It selects
 due jobs from ClickHouse, rechecks their source pages, lands the lifecycle
@@ -20,8 +21,7 @@ content-addressed publication ID through Pub/Sub.
 
 Both scheduled paths hand off after raw loading to the serialized
 `publish__wremotely_serving` DAG. That DAG has one active-run boundary and runs
-the ClickHouse dbt, snapshot, and signal sequence for
-`publication_mode=clickhouse`.
+the ClickHouse dbt, snapshot, review-export, and Pub/Sub signal sequence.
 Lifecycle selection requires the ClickHouse dbt assignment model to have
 completed first. That model keeps append-only, source-stratified assignments
 across seven logical buckets. It assigns known dates only after they are at least
@@ -29,10 +29,8 @@ across seven logical buckets. It assigns known dates only after they are at leas
 closed; the selector applies the known-date age gate at selection time. The
 maintenance DAG rotates one logical bucket every
 12-hour schedule slot; it does not require pre-created bucket directories.
-The former BigQuery/GCS dbt, hold, snapshot, and signal tasks remain available
-only when an operator explicitly triggers the DAG with
-`publication_mode=legacy` for historical recovery. Do not run both publication
-paths for the same publication ID.
+There is no legacy publication mode. Do not add a second publication path for
+the same publication ID.
 
 ## Required external configuration
 
