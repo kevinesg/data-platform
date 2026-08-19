@@ -24,6 +24,31 @@ docker build \
 docker run --rm data-platform-wremotely-clickhouse-dbt:dev --version
 ```
 
+The Airflow publication task invokes the image's retained-result runner rather
+than calling `dbt` directly. A successful build atomically replaces the
+ClickHouse `run_results.json`; a failed build leaves the previous successful
+result untouched and retains the temporary dbt target directory under the
+artifacts mount. The image keeps only the five newest failed targets.
+
+To retry only the failed nodes from a retained target, run the same image with
+the wrapper entrypoint and the exact retained target path:
+
+```bash
+docker run --rm \
+  --entrypoint python \
+  -v /srv/data/services/etl-artifacts:/artifacts/wremotely-etl \
+  ghcr.io/kevinesg/data-platform-wremotely-clickhouse-dbt:sha-<commit-sha> \
+  /app/run_and_retain_results.py \
+  --output /artifacts/wremotely-etl/baseline/clickhouse-dbt/run_results.json \
+  --retry-target-path \
+  /artifacts/wremotely-etl/dbt-failures/clickhouse/<retained-target>
+```
+
+The retry path uses dbt's native `retry` selection from the retained
+`manifest.json` and `run_results.json`; it does not rebuild successful nodes.
+The target directory is not deleted after retry so the operator can inspect the
+result and rerun it if a transient ClickHouse failure recurs.
+
 The CI workflow builds the same Dockerfile without pushing it. Successful dbt
 CI on `main` publishes the immutable
 `ghcr.io/kevinesg/data-platform-wremotely-clickhouse-dbt:sha-<commit-sha>` tag.

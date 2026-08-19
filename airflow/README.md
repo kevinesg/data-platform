@@ -286,6 +286,12 @@ The legacy serving dbt task atomically retains only its latest successful
 `$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/dbt-build/`. Failed builds and unrelated
 commands leave the prior artifact unchanged. This bounded operational artifact
 supports workload measurement without accumulating dbt target directories.
+The ClickHouse serving and manual-build tasks use the same contract with their
+result at `$WREMOTELY_ETL_ARTIFACTS_DIR/baseline/clickhouse-dbt/` and failed
+targets under `$WREMOTELY_ETL_ARTIFACTS_DIR/dbt-failures/clickhouse/`. The
+retained target contains the native dbt retry manifest; invoke the ClickHouse
+image's `run_and_retain_results.py --retry-target-path` mode to retry only the
+failed nodes and publish a new successful result atomically.
 
 Airflow initialization creates one-slot `wremotely_network` and
 `wremotely_warehouse` pools. The first prevents separate DAG runs from scraping

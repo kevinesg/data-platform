@@ -351,6 +351,45 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("serving dbt build baseline artifact mount must be writable")
     assert_idempotent_docker_timeout_cleanup(dbt_build)
 
+    for clickhouse_task in (
+        publication.get_task("dbt_build"),
+        clickhouse_build.get_task("dbt_build"),
+    ):
+        if clickhouse_task.entrypoint != ["python", "/app/run_and_retain_results.py"]:
+            raise AssertionError(
+                f"{clickhouse_task.dag_id}.dbt_build must retain ClickHouse results "
+                "through the image runner"
+            )
+        if command_argument(clickhouse_task.command, "--output") != (
+            "/artifacts/wremotely-etl/baseline/clickhouse-dbt/run_results.json"
+        ):
+            raise AssertionError(
+                f"{clickhouse_task.dag_id}.dbt_build must retain ClickHouse run results"
+            )
+        if command_argument(clickhouse_task.command, "--failed-target-root") != (
+            "/artifacts/wremotely-etl/dbt-failures/clickhouse"
+        ):
+            raise AssertionError(
+                f"{clickhouse_task.dag_id}.dbt_build must retain ClickHouse failed targets"
+            )
+        if clickhouse_task.command[-2:] != ["--exclude-resource-type", "unit_test"]:
+            raise AssertionError(
+                f"{clickhouse_task.dag_id}.dbt_build must exclude development dbt unit tests"
+            )
+        artifact_mount = next(
+            (
+                mount
+                for mount in clickhouse_task.mounts
+                if mount["Target"] == "/artifacts/wremotely-etl"
+            ),
+            None,
+        )
+        if artifact_mount is None or artifact_mount["ReadOnly"]:
+            raise AssertionError(
+                f"{clickhouse_task.dag_id}.dbt_build artifact mount must be writable"
+            )
+        assert_idempotent_docker_timeout_cleanup(clickhouse_task)
+
     assert_publication_hold_environment(publication)
 
     serving_snapshot_command = publication.get_task("legacy_publish_serving_snapshot").command
