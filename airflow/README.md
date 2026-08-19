@@ -206,25 +206,19 @@ The scheduled wremotely workflow is the ClickHouse/on-prem path:
   raw loading, then hands off to the serialized publication DAG;
 - `build__wremotely_clickhouse` remains a manual dbt-only diagnostic DAG for
   already-loaded raw relations;
-- The former GCP ingestion and publication DAGs are removed from the packaged
-  runtime. The `repair__wremotely_*` DAGs remain paused legacy recovery tooling
-  until their ClickHouse equivalents are ported; they are not scheduled
-  production paths. `maintenance__wremotely_artifacts` runs daily in
+- The former GCP ingestion, publication, and Wremotely repair DAGs are removed
+  from the packaged runtime. Historical recovery uses the private ETL replay
+  commands against retained local artifacts; it does not restore a cloud
+  Airflow path. `maintenance__wremotely_artifacts` runs daily in
   production from `WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE`, remains manual in dev
   and QA, and never receives GCP or GCS arguments;
 - `maintenance__wremotely_lifecycle` is the native ClickHouse lifecycle path:
   it selects due candidates from ClickHouse, rechecks them, lands and loads
   lifecycle facts locally, then hands off the build and publication to the
   serialized publication DAG;
-- `repair__wremotely_classifications` is manual-only and replays completed
-  historical extraction artifacts through raw classification load;
-- `repair__wremotely_warehouse_classifications` is manual-only and rebuilds
-  current classifications from exact-lineage raw warehouse facts;
-- `repair__wremotely_job_urls` is manual-only and reprocesses 1-100 exact URLs
-  before triggering publication;
-Personal-finance DAGs continue to use BigQuery. The remaining paused repair
-DAGs are not part of the production path and must not be triggered until their
-ClickHouse contracts are implemented.
+Personal-finance DAGs continue to use BigQuery. Wremotely repair/replay
+operations are not Airflow DAGs; use the documented private ETL CLI contracts
+against local artifacts and ClickHouse instead.
 
 ### On-prem restart and full-refresh requests
 
@@ -304,8 +298,7 @@ canonical ingestion DAG also has `max_active_runs=1`, which serializes complete
 ClickHouse publication runs.
 The packaged `validate_dags.py` command is the reusable CI contract check for
 DAG imports, required task edges, pool assignments, scheduled and manual run
-identity rendering, repair-URL rendering, and classification-replay command
-rendering.
+identity rendering, and publication command rendering.
 
 DAGs that launch component images use DockerOperator through the mounted host
 Docker socket. This is local runtime support for image-contract validation; DAGs
