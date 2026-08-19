@@ -147,6 +147,17 @@ delete support; model query settings spill large sort/group operations and cap
 per-query memory. Use `--full-refresh` when a source contract or model schema
 changes.
 
+The publication graph also consumes the versioned
+`wremotely__publication_review` control relation. The private ETL export writes
+review candidates as JSONL and Parquet; an operator records content-bound
+`held` or `released` decisions in the warehouse control file. dbt treats
+`unreviewed`, `pending`, and `held` candidates as not publishable, while
+released candidates continue through the normal publication checks. Review
+timestamps participate
+in the incremental watermark so a decision change reprocesses the affected
+candidate without rebuilding unrelated history. The export and decision sync
+steps are replay-safe and run before the ClickHouse publication signal.
+
 ## Contract parity
 
 The ClickHouse graph is intentionally not required to have the same dbt
