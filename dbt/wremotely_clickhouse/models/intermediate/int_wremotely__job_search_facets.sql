@@ -8,6 +8,8 @@
 
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['dbt_updated_at']) %}
+{% set title_cleanup_version_ready = is_incremental()
+    and relation_has_columns(this, ['title_cleanup_version']) %}
 
 with publishable_jobs as (
     select *
@@ -17,6 +19,11 @@ with publishable_jobs as (
         select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
         from {{ this }}
     )
+    {% if title_cleanup_version_ready %}
+    or title_cleanup_version != {{ wremotely_title_cleanup_version() }}
+    {% else %}
+    or 1 = 1
+    {% endif %}
     {% endif %}
 ),
 
@@ -89,6 +96,7 @@ select
     jobs.job_id as job_id
     , ifNull(employment.employment_types, []) as employment_types
     , ifNull(tags.search_tags, []) as search_tags
+    , jobs.title_cleanup_version
     , jobs.dbt_updated_at as dbt_updated_at
 from publishable_jobs as jobs
 left join employment_types as employment

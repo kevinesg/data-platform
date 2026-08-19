@@ -8,6 +8,8 @@
 
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['dbt_updated_at']) %}
+{% set title_cleanup_version_ready = is_incremental()
+    and relation_has_columns(this, ['title_cleanup_version']) %}
 
 with publishable_jobs as (
     select *
@@ -19,9 +21,16 @@ with publishable_jobs as (
         {% endif %}
     )
     {% if incremental_watermark_ready %}
-        and dbt_updated_at > (
-            select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-            from {{ this }}
+        and (
+            dbt_updated_at > (
+                select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+                from {{ this }}
+            )
+            {% if title_cleanup_version_ready %}
+            or title_cleanup_version != {{ wremotely_title_cleanup_version() }}
+            {% else %}
+            or 1 = 1
+            {% endif %}
         )
     {% endif %}
 ),
@@ -62,15 +71,67 @@ prepared as (
         , latest_lifecycle_checked_at as lifecycle_checked_at
         , has_lifecycle_recheck
         , publication_status != 'PUBLISHABLE' as is_deleted
+        , {{ wremotely_title_cleanup_version() }} as title_cleanup_version
         , dbt_updated_at as _updated_at
         , latest_observed_at as source_updated_at
         , left(snippet, 1000) as public_snippet
     from publishable_jobs
 ),
 
+title_cleaned as (
+    select
+        prepared.* except (title)
+        , multiIf(
+            empty(trim(ifNull(title, ''))) or empty(trim(ifNull(company_name, '')))
+                , trim(title)
+            , endsWith(
+                lowerUTF8(trim(title))
+                , concat(' - ', lowerUTF8(trim(company_name)))
+            )
+                , trim(substringUTF8(
+                    trim(title)
+                    , 1
+                    , lengthUTF8(trim(title))
+                        - lengthUTF8(concat(' - ', trim(company_name)))
+                ))
+            , endsWith(
+                lowerUTF8(trim(title))
+                , concat(' – ', lowerUTF8(trim(company_name)))
+            )
+                , trim(substringUTF8(
+                    trim(title)
+                    , 1
+                    , lengthUTF8(trim(title))
+                        - lengthUTF8(concat(' – ', trim(company_name)))
+                ))
+            , endsWith(
+                lowerUTF8(trim(title))
+                , concat(' — ', lowerUTF8(trim(company_name)))
+            )
+                , trim(substringUTF8(
+                    trim(title)
+                    , 1
+                    , lengthUTF8(trim(title))
+                        - lengthUTF8(concat(' — ', trim(company_name)))
+                ))
+            , endsWith(
+                lowerUTF8(trim(title))
+                , concat(' | ', lowerUTF8(trim(company_name)))
+            )
+                , trim(substringUTF8(
+                    trim(title)
+                    , 1
+                    , lengthUTF8(trim(title))
+                        - lengthUTF8(concat(' | ', trim(company_name)))
+                ))
+            , trim(title)
+        ) as title
+    from prepared
+),
+
 company_keyed as (
     select
-        prepared.*
+        title_cleaned.*
         , if(
             normalized_company_name is not null and normalized_source_domain is not null
             , concat('company_source_domain_v1|', normalized_source_domain, '|', normalized_company_name)
@@ -81,7 +142,7 @@ company_keyed as (
             , 'company_source_domain_v1'
             , null
         ) as company_identity_basis
-    from prepared
+    from title_cleaned
 )
 
 select
@@ -119,6 +180,7 @@ select
     , raw_employment_type_values
     , raw_employment_type
     , declared_language_tag
+    , title_cleanup_version
     , lifecycle_status
     , lifecycle_checked_at
     , has_lifecycle_recheck
