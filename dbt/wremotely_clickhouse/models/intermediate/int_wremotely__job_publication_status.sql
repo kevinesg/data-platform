@@ -9,24 +9,46 @@
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['dbt_updated_at']) %}
 
-with candidate_facts as (
+with review_decisions as (
     select *
-    from {{ ref('int_wremotely__current_candidate_facts') }}
+    from {{ ref('stg_wremotely__publication_review') }}
+),
+
+candidate_facts as (
+    select *
+    from {{ ref('int_wremotely__current_candidate_facts') }} as facts
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
+    where facts.dbt_updated_at > (
         select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
         from {{ this }}
     )
     or (
-        latest_job_fact_raw_valid_through_at >= now64(3)
-        and latest_job_fact_raw_valid_through_at <= now64(3) + interval 1 day
+        facts.latest_job_fact_raw_valid_through_at >= now64(3)
+        and facts.latest_job_fact_raw_valid_through_at <= now64(3) + interval 1 day
+    )
+    or facts.candidate_id in (
+        select candidate_id
+        from review_decisions
+        where review_updated_at > (
+            select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+            from {{ this }}
+        )
     )
     {% endif %}
 ),
 
 evaluated as (
     select
-        candidate_facts.*
+        candidate_facts.* except (dbt_updated_at)
+        , coalesce(nullIf(review.review_status, ''), 'unreviewed')
+            as publication_review_status
+        , review.review_reason_code as publication_review_reason_code
+        , review.review_reason as publication_review_reason
+        , review.review_updated_at as publication_review_updated_at
+        , greatest(
+            candidate_facts.dbt_updated_at
+            , ifNull(review.review_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
+        ) as dbt_updated_at
         , facts.latest_job_fact_raw_valid_through_at is not null
             and facts.latest_job_fact_raw_valid_through_at <= now64(3)
             as has_expired_valid_through
@@ -53,6 +75,8 @@ evaluated as (
             )
         ) as has_confirmed_lifecycle_closure
     from candidate_facts as facts
+    left join review_decisions as review
+        on facts.candidate_id = review.candidate_id
 ),
 
 final as (
@@ -62,6 +86,7 @@ final as (
             when not meets_content_publication_requirements then 'NOT_PUBLISHABLE'
             when has_confirmed_lifecycle_closure then 'CLOSED'
             when has_expired_valid_through then 'NOT_PUBLISHABLE'
+            when publication_review_status in ('pending', 'held') then 'NOT_PUBLISHABLE'
             else 'PUBLISHABLE'
         end as publication_status
         , case
@@ -87,6 +112,8 @@ final as (
                 and previous_lifecycle_status = 'TERMINAL'
                 then 'LIFECYCLE_TERMINAL_CONFIRMED'
             when has_expired_valid_through then 'EXPIRED_VALID_THROUGH'
+            when publication_review_status in ('pending', 'held')
+                then 'PUBLICATION_REVIEW_HELD'
             else 'PUBLICATION_READY'
         end as publication_status_reason
     from evaluated

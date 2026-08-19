@@ -113,8 +113,8 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     )
     if publication_branch_task_id is None:
         raise AssertionError("publication DAG must expose its branch contract")
-    if publication_branch_task_id("clickhouse") != "dbt_build":
-        raise AssertionError("ClickHouse publication mode must branch to dbt_build")
+    if publication_branch_task_id("clickhouse") != "sync_publication_review":
+        raise AssertionError("ClickHouse publication mode must branch to review sync")
     if publication_branch_task_id("legacy") != "legacy_dbt_build":
         raise AssertionError("legacy publication mode must branch to legacy_dbt_build")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
@@ -171,7 +171,9 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "legacy_publish_serving_snapshot",
         "legacy_signal_publication",
         "dbt_build",
+        "sync_publication_review",
         "publish_clickhouse_snapshot",
+        "export_publication_review",
         "signal_clickhouse_publication",
     }
     if set(publication.task_ids) != expected_publication_tasks:
@@ -193,14 +195,22 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     }:
         raise AssertionError("ClickHouse dbt build must precede its snapshot")
     if publication.get_task("publish_clickhouse_snapshot").downstream_task_ids != {
+        "export_publication_review",
+    }:
+        raise AssertionError("ClickHouse snapshot must precede review export")
+    if publication.get_task("export_publication_review").downstream_task_ids != {
         "signal_clickhouse_publication",
     }:
-        raise AssertionError("ClickHouse snapshot must precede its signal")
+        raise AssertionError("ClickHouse review export must precede its signal")
     if publication.get_task("choose_publication_mode").downstream_task_ids != {
         "legacy_dbt_build",
-        "dbt_build",
+        "sync_publication_review",
     }:
         raise AssertionError("publication mode branch must expose legacy and ClickHouse paths")
+    if publication.get_task("sync_publication_review").downstream_task_ids != {
+        "dbt_build",
+    }:
+        raise AssertionError("ClickHouse review sync must precede dbt")
     assert_task_contract(clickhouse_build, ["dbt_build"])
     if onprem_ingestion.dag_id != "etl__wremotely":
         raise AssertionError("ClickHouse ingestion must own the canonical etl__wremotely DAG ID")

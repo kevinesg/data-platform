@@ -62,9 +62,9 @@ prepared as (
         , jobs.lifecycle_checked_at
         , jobs.has_lifecycle_recheck
         , jobs.is_deleted
-        , jobs.source_updated_at as _updated_at
+        , jobs.dbt_updated_at as _updated_at
         , jobs.source_updated_at
-        , jobs.source_updated_at as dbt_updated_at
+        , jobs.dbt_updated_at
         , jobs.public_snippet
     from publishable_jobs as jobs
     inner join search_facets as facets
