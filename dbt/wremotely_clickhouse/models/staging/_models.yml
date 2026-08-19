@@ -100,3 +100,15 @@ models:
       - name: raw_payload
         tests:
           - not_null
+  - name: stg_wremotely__publication_review
+    description: Latest manual publication-review status per candidate.
+    columns:
+      - name: candidate_id
+        tests:
+          - not_null
+          - unique
+      - name: review_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [pending, held, released]

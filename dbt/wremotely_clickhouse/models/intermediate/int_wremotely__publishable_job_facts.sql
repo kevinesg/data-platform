@@ -12,7 +12,12 @@
 with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__job_publication_status') }}
-    where publication_status in ('PUBLISHABLE', 'CLOSED')
+    where (
+        publication_status in ('PUBLISHABLE', 'CLOSED')
+        {% if incremental_watermark_ready %}
+        or candidate_id in (select job_id from {{ this }})
+        {% endif %}
+    )
     {% if incremental_watermark_ready %}
         and dbt_updated_at > (
             select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
@@ -56,8 +61,8 @@ prepared as (
         , nullIf(latest_lifecycle_status, '') as lifecycle_status
         , latest_lifecycle_checked_at as lifecycle_checked_at
         , has_lifecycle_recheck
-        , publication_status = 'CLOSED' as is_deleted
-        , latest_observed_at as _updated_at
+        , publication_status != 'PUBLISHABLE' as is_deleted
+        , dbt_updated_at as _updated_at
         , latest_observed_at as source_updated_at
         , left(snippet, 1000) as public_snippet
     from publishable_jobs

@@ -368,6 +368,12 @@ models:
                   - LIFECYCLE_CLOSED
                   - LIFECYCLE_TERMINAL_CONFIRMED
                   - EXPIRED_VALID_THROUGH
+                  - PUBLICATION_REVIEW_HELD
+      - name: publication_review_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['', unreviewed, pending, held, released]
   - name: int_wremotely__publishable_job_facts
     description: Candidate rows accepted by the ClickHouse publication gate.
     columns:

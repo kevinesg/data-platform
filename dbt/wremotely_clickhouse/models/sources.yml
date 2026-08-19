@@ -82,3 +82,10 @@ sources:
           - name: payload
             tests:
               - not_null
+      - name: publication_review
+        identifier: wremotely__publication_review
+        description: Versioned manual publication-review candidates and decisions.
+        columns:
+          - name: candidate_id
+            tests:
+              - not_null
