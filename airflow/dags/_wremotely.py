@@ -17,16 +17,9 @@ from docker.types import Mount
 from _alerting import send_failure_alert
 
 WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH = "/credentials/wremotely-etl-service-account.json"
-DBT_CREDENTIALS_CONTAINER_PATH = "/credentials/dbt-service-account.json"
 PUBLICATION_HOLD_POLICY_CONTAINER_PATH = "/run/secrets/wremotely-publication-hold-policy.md"
 WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH = "/artifacts/wremotely-etl"
 WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH = "/warehouse/workmichi"
-WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH = (
-    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/dbt-build/run_results.json"
-)
-WREMOTELY_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH = (
-    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/dbt-failures"
-)
 WREMOTELY_CLICKHOUSE_DBT_RUN_RESULTS_CONTAINER_PATH = (
     f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/clickhouse-dbt/run_results.json"
 )
@@ -40,12 +33,10 @@ CRAWL_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 EXTRACT_TASK_EXECUTION_TIMEOUT = timedelta(hours=18)
 PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
 RECHECK_TASK_EXECUTION_TIMEOUT = timedelta(hours=8)
-SERVING_DBT_TASK_EXECUTION_TIMEOUT = timedelta(minutes=30)
 ONPREM_CLICKHOUSE_DBT_TASK_EXECUTION_TIMEOUT = timedelta(hours=4)
 PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
-SERVING_PUBLICATIONS_TABLE = "wremotely__serving_publication"
 WREMOTELY_NETWORK_POOL = "wremotely_network"
 WREMOTELY_WAREHOUSE_POOL = "wremotely_warehouse"
 WREMOTELY_PUBLICATION_DAG_ID = "publish__wremotely_serving"
@@ -553,19 +544,11 @@ def create_wremotely_refresh_gate_task(
 ENVIRONMENT = optional_env("ENVIRONMENT", "dev")
 WREMOTELY_ETL_IMAGE = required_env("DATA_PLATFORM_WREMOTELY_ETL_IMAGE")
 SCRIPTS_IMAGE = required_env("DATA_PLATFORM_SCRIPTS_IMAGE")
-DBT_IMAGE = required_env("DATA_PLATFORM_DBT_IMAGE")
 CLICKHOUSE_DBT_IMAGE = optional_env(
     "DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE",
     "data-platform-wremotely-clickhouse-dbt:dev",
 )
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
-WREMOTELY_LOCAL_LLM_RUNTIME = required_env("WREMOTELY_LOCAL_LLM_RUNTIME")
-WREMOTELY_DBT_MART_DATASET = dbt_schema_name(
-    required_env("DBT_DATASET"),
-    "mart_wremotely",
-    ENVIRONMENT,
-)
-
 wremotely_environment = {
     "ENVIRONMENT": ENVIRONMENT,
     "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
@@ -578,83 +561,10 @@ wremotely_environment = {
     "WREMOTELY_BIGQUERY_LOCATION": required_env("WREMOTELY_BIGQUERY_LOCATION"),
 }
 
-publication_hold_environment = {
-    **wremotely_environment,
-    "WREMOTELY_PUBLICATION_HOLD_POLICY": PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
-    "WREMOTELY_LOCAL_LLM_RUNTIME": WREMOTELY_LOCAL_LLM_RUNTIME,
-    "WREMOTELY_LOCAL_LLM_MODEL": required_env("WREMOTELY_LOCAL_LLM_MODEL"),
-    "WREMOTELY_LOCAL_LLM_ENDPOINT": required_env("WREMOTELY_LOCAL_LLM_ENDPOINT"),
-    "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS": required_env(
-        "WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"
-    ),
-}
-publication_hold_private_environment = {}
-if WREMOTELY_LOCAL_LLM_RUNTIME == "groq":
-    publication_hold_private_environment["GROQ_API_KEY"] = required_env("GROQ_API_KEY")
-
-publication_signal_environment = {
-    "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
-}
-
-dbt_environment = {
-    "DBT_TARGET": required_env("DBT_TARGET"),
-    "PROJECT_ID": required_env("PROJECT_ID"),
-    "RAW_DATASET": required_env("RAW_DATASET"),
-    "DBT_DATASET": required_env("DBT_DATASET"),
-    "DBT_GOOGLE_APPLICATION_CREDENTIALS": DBT_CREDENTIALS_CONTAINER_PATH,
-    "BIGQUERY_LOCATION": required_env("BIGQUERY_LOCATION"),
-    "DBT_THREADS": optional_env("DBT_THREADS", "4"),
-    "DBT_JOB_CREATION_TIMEOUT_SECONDS": required_env(
-        "WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"
-    ),
-    "DBT_JOB_EXECUTION_TIMEOUT_SECONDS": required_env(
-        "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
-    ),
-}
-
 wremotely_mounts = [
     Mount(
         source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
         target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
-    Mount(
-        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
-        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-        type="bind",
-    ),
-]
-
-publication_hold_mounts = [
-    *wremotely_mounts,
-    Mount(
-        source=required_host_path_env("WREMOTELY_PUBLICATION_HOLD_POLICY"),
-        target=PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
-]
-
-publication_signal_mounts = [
-    Mount(
-        source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
-        target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
-    Mount(
-        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
-        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
-]
-
-dbt_mounts = [
-    Mount(
-        source=required_host_path_env("DBT_GOOGLE_APPLICATION_CREDENTIALS"),
-        target=DBT_CREDENTIALS_CONTAINER_PATH,
         type="bind",
         read_only=True,
     ),
@@ -785,32 +695,6 @@ onprem_clickhouse_dbt_environment = {
 onprem_clickhouse_dbt_private_environment = clickhouse_dbt_private_environment
 
 
-def create_dbt_build_task(*, task_id: str = "dbt_build") -> DockerOperator:
-    return docker_task(
-        task_id=task_id,
-        image=DBT_IMAGE,
-        command=[
-            "--output",
-            WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH,
-            "--failed-target-root",
-            WREMOTELY_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH,
-            "--",
-            "build",
-            "--project-dir",
-            "wremotely",
-            "--target",
-            required_env("DBT_TARGET"),
-            "--exclude-resource-type",
-            "unit_test",
-        ],
-        environment=dbt_environment,
-        mounts=dbt_mounts,
-        entrypoint=["python", "/app/run_and_retain_results.py"],
-        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
-        pool=WREMOTELY_WAREHOUSE_POOL,
-    )
-
-
 def create_clickhouse_dbt_build_task() -> DockerOperator:
     return docker_task(
         task_id="dbt_build",
@@ -833,7 +717,7 @@ def create_clickhouse_dbt_build_task() -> DockerOperator:
         environment=clickhouse_dbt_environment,
         private_environment=clickhouse_dbt_private_environment,
         mounts=clickhouse_dbt_mounts,
-        execution_timeout=SERVING_DBT_TASK_EXECUTION_TIMEOUT,
+        execution_timeout=ONPREM_CLICKHOUSE_DBT_TASK_EXECUTION_TIMEOUT,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
@@ -967,127 +851,16 @@ def create_onprem_clickhouse_publication_signal_task(
     )
 
 
-def create_publication_hold_task(
-    run_id: str,
-    *,
-    task_id: str = "publication_hold",
-) -> DockerOperator:
-    return docker_task(
-        task_id=task_id,
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "publication-hold",
-            "--run-id",
-            run_id,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--dbt-dataset",
-            WREMOTELY_DBT_MART_DATASET,
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-            "--publication-hold-policy",
-            PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
-            "--local-llm-runtime",
-            WREMOTELY_LOCAL_LLM_RUNTIME,
-            "--local-llm-model",
-            required_env("WREMOTELY_LOCAL_LLM_MODEL"),
-            "--local-llm-endpoint",
-            required_env("WREMOTELY_LOCAL_LLM_ENDPOINT"),
-            "--local-llm-timeout-seconds",
-            required_env("WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS"),
-        ),
-        environment=publication_hold_environment,
-        mounts=publication_hold_mounts,
-        private_environment=publication_hold_private_environment,
-        execution_timeout=PUBLICATION_HOLD_TASK_EXECUTION_TIMEOUT,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-        pool=WREMOTELY_WAREHOUSE_POOL,
-    )
-
-
-def create_serving_snapshot_task(
-    run_id: str,
-    *,
-    task_id: str = "publish_serving_snapshot",
-) -> DockerOperator:
-    return docker_task(
-        task_id=task_id,
-        image=WREMOTELY_ETL_IMAGE,
-        command=etl_command(
-            "--step",
-            "publish-serving-snapshot",
-            "--run-id",
-            run_id,
-            "--output-root",
-            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--dbt-dataset",
-            WREMOTELY_DBT_MART_DATASET,
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-            "--source-registry-input",
-            APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
-        ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-        pool=WREMOTELY_WAREHOUSE_POOL,
-    )
-
-
-def create_publication_signal_task(
-    snapshot_run_id: str,
-    *,
-    task_id: str = "signal_publication",
-) -> DockerOperator:
-    return docker_task(
-        task_id=task_id,
-        image=SCRIPTS_IMAGE,
-        entrypoint=["python", "src/publication_signal.py"],
-        command=[
-            "--gcp-project",
-            required_env("PROJECT_ID"),
-            "--handoff-dataset",
-            required_env("WREMOTELY_HANDOFF_DATASET"),
-            "--publication-table",
-            SERVING_PUBLICATIONS_TABLE,
-            "--publication-topic",
-            required_env("WREMOTELY_PUBLICATION_TOPIC"),
-            "--publication-artifact",
-            (
-                f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/{snapshot_run_id}/"
-                "publish_serving_snapshot/publish_serving_snapshot.json"
-            ),
-            "--bigquery-location",
-            required_env("WREMOTELY_BIGQUERY_LOCATION"),
-        ],
-        environment=publication_signal_environment,
-        mounts=publication_signal_mounts,
-        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-    )
-
-
 def create_publication_trigger_task(
     publication_run_id: str,
     *,
-    publication_mode: str = "legacy",
     trigger_rule: str = "all_success",
 ) -> TriggerDagRunOperator:
-    if publication_mode not in {"legacy", "clickhouse"}:
-        raise ValueError(f"unsupported publication mode: {publication_mode}")
     return TriggerDagRunOperator(
         task_id="trigger_publication",
         trigger_dag_id=WREMOTELY_PUBLICATION_DAG_ID,
         trigger_run_id="publication__{{ dag.dag_id }}__{{ run_id }}",
-        conf={"publication_run_id": publication_run_id, "publication_mode": publication_mode},
+        conf={"publication_run_id": publication_run_id, "publication_mode": "clickhouse"},
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=30,

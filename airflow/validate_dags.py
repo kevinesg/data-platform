@@ -87,7 +87,6 @@ def assert_idempotent_docker_timeout_cleanup(task: DockerOperator) -> None:
 def validate_dbt_project_boundaries(modules: dict[str, ModuleType]) -> None:
     expected_tasks = {
         ("etl__personal_finance", "dbt_build"): "personal_finance",
-        ("publish__wremotely_serving", "legacy_dbt_build"): "wremotely",
         ("publish__wremotely_serving", "dbt_build"): "/app",
     }
     for (module_name, task_id), expected_project in expected_tasks.items():
@@ -104,21 +103,11 @@ def validate_dbt_project_boundaries(modules: dict[str, ModuleType]) -> None:
 
 
 def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
-    ingestion = require_dag(modules, "etl__wremotely")
     artifact_cleanup = require_dag(modules, "maintenance__wremotely_artifacts")
     lifecycle = require_dag(modules, "maintenance__wremotely_lifecycle")
     publication = require_dag(modules, "publish__wremotely_serving")
-    publication_branch_task_id = getattr(
-        modules["publish__wremotely_serving"], "publication_branch_task_id", None
-    )
-    if publication_branch_task_id is None:
-        raise AssertionError("publication DAG must expose its branch contract")
-    if publication_branch_task_id("clickhouse") != "sync_publication_review":
-        raise AssertionError("ClickHouse publication mode must branch to review sync")
-    if publication_branch_task_id("legacy") != "legacy_dbt_build":
-        raise AssertionError("legacy publication mode must branch to legacy_dbt_build")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
-    onprem_ingestion = require_dag(modules, "etl__wremotely_onprem")
+    ingestion = require_dag(modules, "etl__wremotely_onprem")
     repair = require_dag(modules, "repair__wremotely_job_urls")
     classification_repair = require_dag(modules, "repair__wremotely_classifications")
     warehouse_classification_repair = require_dag(
@@ -126,7 +115,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "repair__wremotely_warehouse_classifications",
     )
 
-    assert_ingestion_task_contract(ingestion)
+    assert_onprem_ingestion_task_contract(ingestion)
     assert_task_contract(
         artifact_cleanup,
         ["cleanup"],
@@ -165,11 +154,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ["prepare", "replay", "stage", "upload", "load"],
     )
     expected_publication_tasks = {
-        "choose_publication_mode",
-        "legacy_dbt_build",
-        "legacy_publication_hold",
-        "legacy_publish_serving_snapshot",
-        "legacy_signal_publication",
         "dbt_build",
         "sync_publication_review",
         "publish_clickhouse_snapshot",
@@ -178,18 +162,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     }
     if set(publication.task_ids) != expected_publication_tasks:
         raise AssertionError("publish__wremotely_serving task set does not match its contract")
-    if publication.get_task("legacy_dbt_build").downstream_task_ids != {
-        "legacy_publication_hold",
-    }:
-        raise AssertionError("legacy publication path must start with dbt")
-    if publication.get_task("legacy_publication_hold").downstream_task_ids != {
-        "legacy_publish_serving_snapshot",
-    }:
-        raise AssertionError("legacy publication hold must precede serving snapshot")
-    if publication.get_task("legacy_publish_serving_snapshot").downstream_task_ids != {
-        "legacy_signal_publication",
-    }:
-        raise AssertionError("legacy serving snapshot must precede its signal")
     if publication.get_task("dbt_build").downstream_task_ids != {
         "publish_clickhouse_snapshot",
     }:
@@ -202,37 +174,27 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         "signal_clickhouse_publication",
     }:
         raise AssertionError("ClickHouse review export must precede its signal")
-    if publication.get_task("choose_publication_mode").downstream_task_ids != {
-        "legacy_dbt_build",
-        "sync_publication_review",
-    }:
-        raise AssertionError("publication mode branch must expose legacy and ClickHouse paths")
     if publication.get_task("sync_publication_review").downstream_task_ids != {
         "dbt_build",
     }:
         raise AssertionError("ClickHouse review sync must precede dbt")
     assert_task_contract(clickhouse_build, ["dbt_build"])
-    if onprem_ingestion.dag_id != "etl__wremotely":
+    if ingestion.dag_id != "etl__wremotely":
         raise AssertionError("ClickHouse ingestion must own the canonical etl__wremotely DAG ID")
-    if ingestion.dag_id != "etl__wremotely_gcp_legacy":
-        raise AssertionError("legacy GCP ingestion must not own the canonical DAG ID")
-    assert_onprem_ingestion_task_contract(onprem_ingestion)
     validate_onprem_ingestion_refresh_contract(
-        onprem_ingestion,
+        ingestion,
         modules["etl__wremotely_onprem"],
     )
 
     environment = os.environ.get("ENVIRONMENT", "dev").strip() or "dev"
     if environment == "prod":
-        if onprem_ingestion.schedule != EXPECTED_PROD_INGESTION_SCHEDULE:
+        if ingestion.schedule != EXPECTED_PROD_INGESTION_SCHEDULE:
             raise AssertionError(
                 "prod ingestion DAG schedule must be "
-                f"{EXPECTED_PROD_INGESTION_SCHEDULE!r}, got {onprem_ingestion.schedule!r}"
+                f"{EXPECTED_PROD_INGESTION_SCHEDULE!r}, got {ingestion.schedule!r}"
             )
-    elif onprem_ingestion.schedule is not None:
+    elif ingestion.schedule is not None:
         raise AssertionError("non-prod ingestion DAG must be manual")
-    if ingestion.schedule is not None:
-        raise AssertionError("legacy GCP ingestion DAG must be disabled")
     if environment == "prod":
         if artifact_cleanup.schedule != "0 3 * * *":
             raise AssertionError(
@@ -269,7 +231,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("ClickHouse dbt build DAG must always be manual")
     if clickhouse_build.max_active_runs != 1:
         raise AssertionError("ClickHouse dbt build DAG must serialize builds")
-    if onprem_ingestion.max_active_runs != 1:
+    if ingestion.max_active_runs != 1:
         raise AssertionError("on-prem ingestion DAG must serialize runs")
 
     assert_pool(ingestion, "crawl", "wremotely_network")
@@ -280,9 +242,8 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(classification_repair, "load", "wremotely_warehouse")
     assert_pool(warehouse_classification_repair, "prepare", "wremotely_warehouse")
     assert_pool(warehouse_classification_repair, "load", "wremotely_warehouse")
-    assert_pool(ingestion, "load", "wremotely_warehouse")
-    assert_publication_trigger(ingestion, expected_mode="legacy")
-    assert_publication_trigger(onprem_ingestion, expected_mode="clickhouse")
+    assert_pool(ingestion, "load_clickhouse_raw", "wremotely_warehouse")
+    assert_publication_trigger(ingestion, expected_mode="clickhouse")
     for task_id in (
         "stage_recheck",
         "land_filesystem",
@@ -309,63 +270,19 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_onprem_lifecycle_task_contract(lifecycle)
     assert_publication_trigger(lifecycle, expected_mode="clickhouse")
     for task_id in (
-        "legacy_dbt_build",
-        "legacy_publication_hold",
-        "legacy_publish_serving_snapshot",
         "dbt_build",
         "publish_clickhouse_snapshot",
     ):
         assert_pool(publication, task_id, "wremotely_warehouse")
     assert_pool(clickhouse_build, "dbt_build", "wremotely_warehouse")
-    assert_pool(onprem_ingestion, "crawl", "wremotely_network")
-    assert_pool(onprem_ingestion, "extract", "wremotely_network")
+    assert_pool(ingestion, "crawl", "wremotely_network")
+    assert_pool(ingestion, "extract", "wremotely_network")
     for task_id in (
         "stage",
         "land_filesystem",
         "load_clickhouse_raw",
     ):
-        assert_pool(onprem_ingestion, task_id, "wremotely_warehouse")
-
-    dbt_build = publication.get_task("legacy_dbt_build")
-    if dbt_build.execution_timeout != timedelta(minutes=30):
-        raise AssertionError(
-            "publish__wremotely_serving.dbt_build must have a 30-minute timeout"
-        )
-    if dbt_build.environment.get("DBT_JOB_CREATION_TIMEOUT_SECONDS") != os.environ[
-        "WREMOTELY_DBT_JOB_CREATION_TIMEOUT_SECONDS"
-    ]:
-        raise AssertionError(
-            "serving dbt build must pass its configured BigQuery job-creation timeout"
-        )
-    if dbt_build.environment.get("DBT_JOB_EXECUTION_TIMEOUT_SECONDS") != os.environ[
-        "WREMOTELY_DBT_JOB_EXECUTION_TIMEOUT_SECONDS"
-    ]:
-        raise AssertionError(
-            "serving dbt build must pass its configured BigQuery job timeout"
-        )
-    if dbt_build.command[-2:] != ["--exclude-resource-type", "unit_test"]:
-        raise AssertionError(
-            "serving production-data build must exclude development dbt unit tests"
-        )
-    if dbt_build.entrypoint != ["python", "/app/run_and_retain_results.py"]:
-        raise AssertionError("serving dbt build must retain results through the image runner")
-    if command_argument(dbt_build.command, "--output") != (
-        "/artifacts/wremotely-etl/baseline/dbt-build/run_results.json"
-    ):
-        raise AssertionError("serving dbt build must retain one bounded baseline artifact")
-    if command_argument(dbt_build.command, "--failed-target-root") != (
-        "/artifacts/wremotely-etl/dbt-failures"
-    ):
-        raise AssertionError(
-            "serving dbt build must retain failed targets for native dbt retry"
-        )
-    artifact_mount = next(
-        (mount for mount in dbt_build.mounts if mount["Target"] == "/artifacts/wremotely-etl"),
-        None,
-    )
-    if artifact_mount is None or artifact_mount["ReadOnly"]:
-        raise AssertionError("serving dbt build baseline artifact mount must be writable")
-    assert_idempotent_docker_timeout_cleanup(dbt_build)
+        assert_pool(ingestion, task_id, "wremotely_warehouse")
 
     for clickhouse_task in (
         publication.get_task("dbt_build"),
@@ -406,18 +323,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             )
         assert_idempotent_docker_timeout_cleanup(clickhouse_task)
 
-    assert_publication_hold_environment(publication)
-
-    serving_snapshot_command = publication.get_task("legacy_publish_serving_snapshot").command
-    if not isinstance(serving_snapshot_command, list):
-        raise AssertionError("serving snapshot command must be an argv list")
-    if command_argument(serving_snapshot_command, "--source-registry-input") != (
-        "/app/source_registry/approved_sources.jsonl"
-    ):
-        raise AssertionError("serving snapshot must use the image-bundled approved registry")
-    if "--source-registry-input-sha256" in serving_snapshot_command:
-        raise AssertionError("serving snapshot must not depend on an external registry checksum")
-
     crawl_command = ingestion.get_task("crawl").command
     if not isinstance(crawl_command, str):
         raise AssertionError("crawl command must be a templated argv string")
@@ -432,7 +337,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         lifecycle,
         repair,
     )
-    validate_ingestion_refresh_contract(ingestion, modules["etl__wremotely"])
     validate_lifecycle_bucket_contract(lifecycle)
     validate_artifact_cleanup_contract(artifact_cleanup)
 

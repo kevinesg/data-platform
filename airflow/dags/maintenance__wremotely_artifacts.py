@@ -14,8 +14,9 @@ from _wremotely import (
     docker_task,
     dag_schedule,
     etl_command,
-    wremotely_environment,
-    wremotely_mounts,
+    onprem_wremotely_environment,
+    onprem_wremotely_private_environment,
+    onprem_wremotely_mounts,
 )
 
 CLEANUP_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-cleanup"
@@ -49,8 +50,9 @@ with DAG(
             CLEANUP_MIN_AGE_DAYS,
             "--cleanup-apply",
         ),
-        environment=wremotely_environment,
-        mounts=wremotely_mounts,
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
         execution_timeout=CLEANUP_TASK_EXECUTION_TIMEOUT,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,

@@ -313,7 +313,6 @@ with DAG(
 
     trigger_publication = create_publication_trigger_task(
         CLICKHOUSE_SNAPSHOT_RUN_ID,
-        publication_mode="clickhouse",
         trigger_rule="none_failed_min_one_success",
     )
 
