@@ -223,8 +223,14 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("non-prod ingestion DAG must be manual")
     if ingestion.schedule is not None:
         raise AssertionError("legacy GCP ingestion DAG must be disabled")
-    if artifact_cleanup.schedule is not None:
-        raise AssertionError("filesystem artifact cleanup DAG must remain manual")
+    if environment == "prod":
+        if artifact_cleanup.schedule != "0 3 * * *":
+            raise AssertionError(
+                "prod artifact cleanup DAG schedule must be '0 3 * * *', "
+                f"got {artifact_cleanup.schedule!r}"
+            )
+    elif artifact_cleanup.schedule is not None:
+        raise AssertionError("non-prod artifact cleanup DAG must be manual")
     if environment == "prod":
         if lifecycle.schedule != EXPECTED_PROD_LIFECYCLE_SCHEDULE:
             raise AssertionError(

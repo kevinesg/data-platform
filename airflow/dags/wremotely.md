@@ -78,9 +78,10 @@ classification, and dbt target artifacts needed for replay and diagnosis.
 
 ## Run and validate
 
-The ingestion DAG is scheduled in production from `ETL__WREMOTELY_SCHEDULE`, and
-the lifecycle DAG is scheduled from `WREMOTELY_LIFECYCLE_SCHEDULE`; both remain
-manual in dev and QA. Before enabling them, validate the ClickHouse service and
+The ingestion DAG is scheduled in production from `ETL__WREMOTELY_SCHEDULE`, the
+lifecycle DAG from `WREMOTELY_LIFECYCLE_SCHEDULE`, and artifact cleanup from
+`WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE`; all three remain manual in dev and QA.
+Before enabling them, validate the ClickHouse service and
 the database/user/password contract using the commands in
 [`../clickhouse/README.md`](../../clickhouse/README.md), then validate Airflow:
 
