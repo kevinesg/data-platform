@@ -549,32 +549,6 @@ CLICKHOUSE_DBT_IMAGE = optional_env(
     "data-platform-wremotely-clickhouse-dbt:dev",
 )
 WREMOTELY_DOCKER_NETWORK_MODE = optional_env("WREMOTELY_DOCKER_NETWORK_MODE", "host")
-wremotely_environment = {
-    "ENVIRONMENT": ENVIRONMENT,
-    "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
-    "GOOGLE_CLOUD_PROJECT": required_env("PROJECT_ID"),
-    "RAW_DATASET": required_env("RAW_DATASET"),
-    "DBT_DATASET": required_env("DBT_DATASET"),
-    "WREMOTELY_HANDOFF_DATASET": required_env("WREMOTELY_HANDOFF_DATASET"),
-    "WREMOTELY_GCS_BUCKET": required_env("WREMOTELY_GCS_BUCKET"),
-    "WREMOTELY_GCS_PREFIX": required_env("WREMOTELY_GCS_PREFIX"),
-    "WREMOTELY_BIGQUERY_LOCATION": required_env("WREMOTELY_BIGQUERY_LOCATION"),
-}
-
-wremotely_mounts = [
-    Mount(
-        source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
-        target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
-        type="bind",
-        read_only=True,
-    ),
-    Mount(
-        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
-        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
-        type="bind",
-    ),
-]
-
 clickhouse_dbt_environment = {
     "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
         "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"

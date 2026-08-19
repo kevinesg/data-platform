@@ -108,12 +108,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     publication = require_dag(modules, "publish__wremotely_serving")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
     ingestion = require_dag(modules, "etl__wremotely_onprem")
-    repair = require_dag(modules, "repair__wremotely_job_urls")
-    classification_repair = require_dag(modules, "repair__wremotely_classifications")
-    warehouse_classification_repair = require_dag(
-        modules,
-        "repair__wremotely_warehouse_classifications",
-    )
 
     assert_onprem_ingestion_task_contract(ingestion)
     assert_task_contract(
@@ -130,28 +124,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             "load_clickhouse_raw",
             "trigger_publication",
         ],
-    )
-    assert_task_contract(
-        repair,
-        [
-            "select",
-            "extract",
-            "job_facts",
-            "classify",
-            "evaluate",
-            "stage",
-            "upload",
-            "load",
-            "trigger_publication",
-        ],
-    )
-    assert_task_contract(
-        classification_repair,
-        ["job_facts", "classify", "evaluate", "stage", "upload", "load"],
-    )
-    assert_task_contract(
-        warehouse_classification_repair,
-        ["prepare", "replay", "stage", "upload", "load"],
     )
     expected_publication_tasks = {
         "dbt_build",
@@ -213,16 +185,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         raise AssertionError("non-prod lifecycle DAG must be manual")
     if artifact_cleanup.max_active_runs != 1:
         raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
-    if repair.schedule is not None:
-        raise AssertionError("repair DAG must always be manual")
-    if classification_repair.schedule is not None:
-        raise AssertionError("classification repair DAG must always be manual")
-    if classification_repair.max_active_runs != 1:
-        raise AssertionError("classification repair DAG must serialize historical loads")
-    if warehouse_classification_repair.schedule is not None:
-        raise AssertionError("warehouse classification repair DAG must always be manual")
-    if warehouse_classification_repair.max_active_runs != 1:
-        raise AssertionError("warehouse classification repair DAG must serialize loads")
     if publication.schedule is not None:
         raise AssertionError("publication DAG must always be trigger-only")
     if publication.max_active_runs != 1:
@@ -238,10 +200,6 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     assert_pool(ingestion, "extract", "wremotely_network")
     assert_pool(artifact_cleanup, "cleanup", "wremotely_warehouse")
     assert_pool(lifecycle, "recheck", "wremotely_network")
-    assert_pool(repair, "extract", "wremotely_network")
-    assert_pool(classification_repair, "load", "wremotely_warehouse")
-    assert_pool(warehouse_classification_repair, "prepare", "wremotely_warehouse")
-    assert_pool(warehouse_classification_repair, "load", "wremotely_warehouse")
     assert_pool(ingestion, "load_clickhouse_raw", "wremotely_warehouse")
     assert_publication_trigger(ingestion, expected_mode="clickhouse")
     for task_id in (
@@ -335,105 +293,9 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
         ingestion,
         artifact_cleanup,
         lifecycle,
-        repair,
     )
     validate_lifecycle_bucket_contract(lifecycle)
     validate_artifact_cleanup_contract(artifact_cleanup)
-
-    classification_params = {
-        "extraction_run_id": "20260715T102748Z-wremotely-extract",
-        "replay_label": "classification-reconciliation-v1",
-    }
-    rendered_commands = {
-        task_id: [
-            Environment().from_string(value).render(params=classification_params)
-            for value in classification_repair.get_task(task_id).command
-        ]
-        for task_id in classification_repair.task_ids
-    }
-    if command_argument(rendered_commands["classify"], "--work-arrangement-mode") != "raw_only":
-        raise AssertionError("classification replay must keep work arrangement inference disabled")
-    if command_argument(rendered_commands["classify"], "--country-eligibility-mode") != "raw_only":
-        raise AssertionError("classification replay must keep country inference disabled")
-    if command_argument(rendered_commands["stage"], "--stage-kind") != "classification_replay":
-        raise AssertionError("classification replay must stage only rebuilt classification artifacts")
-    expected_stage_run_id = (
-        "20260715T102748Z-wremotely-extract-classification-reconciliation-v1-stage"
-    )
-    if command_argument(rendered_commands["load"], "--run-id") != expected_stage_run_id:
-        raise AssertionError("classification replay changed its stable load run ID")
-    expected_replay_timeout = timedelta(hours=8)
-    for task_id in classification_repair.task_ids:
-        if classification_repair.get_task(task_id).execution_timeout != expected_replay_timeout:
-            raise AssertionError(f"classification replay task {task_id} has no bounded timeout")
-
-    warehouse_replay_params = {"replay_label": "classification-v13"}
-    warehouse_rendered_commands = {
-        task_id: [
-            Environment().from_string(value).render(params=warehouse_replay_params)
-            for value in warehouse_classification_repair.get_task(task_id).command
-        ]
-        for task_id in warehouse_classification_repair.task_ids
-    }
-    prepare_command = warehouse_rendered_commands["prepare"]
-    if command_argument(prepare_command, "--step") != (
-        "prepare-classification-replay-from-warehouse"
-    ):
-        raise AssertionError("warehouse replay must prepare input from raw warehouse facts")
-    if command_argument(prepare_command, "--gcp-project") != os.environ["PROJECT_ID"]:
-        raise AssertionError("warehouse replay preparation must use the environment project")
-    if command_argument(prepare_command, "--raw-dataset") != os.environ["RAW_DATASET"]:
-        raise AssertionError("warehouse replay preparation must use the environment raw dataset")
-    if command_argument(prepare_command, "--bigquery-location") != os.environ[
-        "WREMOTELY_BIGQUERY_LOCATION"
-    ]:
-        raise AssertionError("warehouse replay preparation must use the environment location")
-
-    expected_prepare_run_id = "warehouse-classification-v13-input"
-    expected_classification_run_id = "warehouse-classification-v13-classify"
-    expected_warehouse_stage_run_id = "warehouse-classification-v13-stage"
-    if command_argument(prepare_command, "--run-id") != expected_prepare_run_id:
-        raise AssertionError("warehouse replay changed its stable preparation run ID")
-
-    replay_command = warehouse_rendered_commands["replay"]
-    if command_argument(replay_command, "--step") != "replay-classification":
-        raise AssertionError("warehouse replay must use the dedicated replay step")
-    if command_argument(replay_command, "--run-id") != expected_classification_run_id:
-        raise AssertionError("warehouse replay changed its stable classification run ID")
-    if (
-        command_argument(replay_command, "--classification-replay-input-run-id")
-        != expected_prepare_run_id
-    ):
-        raise AssertionError("warehouse replay does not consume its prepared input")
-    if command_argument(replay_command, "--work-arrangement-mode") != "raw_only":
-        raise AssertionError("warehouse replay must keep work arrangement inference disabled")
-    if command_argument(replay_command, "--country-eligibility-mode") != "raw_only":
-        raise AssertionError("warehouse replay must keep country inference disabled")
-
-    warehouse_stage_command = warehouse_rendered_commands["stage"]
-    if command_argument(warehouse_stage_command, "--stage-kind") != (
-        "warehouse_classification_replay"
-    ):
-        raise AssertionError("warehouse replay must stage only rebuilt classification artifacts")
-    if (
-        command_argument(warehouse_stage_command, "--classification-run-id")
-        != expected_classification_run_id
-    ):
-        raise AssertionError("warehouse replay stage uses the wrong classification run")
-    if command_argument(warehouse_stage_command, "--run-id") != expected_warehouse_stage_run_id:
-        raise AssertionError("warehouse replay changed its stable stage run ID")
-    for task_id in ("upload", "load"):
-        if (
-            command_argument(warehouse_rendered_commands[task_id], "--run-id")
-            != expected_warehouse_stage_run_id
-        ):
-            raise AssertionError(f"warehouse replay {task_id} uses the wrong stage run ID")
-    for task_id in warehouse_classification_repair.task_ids:
-        if (
-            warehouse_classification_repair.get_task(task_id).execution_timeout
-            != expected_replay_timeout
-        ):
-            raise AssertionError(f"warehouse replay task {task_id} has no bounded timeout")
 
 def require_dag(modules: dict[str, ModuleType], module_name: str) -> DAG:
     module = modules.get(module_name)
@@ -795,7 +657,6 @@ def validate_wremotely_run_identity_contract(
     ingestion: DAG,
     artifact_cleanup: DAG,
     lifecycle: DAG,
-    repair: DAG,
 ) -> None:
     scheduled_logical_date = datetime(2026, 8, 3, 0, 15, tzinfo=UTC)
     manual_run_after = datetime(2026, 8, 3, 4, 6, 15, 123456, tzinfo=UTC)
@@ -818,9 +679,6 @@ def validate_wremotely_run_identity_contract(
         (artifact_cleanup, "cleanup", "-wremotely-cleanup"),
         (lifecycle, "prepare_recheck", "-wremotely-lifecycle-prepare"),
     ]
-    publication_contracts = [
-        (repair, "-wremotely-repair"),
-    ]
     environment = Environment()
 
     for case_name, dag_run, expected_timestamp in cases:
@@ -842,28 +700,6 @@ def validate_wremotely_run_identity_contract(
                 raise AssertionError(
                     f"{dag.dag_id} changed its {case_name} run identity"
                 )
-
-        for dag, run_id_suffix in publication_contracts:
-            publication_conf = dag.get_task("trigger_publication").conf
-            publication_run_id = publication_conf.get("publication_run_id")
-            if not isinstance(publication_run_id, str):
-                raise AssertionError(
-                    f"{dag.dag_id} publication run ID must be templated"
-                )
-            rendered_publication_run_id = environment.from_string(
-                publication_run_id
-            ).render(dag_run=dag_run)
-            if rendered_publication_run_id != f"{expected_timestamp}{run_id_suffix}":
-                raise AssertionError(
-                    f"{dag.dag_id} changed its {case_name} publication identity"
-                )
-
-        validate_repair_command(
-            repair,
-            dag_run,
-            f"{expected_timestamp}-wremotely-repair",
-            environment,
-        )
 
         lifecycle_command = lifecycle.get_task("prepare_recheck").command
         rendered_lifecycle_command = [
@@ -994,37 +830,6 @@ def validate_ingestion_refresh_contract(ingestion: DAG, ingestion_module: Module
         pass
     else:
         raise AssertionError("downstream refresh without input_run_id must fail closed")
-
-
-def validate_repair_command(
-    repair: DAG,
-    dag_run: SimpleNamespace,
-    expected_run_id: str,
-    environment: Environment,
-) -> None:
-    test_urls = [
-        "https://company.example/jobs/one",
-        "https://company.example/jobs/two?name=O'Reilly",
-    ]
-    select_command = repair.get_task("select").command
-    if not isinstance(select_command, str):
-        raise AssertionError("repair select command must be a templated string")
-    rendered_command = environment.from_string(select_command).render(
-        dag_run=dag_run,
-        params={"reprocess_urls": test_urls},
-    )
-    repair_argv = DockerOperator.format_command(rendered_command)
-    if not isinstance(repair_argv, list):
-        raise AssertionError("repair select command did not render to an argv list")
-    if command_argument(repair_argv, "--run-id") != expected_run_id:
-        raise AssertionError("repair select command changed its run identity")
-    rendered_urls = [
-        repair_argv[index + 1]
-        for index, value in enumerate(repair_argv)
-        if value == "--reprocess-url"
-    ]
-    if rendered_urls != test_urls:
-        raise AssertionError("repair select command changed the declared URL list")
 
 
 def validate_lifecycle_bucket_contract(lifecycle: DAG) -> None:

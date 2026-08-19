@@ -8,9 +8,10 @@ only the publication identifier.
 
 BigQuery and GCS are no longer part of the scheduled wremotely path. The
 personal-finance DAG remains a separate BigQuery workload. The former GCP
-ingestion and publication DAGs are removed from the packaged runtime. The
-remaining repair DAGs are paused legacy recovery tooling and must not be used
-for normal wremotely runs until their ClickHouse contracts are implemented.
+ingestion, publication, and Wremotely repair DAGs are removed from the packaged
+runtime. Historical recovery uses the private ETL's repository-owned replay
+commands against retained local artifacts; it does not restore a cloud Airflow
+path.
 
 `maintenance__wremotely_lifecycle` is the native maintenance path. It selects
 due jobs from ClickHouse, rechecks their source pages, lands the lifecycle
@@ -117,8 +118,7 @@ publication contract through its private serving boundary.
 ## Retention and lifecycle
 
 The former GCS cleanup and BigQuery lifecycle paths are not part of normal
-operation. Keep legacy GCP DAGs paused. The artifact cleanup DAG is
-filesystem-only, manual, and deletes only exact eligible local run directories
-described by the ETL cleanup manifest. Filesystem retention and ClickHouse
-lifecycle runs must preserve the latest successful publication and its control
-manifest.
+operation. The artifact cleanup DAG is filesystem-only, manual in dev/QA, and
+deletes only exact eligible local run directories described by the ETL cleanup
+manifest. Filesystem retention and ClickHouse lifecycle runs must preserve the
+latest successful publication and its control manifest.
