@@ -27,6 +27,12 @@ WREMOTELY_DBT_RUN_RESULTS_CONTAINER_PATH = (
 WREMOTELY_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH = (
     f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/dbt-failures"
 )
+WREMOTELY_CLICKHOUSE_DBT_RUN_RESULTS_CONTAINER_PATH = (
+    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/baseline/clickhouse-dbt/run_results.json"
+)
+WREMOTELY_CLICKHOUSE_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH = (
+    f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/dbt-failures/clickhouse"
+)
 APPROVED_SOURCE_REGISTRY_CONTAINER_PATH = "/app/source_registry/approved_sources.jsonl"
 
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(hours=2)
@@ -796,16 +802,20 @@ def create_clickhouse_dbt_build_task() -> DockerOperator:
         task_id="dbt_build",
         image=CLICKHOUSE_DBT_IMAGE,
         command=[
+            "--output",
+            WREMOTELY_CLICKHOUSE_DBT_RUN_RESULTS_CONTAINER_PATH,
+            "--failed-target-root",
+            WREMOTELY_CLICKHOUSE_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH,
+            "--",
             "build",
             "--project-dir",
             "/app",
             "--profiles-dir",
             "/app/profiles",
-            "--target-path",
-            f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/clickhouse-dbt/{{{{ dag_run.run_id }}}}",
             "--exclude-resource-type",
             "unit_test",
         ],
+        entrypoint=["python", "/app/run_and_retain_results.py"],
         environment=clickhouse_dbt_environment,
         private_environment=clickhouse_dbt_private_environment,
         mounts=clickhouse_dbt_mounts,
@@ -819,16 +829,20 @@ def create_onprem_clickhouse_dbt_build_task() -> DockerOperator:
         task_id="dbt_build",
         image=CLICKHOUSE_DBT_IMAGE,
         command=[
+            "--output",
+            WREMOTELY_CLICKHOUSE_DBT_RUN_RESULTS_CONTAINER_PATH,
+            "--failed-target-root",
+            WREMOTELY_CLICKHOUSE_DBT_FAILED_TARGET_ROOT_CONTAINER_PATH,
+            "--",
             "build",
             "--project-dir",
             "/app",
             "--profiles-dir",
             "/app/profiles",
-            "--target-path",
-            f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/clickhouse-dbt/{{{{ dag_run.run_id }}}}",
             "--exclude-resource-type",
             "unit_test",
         ],
+        entrypoint=["python", "/app/run_and_retain_results.py"],
         environment=onprem_clickhouse_dbt_environment,
         private_environment=onprem_clickhouse_dbt_private_environment,
         mounts=clickhouse_dbt_mounts,
