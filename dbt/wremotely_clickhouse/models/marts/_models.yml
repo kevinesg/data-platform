@@ -12,6 +12,8 @@ models:
         tests: [not_null]
       - name: title
         tests: [not_null]
+      - name: title_cleanup_version
+        tests: [not_null]
       - name: remote_scope
         tests:
           - not_null
