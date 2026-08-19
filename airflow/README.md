@@ -223,6 +223,37 @@ The legacy publication DAG remains trigger-only for a controlled recovery
 window. Do not trigger it or the other legacy Wremotely DAGs for normal
 production operation. Personal-finance DAGs continue to use BigQuery.
 
+### On-prem restart and full-refresh requests
+
+The canonical `etl__wremotely` DAG accepts an optional Airflow Variable named
+`wremotely_refresh_request`. Leave the variable unset for the normal incremental
+run. To replay from a completed on-prem boundary, set one JSON object with a
+unique lowercase `refresh_id`, the first step to rerun, and the prior on-prem
+base run ID when the boundary is downstream of crawl:
+
+```json
+{
+  "refresh_id": "country-evidence-20260819",
+  "from_step": "classify",
+  "input_run_id": "20260819T001500Z-wremotely-onprem"
+}
+```
+
+Valid `from_step` values are `crawl`, `select`, `extract`, `job_facts`,
+`classify`, `stage`, `land_filesystem`, and `load_clickhouse_raw`. A downstream
+request must name the completed prior base run; otherwise the DAG fails closed.
+The DAG derives a new immutable run lineage for the requested step and all
+descendants, adds `--full-refresh` only to the ETL steps that support it, and
+reuses retained upstream evidence. Filesystem landing and ClickHouse raw
+loading remain deterministic materialization steps and are replayed by their
+new run IDs without a refresh flag.
+
+The request is acknowledged and deleted only after the publication trigger
+completes. If the request changes during a run, the newer declaration remains
+in Airflow for an operator to review. Set the variable before starting the DAG
+run and remove it only through the successful acknowledgement path; do not
+embed the request in a DAG file or environment image.
+
 For local or homeserver validation, set the ClickHouse image and
 connection values in the external environment file. The password must remain
 outside Git and is passed only as a private DockerOperator environment value:
