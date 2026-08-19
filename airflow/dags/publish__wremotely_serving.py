@@ -7,6 +7,8 @@ from airflow.sdk import DAG
 
 from _wremotely import (
     create_onprem_clickhouse_publication_signal_task,
+    create_onprem_clickhouse_publication_review_export_task,
+    create_onprem_clickhouse_publication_review_sync_task,
     create_onprem_clickhouse_publication_snapshot_task,
     create_onprem_clickhouse_dbt_build_task,
     create_dbt_build_task,
@@ -20,7 +22,7 @@ BASE_RUN_ID = "{{ dag_run.conf['publication_run_id'] }}"
 
 def publication_branch_task_id(mode: str) -> str:
     if mode == "clickhouse":
-        return "dbt_build"
+        return "sync_publication_review"
     if mode == "legacy":
         return "legacy_dbt_build"
     raise ValueError(f"unsupported publication mode: {mode}")
@@ -67,9 +69,11 @@ with DAG(
     )
 
     dbt_build = create_onprem_clickhouse_dbt_build_task()
+    sync_publication_review = create_onprem_clickhouse_publication_review_sync_task(BASE_RUN_ID)
     publish_clickhouse_snapshot = create_onprem_clickhouse_publication_snapshot_task(
         BASE_RUN_ID
     )
+    export_publication_review = create_onprem_clickhouse_publication_review_export_task(BASE_RUN_ID)
     signal_clickhouse_publication = create_onprem_clickhouse_publication_signal_task(
         BASE_RUN_ID,
         task_id="signal_clickhouse_publication",
@@ -77,4 +81,5 @@ with DAG(
 
     choose_mode >> legacy_dbt_build >> legacy_publication_hold
     legacy_publication_hold >> legacy_publish_serving_snapshot >> legacy_signal_publication
-    choose_mode >> dbt_build >> publish_clickhouse_snapshot >> signal_clickhouse_publication
+    choose_mode >> sync_publication_review >> dbt_build
+    dbt_build >> publish_clickhouse_snapshot >> export_publication_review >> signal_clickhouse_publication

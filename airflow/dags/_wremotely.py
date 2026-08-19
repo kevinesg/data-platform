@@ -737,6 +737,20 @@ onprem_wremotely_mounts = [
     ),
 ]
 
+onprem_publication_review_environment = {
+    **onprem_wremotely_environment,
+    "WREMOTELY_PUBLICATION_REVIEW_POLICY": PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
+}
+onprem_publication_review_mounts = [
+    *onprem_wremotely_mounts,
+    Mount(
+        source=required_host_path_env("WREMOTELY_PUBLICATION_HOLD_POLICY"),
+        target=PUBLICATION_HOLD_POLICY_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+]
+
 onprem_publication_signal_environment = {
     "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
 }
@@ -874,6 +888,52 @@ def create_onprem_clickhouse_publication_snapshot_task(run_id: str) -> DockerOpe
         private_environment=onprem_wremotely_private_environment,
         mounts=onprem_wremotely_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_onprem_clickhouse_publication_review_sync_task(run_id: str) -> DockerOperator:
+    return docker_task(
+        task_id="sync_publication_review",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "sync-clickhouse-publication-review",
+            "--run-id",
+            f"{run_id}-review-sync",
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        ),
+        environment=onprem_wremotely_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_wremotely_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        execution_timeout=timedelta(minutes=15),
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_onprem_clickhouse_publication_review_export_task(run_id: str) -> DockerOperator:
+    return docker_task(
+        task_id="export_publication_review",
+        image=WREMOTELY_ETL_IMAGE,
+        command=etl_command(
+            "--step",
+            "export-clickhouse-publication-review",
+            "--run-id",
+            f"{run_id}-review",
+            "--output-root",
+            WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+            "--warehouse-root",
+            WREMOTELY_WAREHOUSE_ROOT_CONTAINER_PATH,
+        ),
+        environment=onprem_publication_review_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_publication_review_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        execution_timeout=timedelta(minutes=30),
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 
