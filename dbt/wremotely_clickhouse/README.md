@@ -102,11 +102,17 @@ The current-candidate-facts model filters each wide source projection through
 the bounded changed-candidate key set before joining the retained rows, so an
 incremental run does not sort or materialize unrelated source history.
 The prepared country relation aligns evidence to the latest classification and
-assigns deterministic direction and match-mode fields. Country matching first
-materializes a narrow evidence projection, then runs equality, country phrase,
-country-group phrase, and subdivision phrase stages independently before the
-compatibility exact-match relation applies ambiguity annotation. This keeps
-large text scans bounded without changing the downstream relation contract.
+assigns deterministic direction and match-mode fields. The latest-state country
+evidence graph is rebuilt atomically as tables on each dbt build: evidence IDs
+include classification run identity, and a landing-run watermark cannot remove
+old rows when a candidate is reclassified or produces no current evidence.
+Raw source history and the latest-per-candidate source projections remain
+incremental; only this derived latest-state graph uses a full table rebuild.
+Country matching first materializes a narrow evidence projection, then runs
+equality, country phrase, country-group phrase, and subdivision phrase stages
+independently before the compatibility exact-match relation applies ambiguity
+annotation. This keeps large text scans bounded without changing the downstream
+relation contract.
 Exact matching covers normalized country, group, reviewed location, and
 subdivision aliases, and marks evidence that resolves to multiple countries as
 ambiguous rather than selecting one silently. Phrase substring matching and
@@ -185,7 +191,7 @@ remain in the shared BigQuery project until an equivalent ClickHouse unit-test
 implementation is available and validated.
 
 The equality-based country-evidence boundary is physically split into four
-incremental match relations: country aliases, country-group aliases, reviewed
+bounded table relations: country aliases, country-group aliases, reviewed
 platform locations, and subdivisions. `int_wremotely__country_eligibility_atomic_matches`
 remains as the compatibility union consumed by downstream models. The
 cross-stage union remains a read-only view, while compact evidence-level
