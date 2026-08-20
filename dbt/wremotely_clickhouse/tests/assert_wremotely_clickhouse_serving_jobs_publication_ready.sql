@@ -20,7 +20,10 @@ where empty(trim(ifNull(canonical_url, '')))
         not is_deleted
         and remote_scope not in ('REMOTE', 'HYBRID', 'ONSITE')
     )
-    or country_eligibility_scope not in ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
+    or (
+        not is_deleted
+        and country_eligibility_scope not in ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
+    )
     or (
         country_eligibility_scope = 'SPECIFIC'
         and empty(eligible_country_codes)
