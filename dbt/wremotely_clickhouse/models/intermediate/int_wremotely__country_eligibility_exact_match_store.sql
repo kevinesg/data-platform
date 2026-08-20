@@ -4,9 +4,9 @@
     order_by='assumeNotNull(match_id)',
     query_settings={
         'max_threads': 1,
-        'max_bytes_before_external_group_by': 67108864,
-        'max_bytes_before_external_sort': 67108864,
-        'max_memory_usage': 1073741824
+        'max_bytes_before_external_group_by': 268435456,
+        'max_bytes_before_external_sort': 268435456,
+        'max_memory_usage': 8589934592
     }
 ) }}
 
