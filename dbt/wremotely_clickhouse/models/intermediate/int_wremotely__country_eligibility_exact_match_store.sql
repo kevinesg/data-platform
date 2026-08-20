@@ -1,7 +1,5 @@
 {{ config(
-    materialized='incremental',
-    incremental_strategy='delete_insert',
-    unique_key='match_id',
+    materialized='table',
     on_schema_change='append_new_columns',
     order_by='assumeNotNull(match_id)',
     query_settings={

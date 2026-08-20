@@ -236,7 +236,7 @@ models:
               arguments:
                 values: [MATCHED, AMBIGUOUS_COUNTRY_ALIAS]
   - name: int_wremotely__country_eligibility_exact_match_store
-    description: Incremental, evidence-ordered store of exact country-eligibility matches used by candidate rollups.
+    description: Rebuilt, evidence-ordered store of exact country-eligibility matches used by candidate rollups.
     columns:
       - name: match_id
         tests: [not_null, unique]
