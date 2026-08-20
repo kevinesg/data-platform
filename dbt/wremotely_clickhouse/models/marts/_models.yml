@@ -28,6 +28,8 @@ models:
           - accepted_values:
               arguments:
                 values: [GLOBAL, GLOBAL_EXCEPT, SPECIFIC]
+              config:
+                where: "is_deleted = 0"
       - name: is_deleted
         tests: [not_null]
       - name: source_updated_at
