@@ -22,7 +22,7 @@ with publishable_jobs as (
     )
     {% if incremental_watermark_ready %}
         and (
-            dbt_updated_at > (
+            dbt_updated_at >= (
                 select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
                 from {{ this }}
             )

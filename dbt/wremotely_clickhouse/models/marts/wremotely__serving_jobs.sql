@@ -15,7 +15,7 @@ with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__publishable_job_facts') }}
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
+    where dbt_updated_at >= (
         select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
         from {{ this }}
     )
