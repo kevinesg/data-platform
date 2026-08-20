@@ -16,7 +16,10 @@ where empty(trim(ifNull(canonical_url, '')))
         not is_deleted
         and lengthUTF8(trim(ifNull(title, ''))) > 500
     )
-    or remote_scope not in ('REMOTE', 'HYBRID', 'ONSITE')
+    or (
+        not is_deleted
+        and remote_scope not in ('REMOTE', 'HYBRID', 'ONSITE')
+    )
     or country_eligibility_scope not in ('GLOBAL', 'GLOBAL_EXCEPT', 'SPECIFIC')
     or (
         country_eligibility_scope = 'SPECIFIC'
