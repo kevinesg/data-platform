@@ -150,8 +150,8 @@ the unused `raw_payload` column before its merge-sort joins, so the wide
 candidate assembly does not decompress or sort evidence payloads that are not
 part of its output contract. The profile enables the adapter's lightweight-
 delete support; model query settings spill large sort/group operations and cap
-per-query memory. Use `--full-refresh` when a source contract or model schema
-changes.
+per-query memory. Use `--full-refresh` when a source contract, model schema, or
+title-cleaning rule changes.
 
 The publication graph also consumes the versioned
 `wremotely__publication_review` control relation. The private ETL export writes

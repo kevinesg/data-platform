@@ -8,9 +8,6 @@
 
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['dbt_updated_at']) %}
-{% set title_cleanup_version_ready = is_incremental()
-    and relation_has_columns(this, ['title_cleanup_version']) %}
-
 with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__job_publication_status') }}
@@ -26,16 +23,6 @@ with publishable_jobs as (
                 select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
                 from {{ this }}
             )
-            {% if title_cleanup_version_ready %}
-            or candidate_id in (
-                select job_id
-                from {{ this }}
-                where ifNull(title_cleanup_version, '')
-                    != {{ wremotely_title_cleanup_version() }}
-            )
-            {% else %}
-            or 1 = 1
-            {% endif %}
         )
     {% endif %}
 ),
@@ -76,7 +63,6 @@ prepared as (
         , latest_lifecycle_checked_at as lifecycle_checked_at
         , has_lifecycle_recheck
         , publication_status != 'PUBLISHABLE' as is_deleted
-        , {{ wremotely_title_cleanup_version() }} as title_cleanup_version
         , dbt_updated_at as _updated_at
         , latest_observed_at as source_updated_at
         , left(snippet, 1000) as public_snippet
@@ -141,7 +127,6 @@ select
     , raw_employment_type_values
     , raw_employment_type
     , declared_language_tag
-    , title_cleanup_version
     , lifecycle_status
     , lifecycle_checked_at
     , has_lifecycle_recheck

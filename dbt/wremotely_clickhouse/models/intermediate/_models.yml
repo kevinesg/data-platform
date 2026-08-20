@@ -417,7 +417,5 @@ models:
         tests: [not_null, unique]
       - name: employment_types
         tests: [not_null]
-      - name: title_cleanup_version
-        tests: [not_null]
       - name: search_tags
         tests: [not_null]
