@@ -375,7 +375,7 @@ models:
               arguments:
                 values: ['', unreviewed, pending, held, released]
   - name: int_wremotely__publishable_job_facts
-    description: Candidate rows accepted by the ClickHouse publication gate.
+    description: Active candidate rows accepted by the ClickHouse publication gate plus retained deletion tombstones.
     columns:
       - name: job_id
         tests: [not_null, unique]
@@ -394,6 +394,8 @@ models:
           - accepted_values:
               arguments:
                 values: [REMOTE, HYBRID, ONSITE]
+              config:
+                where: "is_deleted = 0"
       - name: country_eligibility_scope
         tests:
           - not_null

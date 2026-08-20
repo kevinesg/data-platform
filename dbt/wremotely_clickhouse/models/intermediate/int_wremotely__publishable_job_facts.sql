@@ -27,7 +27,12 @@ with publishable_jobs as (
                 from {{ this }}
             )
             {% if title_cleanup_version_ready %}
-            or title_cleanup_version != {{ wremotely_title_cleanup_version() }}
+            or candidate_id in (
+                select job_id
+                from {{ this }}
+                where ifNull(title_cleanup_version, '')
+                    != {{ wremotely_title_cleanup_version() }}
+            )
             {% else %}
             or 1 = 1
             {% endif %}
@@ -81,51 +86,7 @@ prepared as (
 title_cleaned as (
     select
         prepared.* except (title)
-        , multiIf(
-            empty(trim(ifNull(title, ''))) or empty(trim(ifNull(company_name, '')))
-                , trim(title)
-            , endsWith(
-                lowerUTF8(trim(title))
-                , concat(' - ', lowerUTF8(trim(company_name)))
-            )
-                , trim(substringUTF8(
-                    trim(title)
-                    , 1
-                    , lengthUTF8(trim(title))
-                        - lengthUTF8(concat(' - ', trim(company_name)))
-                ))
-            , endsWith(
-                lowerUTF8(trim(title))
-                , concat(' – ', lowerUTF8(trim(company_name)))
-            )
-                , trim(substringUTF8(
-                    trim(title)
-                    , 1
-                    , lengthUTF8(trim(title))
-                        - lengthUTF8(concat(' – ', trim(company_name)))
-                ))
-            , endsWith(
-                lowerUTF8(trim(title))
-                , concat(' — ', lowerUTF8(trim(company_name)))
-            )
-                , trim(substringUTF8(
-                    trim(title)
-                    , 1
-                    , lengthUTF8(trim(title))
-                        - lengthUTF8(concat(' — ', trim(company_name)))
-                ))
-            , endsWith(
-                lowerUTF8(trim(title))
-                , concat(' | ', lowerUTF8(trim(company_name)))
-            )
-                , trim(substringUTF8(
-                    trim(title)
-                    , 1
-                    , lengthUTF8(trim(title))
-                        - lengthUTF8(concat(' | ', trim(company_name)))
-                ))
-            , trim(title)
-        ) as title
+        , {{ wremotely_clean_job_title('prepared.title', 'prepared.company_name') }} as title
     from prepared
 ),
 
