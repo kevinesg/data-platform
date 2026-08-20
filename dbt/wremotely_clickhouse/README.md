@@ -157,6 +157,10 @@ timestamps participate
 in the incremental watermark so a decision change reprocesses the affected
 candidate without rebuilding unrelated history. The export and decision sync
 steps are replay-safe and run before the ClickHouse publication signal.
+At the publishable-job boundary, dbt removes bounded repeated trailing company
+suffixes from titles across the supported dash and pipe separators. Active rows
+must use a supported work-arrangement scope; retained deletion tombstones may
+preserve `UNKNOWN` source history because they are emitted only as deletions.
 
 ## Contract parity
 

@@ -23,6 +23,7 @@ COPY dbt_project.yml ./dbt_project.yml
 COPY macros ./macros
 COPY models ./models
 COPY seeds ./seeds
+COPY tests ./tests
 
 ENTRYPOINT ["dbt"]
 CMD ["--help"]
