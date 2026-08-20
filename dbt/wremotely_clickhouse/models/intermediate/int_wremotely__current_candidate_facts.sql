@@ -172,6 +172,7 @@ joined as (
         , coalesce(facts.url, selected.url) as url
         , titles.title
         , titles.title_source
+        , titles.source_updated_at as candidate_title_source_updated_at
         , nullIf(trim(facts.latest_job_fact_raw_company_name), '') as company_name
         , nullIf(trim(facts.latest_job_fact_raw_job_location_text), '')
             as candidate_required_location
@@ -376,6 +377,7 @@ joined as (
         , lifecycle_rechecks.latest_lifecycle_source_record_index
         , lifecycle_rechecks.latest_lifecycle_artifact_sha256
         , country_eligibility.validated_country_eligibility_scope
+        , country_eligibility.dbt_updated_at as country_eligibility_updated_at
         , ifNull(country_eligibility.eligible_country_codes, [])
             as eligible_country_codes
         , ifNull(country_eligibility.excluded_country_codes, [])
@@ -425,6 +427,8 @@ observed as (
             , ifNull(joined.latest_retrieved_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_classified_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_lifecycle_checked_at, toDateTime64('1970-01-01 00:00:00', 3))
+            , ifNull(joined.country_eligibility_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
+            , ifNull(joined.candidate_title_source_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
         ), toDateTime64('1970-01-01 00:00:00', 3)) as latest_observed_at
     from joined
 )
