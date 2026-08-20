@@ -8,9 +8,6 @@
 
 {% set incremental_watermark_ready = is_incremental()
     and relation_has_columns(this, ['dbt_updated_at']) %}
-{% set title_cleanup_version_ready = is_incremental()
-    and relation_has_columns(this, ['title_cleanup_version']) %}
-
 with publishable_jobs as (
     select *
     from {{ ref('int_wremotely__publishable_job_facts') }}
@@ -19,11 +16,6 @@ with publishable_jobs as (
         select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
         from {{ this }}
     )
-    {% if title_cleanup_version_ready %}
-    or title_cleanup_version != {{ wremotely_title_cleanup_version() }}
-    {% else %}
-    or 1 = 1
-    {% endif %}
     {% endif %}
 ),
 
@@ -65,7 +57,6 @@ prepared as (
         , facets.employment_types
         , facets.search_tags
         , jobs.declared_language_tag
-        , jobs.title_cleanup_version
         , jobs.lifecycle_status
         , jobs.lifecycle_checked_at
         , jobs.has_lifecycle_recheck
