@@ -51,6 +51,8 @@ Required values for the scheduled path include:
   `WREMOTELY_CLICKHOUSE_HOST`, `WREMOTELY_CLICKHOUSE_PORT`, and
   `WREMOTELY_CLICKHOUSE_USER`
 - `WREMOTELY_PUBLICATION_TOPIC`
+- `WREMOTELY_PUBLICATION_STATUS_SUBSCRIPTION`, a dedicated pull subscription
+  for worker post-commit receipts
 - `WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS` for Pub/Sub only
 - `PROJECT_ID` for Pub/Sub only
 
@@ -128,10 +130,9 @@ latest successful publication and its control manifest.
 `monitor__wremotely` runs hourly in production and is manual in dev/QA. It
 checks Airflow run freshness, ClickHouse reachability and latest READY
 publication freshness, local publication-manifest agreement, and warehouse or
-artifact filesystem headroom. The authenticated Airflow DAG run page is the
-operator-facing monitoring link.
-
-The monitor reports PostgreSQL publication-ledger convergence as `unverified`
-because the VPS worker currently has no durable post-commit status signal that
-Airflow can read. The monitor must not be treated as proof that PostgreSQL has
-applied the latest publication until that status contract exists.
+artifact filesystem headroom. Its final task consumes a dedicated Pub/Sub
+status subscription and verifies that the latest ClickHouse READY publication
+has a worker receipt written after the PostgreSQL transaction committed. The
+checker keeps the latest accepted receipt in the mounted local control root so
+a quiet monitor interval does not erase the last verified state. The
+authenticated Airflow DAG run page is the operator-facing monitoring link.

@@ -656,6 +656,28 @@ onprem_publication_signal_mounts = [
     ),
 ]
 
+onprem_publication_status_environment = {
+    "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
+    "WREMOTELY_CLICKHOUSE_URL": onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_URL"],
+    "WREMOTELY_CLICKHOUSE_DATABASE": onprem_wremotely_environment[
+        "WREMOTELY_CLICKHOUSE_DATABASE"
+    ],
+    "WREMOTELY_CLICKHOUSE_USER": onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_USER"],
+}
+onprem_publication_status_mounts = [
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS"),
+        target=WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
+        type="bind",
+        read_only=True,
+    ),
+    Mount(
+        source=required_host_path_env("WREMOTELY_ETL_ARTIFACTS_DIR"),
+        target=WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
+        type="bind",
+    ),
+]
+
 onprem_clickhouse_dbt_environment = {
     "WREMOTELY_CLICKHOUSE_DATABASE": optional_env(
         "WREMOTELY_CLICKHOUSE_DATABASE", "wremotely_dev"
@@ -821,6 +843,39 @@ def create_onprem_clickhouse_publication_signal_task(
         environment=onprem_publication_signal_environment,
         mounts=onprem_publication_signal_mounts,
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        pool=WREMOTELY_WAREHOUSE_POOL,
+    )
+
+
+def create_onprem_publication_status_task() -> DockerOperator:
+    return docker_task(
+        task_id="check_postgres_convergence",
+        image=SCRIPTS_IMAGE,
+        entrypoint=["python", "src/publication_status.py"],
+        command=[
+            "--gcp-project",
+            required_env("PROJECT_ID"),
+            "--status-subscription",
+            required_env("WREMOTELY_PUBLICATION_STATUS_SUBSCRIPTION"),
+            "--clickhouse-url",
+            onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_URL"],
+            "--clickhouse-database",
+            onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_DATABASE"],
+            "--clickhouse-user",
+            onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_USER"],
+            "--state-file",
+            f"{WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH}/control/"
+            "postgres-publication-status/latest.json",
+            "--pull-timeout-seconds",
+            optional_env("WREMOTELY_PUBLICATION_STATUS_PULL_TIMEOUT_SECONDS", "5"),
+            "--max-messages",
+            optional_env("WREMOTELY_PUBLICATION_STATUS_MAX_MESSAGES", "100"),
+        ],
+        environment=onprem_publication_status_environment,
+        private_environment=onprem_wremotely_private_environment,
+        mounts=onprem_publication_status_mounts,
+        network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
+        execution_timeout=timedelta(minutes=10),
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
 

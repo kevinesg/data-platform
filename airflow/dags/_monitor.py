@@ -43,14 +43,6 @@ def check_airflow_freshness() -> None:
         )
 
 
-def report_postgres_convergence_gap() -> None:
-    print(
-        "monitor_warning=postgres_publication_convergence_unverified "
-        "reason=the VPS worker commits PostgreSQL over a private boundary but "
-        "does not publish a durable post-commit status signal readable by Airflow"
-    )
-
-
 def _latest_successful_run(dag_id: str) -> dict[str, Any]:
     completed = subprocess.run(
         ["airflow", "dags", "list-runs", dag_id, "--state", "success", "--output", "json"],
