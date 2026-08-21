@@ -413,11 +413,13 @@ It checks:
 - agreement between the latest local publication manifest and ClickHouse; and
 - free bytes and free percentage on the warehouse and artifact filesystems.
 
-The monitor also reports that VPS PostgreSQL convergence is currently
-`unverified`. The publication worker commits PostgreSQL over its private
-boundary, but it does not yet publish a durable post-commit status signal that
-Airflow can read. Do not interpret a green monitor run as proof of PostgreSQL
-ledger convergence until that status contract is implemented.
+The final monitor task consumes the dedicated publication-status subscription
+and verifies that the latest ClickHouse publication has a worker receipt written
+after the PostgreSQL transaction commits. It persists the last accepted receipt
+under the mounted local control root so a quiet interval does not erase the
+last verified state. A green monitor run therefore includes the bounded
+post-commit convergence check; it does not expose PostgreSQL or ClickHouse as a
+public health endpoint.
 
 Configure the production schedule and thresholds in the external environment
 file:

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 from datetime import UTC, datetime
 from typing import Any
+
+from airflow.models import DagRun
+from airflow.utils.state import DagRunState
 
 
 def check_airflow_freshness() -> None:
@@ -44,39 +45,35 @@ def check_airflow_freshness() -> None:
 
 
 def _latest_successful_run(dag_id: str) -> dict[str, Any]:
-    completed = subprocess.run(
-        ["airflow", "dags", "list-runs", dag_id, "--state", "success", "--output", "json"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(f"could not inspect {dag_id} successful runs: {detail}")
-    rows = _parse_json_array(completed.stdout)
-    if not rows:
+    runs = DagRun.find(dag_id=dag_id, state=DagRunState.SUCCESS)
+    if not runs:
         raise RuntimeError(f"{dag_id} has no successful runs")
-    rows.sort(key=_run_timestamp)
-    return rows[-1]
 
-
-def _parse_json_array(output: str) -> list[dict[str, Any]]:
-    lines = output.splitlines()
-    start = next(
-        (index for index, line in enumerate(lines) if line.lstrip().startswith("[")),
-        None,
+    latest = max(
+        runs,
+        key=lambda run: _run_timestamp(
+            {
+                "end_date": run.end_date,
+                "start_date": run.start_date,
+                "logical_date": run.logical_date,
+                "run_after": run.run_after,
+            }
+        ),
     )
-    if start is None:
-        raise RuntimeError("Airflow list-runs output did not contain a JSON array")
-    value = json.loads("\n".join(lines[start:]))
-    if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
-        raise RuntimeError("Airflow list-runs output must be a JSON object array")
-    return value
+    return {
+        "run_id": latest.run_id,
+        "end_date": latest.end_date,
+        "start_date": latest.start_date,
+        "logical_date": latest.logical_date,
+        "run_after": latest.run_after,
+    }
 
 
 def _run_timestamp(row: dict[str, Any]) -> datetime:
     for field in ("end_date", "start_date", "logical_date", "run_after"):
         value = row.get(field)
+        if isinstance(value, datetime):
+            return value.astimezone(UTC)
         if isinstance(value, str) and value.strip():
             normalized = value.strip().replace("Z", "+00:00")
             parsed = datetime.fromisoformat(normalized)
