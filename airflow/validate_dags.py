@@ -18,6 +18,7 @@ from jinja2 import Environment
 EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
 EXPECTED_PROD_LIFECYCLE_SCHEDULE = "30 6,18 * * *"
 EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE = "0 3 * * *"
+EXPECTED_PROD_MONITORING_SCHEDULE = "15 * * * *"
 
 
 def main() -> int:
@@ -108,12 +109,14 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     publication = require_dag(modules, "publish__wremotely_serving")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
     ingestion = require_dag(modules, "etl__wremotely_onprem")
+    monitor = require_dag(modules, "monitor__wremotely")
 
     assert_onprem_ingestion_task_contract(ingestion)
     assert_task_contract(
         artifact_cleanup,
         ["cleanup"],
     )
+    assert_monitor_contract(monitor)
     assert_task_contract(
         lifecycle,
         [
@@ -183,6 +186,14 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             )
     elif lifecycle.schedule is not None:
         raise AssertionError("non-prod lifecycle DAG must be manual")
+    if environment == "prod":
+        if monitor.schedule != EXPECTED_PROD_MONITORING_SCHEDULE:
+            raise AssertionError(
+                "prod Wremotely monitor DAG schedule must be "
+                f"{EXPECTED_PROD_MONITORING_SCHEDULE!r}, got {monitor.schedule!r}"
+            )
+    elif monitor.schedule is not None:
+        raise AssertionError("non-prod Wremotely monitor DAG must be manual")
     if artifact_cleanup.max_active_runs != 1:
         raise AssertionError("artifact cleanup DAG must serialize cleanup runs")
     if publication.schedule is not None:
@@ -233,6 +244,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     ):
         assert_pool(publication, task_id, "wremotely_warehouse")
     assert_pool(clickhouse_build, "dbt_build", "wremotely_warehouse")
+    assert_pool(monitor, "check_clickhouse_and_storage", "wremotely_warehouse")
     assert_pool(ingestion, "crawl", "wremotely_network")
     assert_pool(ingestion, "extract", "wremotely_network")
     for task_id in (
@@ -303,6 +315,23 @@ def require_dag(modules: dict[str, ModuleType], module_name: str) -> DAG:
     if not isinstance(dag, DAG):
         raise AssertionError(f"{module_name} does not expose a DAG named dag")
     return dag
+
+
+def assert_monitor_contract(monitor: DAG) -> None:
+    expected = {
+        "check_airflow_freshness",
+        "check_clickhouse_and_storage",
+        "report_postgres_convergence_gap",
+    }
+    if set(monitor.task_ids) != expected:
+        raise AssertionError("Wremotely monitor DAG task set does not match its contract")
+    downstream = monitor.get_task("report_postgres_convergence_gap").upstream_task_ids
+    if downstream != {"check_airflow_freshness", "check_clickhouse_and_storage"}:
+        raise AssertionError("Wremotely monitor must report convergence after both checks")
+    task = monitor.get_task("check_clickhouse_and_storage")
+    command_text = " ".join(task.command) if isinstance(task.command, list) else task.command
+    if "--step monitor" not in command_text:
+        raise AssertionError("Wremotely monitor must invoke the ETL monitor step")
 
 
 def assert_task_contract(dag: DAG, expected_chain: list[str]) -> None:
