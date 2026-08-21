@@ -122,3 +122,16 @@ operation. The artifact cleanup DAG is filesystem-only, manual in dev/QA, and
 deletes only exact eligible local run directories described by the ETL cleanup
 manifest. Filesystem retention and ClickHouse lifecycle runs must preserve the
 latest successful publication and its control manifest.
+
+## Monitoring
+
+`monitor__wremotely` runs hourly in production and is manual in dev/QA. It
+checks Airflow run freshness, ClickHouse reachability and latest READY
+publication freshness, local publication-manifest agreement, and warehouse or
+artifact filesystem headroom. The authenticated Airflow DAG run page is the
+operator-facing monitoring link.
+
+The monitor reports PostgreSQL publication-ledger convergence as `unverified`
+because the VPS worker currently has no durable post-commit status signal that
+Airflow can read. The monitor must not be treated as proof that PostgreSQL has
+applied the latest publication until that status contract exists.
