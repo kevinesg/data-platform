@@ -119,9 +119,10 @@ ambiguous rather than selecting one silently. Phrase substring matching and
 country bridge expansion are represented in the candidate rollup and
 serving-country bridge. The intermediate country bridge is a read-only view;
 the serving mart materializes only active bridge rows. Country-eligibility
-joins use one thread, bounded semi-joins, and external sort/group spill
-thresholds; the wide current-candidate query has an 8 GiB per-query ceiling so
-it can use additional headroom without changing the server-wide limit. Lifecycle
+joins use one thread, grace-hash join spill, bounded external sort/group/join
+thresholds, and an 8 GiB ceiling on the dbt matching queries. This is a
+per-query dbt setting for the serialized warehouse build, not a server-wide
+default for concurrent serving or interactive queries. Lifecycle
 closure requires one latest `CLOSED` observation or two ordered `TERMINAL`
 observations; missing lifecycle history remains open and is never treated as
 closure. The on-prem Airflow DAG runs this graph after loading local raw

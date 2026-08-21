@@ -5,7 +5,7 @@
     query_settings={
         'max_threads': 2,
         'max_bytes_before_external_sort': 268435456,
-        'max_memory_usage': 1073741824
+        'max_memory_usage': 8589934592
     }
 ) }}
 
