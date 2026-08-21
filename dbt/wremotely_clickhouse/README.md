@@ -119,7 +119,7 @@ ambiguous rather than selecting one silently. Phrase substring matching and
 country bridge expansion are represented in the candidate rollup and
 serving-country bridge. The intermediate country bridge is a read-only view;
 the serving mart materializes only active bridge rows. Country-eligibility
-joins use one thread, grace-hash join spill, bounded external sort/group/join
+joins use one thread, grace-hash join spill, bounded external sort/group
 thresholds, and an 8 GiB ceiling on the dbt matching queries. This is a
 per-query dbt setting for the serialized warehouse build, not a server-wide
 default for concurrent serving or interactive queries. Lifecycle
