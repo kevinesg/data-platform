@@ -18,6 +18,7 @@ the applicable shared setup in [deploy/README.md](../deploy/README.md).
 - [Local Commands](#local-commands)
 - [DAGs](#dags)
 - [Failure Alerts](#failure-alerts)
+- [Production Monitoring](#production-monitoring)
 - [Design Notes](#design-notes)
 
 ## Local Setup
@@ -397,6 +398,43 @@ PY
 
 The manual `python` process adds `/opt/airflow/dags` to `sys.path` because it
 does not run through Airflow's DAG importer.
+
+## Production Monitoring
+
+`monitor__wremotely` is the production-only hourly monitoring DAG. It is
+manual in dev and QA. The Airflow UI run page is the operator-facing monitoring
+link; no public health endpoint is added.
+
+It checks:
+
+- the age of the latest successful `etl__wremotely` run;
+- the age of the latest successful lifecycle and artifact-maintenance runs;
+- ClickHouse reachability and the age of its latest `READY` publication;
+- agreement between the latest local publication manifest and ClickHouse; and
+- free bytes and free percentage on the warehouse and artifact filesystems.
+
+The monitor also reports that VPS PostgreSQL convergence is currently
+`unverified`. The publication worker commits PostgreSQL over its private
+boundary, but it does not yet publish a durable post-commit status signal that
+Airflow can read. Do not interpret a green monitor run as proof of PostgreSQL
+ledger convergence until that status contract is implemented.
+
+Configure the production schedule and thresholds in the external environment
+file:
+
+```dotenv
+WREMOTELY_MONITORING_SCHEDULE='15 * * * *'
+WREMOTELY_MONITOR_MAX_PUBLICATION_AGE_MINUTES=900
+WREMOTELY_MONITOR_MAX_ETL_SUCCESS_AGE_MINUTES=1500
+WREMOTELY_MONITOR_MAX_LIFECYCLE_SUCCESS_AGE_MINUTES=1500
+WREMOTELY_MONITOR_MAX_ARTIFACT_CLEANUP_SUCCESS_AGE_MINUTES=3000
+WREMOTELY_MONITOR_MINIMUM_FREE_PERCENT=10
+WREMOTELY_MONITOR_MINIMUM_FREE_BYTES=10737418240
+```
+
+Use the authenticated Airflow DAG page to inspect the most recent run and task
+logs. A failed freshness, ClickHouse, or filesystem check invokes the existing
+Slack failure callback.
 
 ## Design Notes
 
