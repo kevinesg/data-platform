@@ -7,7 +7,7 @@
         'max_bytes_before_external_sort': 268435456,
         'max_bytes_before_external_group_by': 268435456,
         'join_algorithm': 'grace_hash',
-        'max_memory_usage': 2147483648
+        'max_memory_usage': 8589934592
     }
 ) }}
 
