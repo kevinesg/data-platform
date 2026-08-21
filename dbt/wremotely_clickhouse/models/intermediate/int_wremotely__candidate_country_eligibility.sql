@@ -1,5 +1,7 @@
 {{ config(
-    materialized='table',
+    materialized='incremental',
+    incremental_strategy='delete_insert',
+    unique_key='candidate_id',
     on_schema_change='append_new_columns',
     order_by="(ifNull(candidate_id, ''))",
     query_settings={
