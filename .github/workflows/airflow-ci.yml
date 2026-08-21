@@ -105,6 +105,7 @@ jobs:
               -e WREMOTELY_PUBLICATION_HOLD_POLICY=/tmp/wremotely-publication-hold-policy.md \
               -e WREMOTELY_HANDOFF_DATASET=handoff_ci \
               -e WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications-ci \
+              -e WREMOTELY_PUBLICATION_STATUS_SUBSCRIPTION=wremotely-serving-publication-status-ci-monitor \
               -e WREMOTELY_GCS_BUCKET=ci-bucket \
               -e WREMOTELY_GCS_PREFIX=wremotely \
               -e WREMOTELY_BIGQUERY_LOCATION=US \

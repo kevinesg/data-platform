@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG
 
-from _monitor import check_airflow_freshness, report_postgres_convergence_gap
+from _monitor import check_airflow_freshness
 from _wremotely import (
     ENVIRONMENT,
     WREMOTELY_DOCKER_NETWORK_MODE,
@@ -21,6 +21,7 @@ from _wremotely import (
     onprem_wremotely_mounts,
     onprem_wremotely_private_environment,
     optional_env,
+    create_onprem_publication_status_task,
 )
 
 MONITOR_RUN_ID = f"{WREMOTELY_DAG_RUN_TIMESTAMP}-wremotely-monitor"
@@ -69,10 +70,6 @@ with DAG(
         network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
         pool=WREMOTELY_WAREHOUSE_POOL,
     )
-    report_convergence_gap = PythonOperator(
-        task_id="report_postgres_convergence_gap",
-        python_callable=report_postgres_convergence_gap,
-        execution_timeout=timedelta(minutes=5),
-    )
+    check_convergence = create_onprem_publication_status_task()
 
-    [check_freshness, check_warehouse] >> report_convergence_gap
+    [check_freshness, check_warehouse] >> check_convergence

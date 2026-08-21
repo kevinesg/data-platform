@@ -311,6 +311,21 @@ Runtime configuration comes from environment variables or an environment file
 stored outside the repository. Do not commit `.env` files, credentials, source
 exports, or warehouse data.
 
+### Wremotely publication convergence check
+
+The `publication_status.py` command is used by the on-prem Wremotely monitor.
+It reads the latest `READY` publication ID from the private ClickHouse HTTP
+endpoint, pulls post-commit receipts from the dedicated Pub/Sub status
+subscription, and atomically records the latest accepted receipt under the
+mounted artifact control root. If the subscription is quiet, the last matching
+checkpoint is reused; a different or missing publication fails the check. The
+worker receipt is emitted only after its PostgreSQL transaction commits.
+
+Create the status topic, monitor subscription, and least-privilege IAM bindings
+with the serving worker runbook before enabling the production monitor. Keep
+the status subscription dedicated to this checker so another consumer cannot
+acknowledge its receipts.
+
 ## Docker Runtime
 
 Build the scripts image from the repository root:

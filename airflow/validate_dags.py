@@ -321,11 +321,11 @@ def assert_monitor_contract(monitor: DAG) -> None:
     expected = {
         "check_airflow_freshness",
         "check_clickhouse_and_storage",
-        "report_postgres_convergence_gap",
+        "check_postgres_convergence",
     }
     if set(monitor.task_ids) != expected:
         raise AssertionError("Wremotely monitor DAG task set does not match its contract")
-    downstream = monitor.get_task("report_postgres_convergence_gap").upstream_task_ids
+    downstream = monitor.get_task("check_postgres_convergence").upstream_task_ids
     if downstream != {"check_airflow_freshness", "check_clickhouse_and_storage"}:
         raise AssertionError("Wremotely monitor must report convergence after both checks")
     task = monitor.get_task("check_clickhouse_and_storage")
