@@ -2,7 +2,8 @@
 
 The scheduled production DAG is `etl__wremotely`. A separate
 `crawl__wremotely_onprem` DAG prepares six deterministic source shards every
-two hours, merges them atomically, and publishes the latest complete crawl
+two hours, runs those shards concurrently in the dedicated `wremotely_crawl`
+pool, merges them atomically, and publishes the latest complete crawl
 generation. `etl__wremotely` pins that generation before local filesystem
 landing and ClickHouse raw loading, then
 hands the run to a serialized publication DAG for the isolated ClickHouse dbt
@@ -48,6 +49,12 @@ Required values for the scheduled path include:
 
 - `WREMOTELY_CRAWL_SCHEDULE` (production default: `0 */2 * * *`)
 - `WREMOTELY_SOURCE_CRAWL_SHARD_COUNT` (production default: `6`)
+
+The production crawl commands use `--source-crawl-max-job-urls 0` (no
+artificial per-run URL cap), `--source-crawl-max-pages-per-source 15`, and
+`--source-crawl-max-links-per-page 1000`. The private ETL applies narrower
+reviewed limits for source families that do not need all 15 pages, while
+preserving explicit smaller smoke-test limits.
 
 - `DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE`
 - `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`

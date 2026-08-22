@@ -38,6 +38,7 @@ PUBLICATION_TRIGGER_TASK_EXECUTION_TIMEOUT = timedelta(hours=12)
 TASK_RETRIES = 2
 TASK_RETRY_DELAY = timedelta(minutes=5)
 WREMOTELY_NETWORK_POOL = "wremotely_network"
+WREMOTELY_CRAWL_POOL = "wremotely_crawl"
 WREMOTELY_WAREHOUSE_POOL = "wremotely_warehouse"
 WREMOTELY_PUBLICATION_DAG_ID = "publish__wremotely_serving"
 WREMOTELY_REFRESH_REQUEST_VARIABLE = "wremotely_refresh_request"
