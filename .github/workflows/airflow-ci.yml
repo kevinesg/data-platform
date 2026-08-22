@@ -117,3 +117,12 @@ jobs:
               -e WREMOTELY_LOCAL_LLM_TIMEOUT_SECONDS=60 \
               data-platform-airflow:ci /opt/airflow/validate_dags.py
           done
+
+      - name: Run Airflow monitor regression tests
+        run: |
+          docker run --rm \
+            --entrypoint python \
+            -e PYTHONPATH=/opt/airflow/dags \
+            -v "$GITHUB_WORKSPACE/airflow/tests:/tmp/airflow-tests:ro" \
+            data-platform-airflow:ci \
+            -m unittest discover -s /tmp/airflow-tests -p 'test_*.py'
