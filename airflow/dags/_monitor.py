@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
-from airflow.models import DagRun
-from airflow.utils.state import DagRunState
+from airflow.api_fastapi.app import get_auth_manager, init_auth_manager
+from airflow.api_fastapi.auth.managers.simple.user import SimpleAuthManagerUser
 
 
 def check_airflow_freshness() -> None:
@@ -45,28 +48,42 @@ def check_airflow_freshness() -> None:
 
 
 def _latest_successful_run(dag_id: str) -> dict[str, Any]:
-    runs = DagRun.find(dag_id=dag_id, state=DagRunState.SUCCESS)
+    runs = _list_successful_runs(dag_id)
     if not runs:
         raise RuntimeError(f"{dag_id} has no successful runs")
 
-    latest = max(
-        runs,
-        key=lambda run: _run_timestamp(
-            {
-                "end_date": run.end_date,
-                "start_date": run.start_date,
-                "logical_date": run.logical_date,
-                "run_after": run.run_after,
-            }
-        ),
-    )
+    latest = max(runs, key=_run_timestamp)
     return {
-        "run_id": latest.run_id,
-        "end_date": latest.end_date,
-        "start_date": latest.start_date,
-        "logical_date": latest.logical_date,
-        "run_after": latest.run_after,
+        "run_id": latest.get("dag_run_id") or latest.get("run_id"),
+        "end_date": latest.get("end_date"),
+        "start_date": latest.get("start_date"),
+        "logical_date": latest.get("logical_date"),
+        "run_after": latest.get("run_after"),
     }
+
+
+def _list_successful_runs(dag_id: str) -> list[dict[str, Any]]:
+    """Read DAG history through Airflow's public API (ORM is forbidden in Airflow 3 tasks)."""
+    init_auth_manager()
+    token = get_auth_manager().generate_jwt(
+        user=SimpleAuthManagerUser(username="wremotely-monitor", role="VIEWER"),
+        expiration_time_in_seconds=60,
+    )
+    base_url = os.getenv("WREMOTELY_AIRFLOW_API_URL", "http://api-server:8080/api/v2").rstrip("/")
+    query = urlencode({"state": "success", "limit": 100, "order_by": "-end_date"})
+    request = Request(
+        f"{base_url}/dags/{quote(dag_id, safe='')}/dagRuns?{query}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.load(response)
+    except Exception as exc:
+        raise RuntimeError(f"could not inspect {dag_id} successful runs through Airflow API: {exc}") from exc
+    runs = payload.get("dag_runs", [])
+    if not isinstance(runs, list):
+        raise RuntimeError(f"Airflow API returned an invalid run list for {dag_id}")
+    return [run for run in runs if isinstance(run, dict)]
 
 
 def _run_timestamp(row: dict[str, Any]) -> datetime:
