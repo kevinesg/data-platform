@@ -1,7 +1,10 @@
 # wremotely Airflow runbook
 
-The scheduled production DAG is `etl__wremotely`. It runs the private ETL
-container through local filesystem landing and ClickHouse raw loading, then
+The scheduled production DAG is `etl__wremotely`. A separate
+`crawl__wremotely_onprem` DAG prepares six deterministic source shards every
+two hours, merges them atomically, and publishes the latest complete crawl
+generation. `etl__wremotely` pins that generation before local filesystem
+landing and ClickHouse raw loading, then
 hands the run to a serialized publication DAG for the isolated ClickHouse dbt
 project, immutable publication snapshot, and final Pub/Sub signal containing
 only the publication identifier.
@@ -43,6 +46,9 @@ environment image manifest as
 
 Required values for the scheduled path include:
 
+- `WREMOTELY_CRAWL_SCHEDULE` (production default: `0 */2 * * *`)
+- `WREMOTELY_SOURCE_CRAWL_SHARD_COUNT` (production default: `6`)
+
 - `DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE`
 - `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`
 - `WREMOTELY_ETL_ARTIFACTS_DIR`
@@ -69,6 +75,7 @@ $WREMOTELY_WAREHOUSE_ROOT/
     raw/
     curated/
   control/
+    source-crawl/latest.json
     landing/<landing-run-id>/_SUCCESS
     clickhouse-publication/<snapshot-run-id>/manifest.json
 ```
@@ -79,7 +86,9 @@ classification, and dbt target artifacts needed for replay and diagnosis.
 
 ## Run and validate
 
-The ingestion DAG is scheduled in production from `ETL__WREMOTELY_SCHEDULE`, the
+The crawl generation DAG is scheduled in production from
+`WREMOTELY_CRAWL_SCHEDULE`; the ingestion DAG is scheduled from
+`ETL__WREMOTELY_SCHEDULE`, the
 lifecycle DAG from `WREMOTELY_LIFECYCLE_SCHEDULE`, and artifact cleanup from
 `WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE`; all three remain manual in dev and QA.
 Before enabling them, validate the ClickHouse service and
@@ -101,15 +110,24 @@ signal.
 
 For a bounded manual smoke, use Airflow's UI or CLI to trigger
 `etl__wremotely` in dev/QA after the ClickHouse service is healthy. Do not run
-the legacy GCP DAGs to validate the new path.
+the legacy GCP DAGs to validate the new path. The first normal ingestion run
+requires one successful `crawl__wremotely_onprem` generation so that
+`control/source-crawl/latest.json` exists; inspect that pointer and its merged
+run marker before enabling the normal ingestion schedule.
 
 ## Failure and replay boundaries
 
-Every task derives its run identity from the Airflow logical date. Retries and
+Every crawl shard and EL task derives its run identity from the Airflow logical
+date. Retries and
 task clears therefore reuse the same artifact identity. Clear only the failed
 task and its downstream tasks after checking the corresponding `_SUCCESS` or
 manifest marker; rerun from crawl when the source registry or crawl inputs
 changed.
+
+Normal ingestion pins the latest complete generation. An explicit full refresh
+from the `crawl` boundary still runs the crawl task in the ingestion DAG and
+does not advance the detached-generation pointer until the separate generation
+publish step succeeds.
 
 The ClickHouse dbt task writes a run-specific target directory. A failed dbt
 build does not publish a snapshot, and the Pub/Sub signal cannot run unless the
@@ -123,7 +141,8 @@ The former GCS cleanup and BigQuery lifecycle paths are not part of normal
 operation. The artifact cleanup DAG is filesystem-only, manual in dev/QA, and
 deletes only exact eligible local run directories described by the ETL cleanup
 manifest. Filesystem retention and ClickHouse lifecycle runs must preserve the
-latest successful publication and its control manifest.
+latest successful publication, its control manifest, and the crawl generation
+referenced by `control/source-crawl/latest.json`.
 
 ## Monitoring
 

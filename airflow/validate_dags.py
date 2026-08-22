@@ -16,6 +16,7 @@ from docker.errors import NotFound as DockerNotFound
 from jinja2 import Environment
 
 EXPECTED_PROD_INGESTION_SCHEDULE = "0 */12 * * *"
+EXPECTED_PROD_CRAWL_SCHEDULE = "0 */2 * * *"
 EXPECTED_PROD_LIFECYCLE_SCHEDULE = "30 6,18 * * *"
 EXPECTED_PROD_ARTIFACT_CLEANUP_SCHEDULE = "0 3 * * *"
 EXPECTED_PROD_MONITORING_SCHEDULE = "15 * * * *"
@@ -109,9 +110,31 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     publication = require_dag(modules, "publish__wremotely_serving")
     clickhouse_build = require_dag(modules, "build__wremotely_clickhouse")
     ingestion = require_dag(modules, "etl__wremotely_onprem")
+    crawl_generation = require_dag(modules, "crawl__wremotely_onprem")
     monitor = require_dag(modules, "monitor__wremotely")
 
     assert_onprem_ingestion_task_contract(ingestion)
+    expected_crawl_generation_tasks = {
+        *(f"crawl_shard_{index}" for index in range(6)),
+        "merge_crawl_generation",
+        "publish_crawl_generation",
+    }
+    if set(crawl_generation.task_ids) != expected_crawl_generation_tasks:
+        raise AssertionError("crawl generation DAG task set does not match its contract")
+    if crawl_generation.max_active_runs != 1:
+        raise AssertionError("crawl generation DAG must serialize generations")
+    for index in range(6):
+        assert_pool(crawl_generation, f"crawl_shard_{index}", "wremotely_network")
+    for task_id in ("merge_crawl_generation", "publish_crawl_generation"):
+        assert_pool(crawl_generation, task_id, "wremotely_warehouse")
+    if crawl_generation.get_task("merge_crawl_generation").upstream_task_ids != {
+        f"crawl_shard_{index}" for index in range(6)
+    }:
+        raise AssertionError("crawl generation merge must wait for every shard")
+    if crawl_generation.get_task("publish_crawl_generation").upstream_task_ids != {
+        "merge_crawl_generation"
+    }:
+        raise AssertionError("crawl generation pointer must publish after merge")
     assert_task_contract(
         artifact_cleanup,
         ["cleanup"],
@@ -170,6 +193,14 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
             )
     elif ingestion.schedule is not None:
         raise AssertionError("non-prod ingestion DAG must be manual")
+    if environment == "prod":
+        if crawl_generation.schedule != EXPECTED_PROD_CRAWL_SCHEDULE:
+            raise AssertionError(
+                "prod crawl generation DAG schedule must be "
+                f"{EXPECTED_PROD_CRAWL_SCHEDULE!r}, got {crawl_generation.schedule!r}"
+            )
+    elif crawl_generation.schedule is not None:
+        raise AssertionError("non-prod crawl generation DAG must be manual")
     if environment == "prod":
         if artifact_cleanup.schedule != "0 3 * * *":
             raise AssertionError(
