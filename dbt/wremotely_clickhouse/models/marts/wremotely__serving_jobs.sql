@@ -27,6 +27,7 @@ search_facets as (
 prepared as (
     select
         jobs.job_id
+        , lower(hex(MD5(ifNull(jobs.job_id, '')))) as public_id
         , jobs.canonical_url
         , jobs.source_url
         , jobs.title

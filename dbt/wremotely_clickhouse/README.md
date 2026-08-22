@@ -98,6 +98,11 @@ current candidate facts, publication eligibility, publishable job facts,
 search facets, serving jobs, companies, the serving-country bridge, and a
 deterministic publication manifest. The model and seed tests run against real
 raw relations.
+
+The pre-publication `wremotely__serving_jobs` mart carries both `job_id` and a
+deterministic 32-character lowercase `public_id`. The public alias is derived
+from the internal job identity and is intended for shareable URLs; joins,
+incremental keys, and replay logic continue to use `job_id`.
 The current-candidate-facts model filters each wide source projection through
 the bounded changed-candidate key set before joining the retained rows, so an
 incremental run does not sort or materialize unrelated source history.
