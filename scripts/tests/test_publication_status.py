@@ -9,7 +9,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from publication_status import verify_publication_status  # noqa: E402
+from publication_status import (  # noqa: E402
+    resolve_clickhouse_password,
+    verify_publication_status,
+)
 
 PUBLICATION_ID = "wremotely-" + "a" * 64
 
@@ -53,6 +56,13 @@ def status_message(status: str = "applied") -> bytes:
             "reported_at": "2026-08-21T00:00:00+00:00",
         }
     ).encode()
+
+
+def test_resolves_password_from_private_environment(monkeypatch) -> None:
+    monkeypatch.setenv("WREMOTELY_CLICKHOUSE_PASSWORD", "private-secret")
+
+    assert resolve_clickhouse_password(None) == "private-secret"
+    assert resolve_clickhouse_password("explicit-secret") == "explicit-secret"
 
 
 def test_verifies_matching_receipt_and_persists_state(tmp_path: Path) -> None:

@@ -20,6 +20,13 @@ ACCEPTED_STATUSES = frozenset({"applied", "already_applied", "reconciled"})
 MAX_MESSAGES = 100
 
 
+def resolve_clickhouse_password(value: str | None) -> str | None:
+    """Use the private task environment when no command-line value is supplied."""
+    if value is not None:
+        return value
+    return os.environ.get("WREMOTELY_CLICKHOUSE_PASSWORD") or None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify the latest ClickHouse publication has a post-commit worker receipt."
@@ -29,7 +36,9 @@ def main() -> int:
     parser.add_argument("--clickhouse-url", required=True)
     parser.add_argument("--clickhouse-database", required=True)
     parser.add_argument("--clickhouse-user", required=True)
-    parser.add_argument("--clickhouse-password", default=None)
+    parser.add_argument(
+        "--clickhouse-password", default=resolve_clickhouse_password(None)
+    )
     parser.add_argument("--state-file", required=True, type=Path)
     parser.add_argument("--pull-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--max-messages", type=int, default=MAX_MESSAGES)
