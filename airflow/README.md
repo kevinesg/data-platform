@@ -407,7 +407,9 @@ link; no public health endpoint is added.
 
 It checks:
 
-- the age of the latest successful `etl__wremotely` run;
+- the age of the latest successful `etl__wremotely` run, queried through
+  Airflow's authenticated read-only API rather than direct metadata-database
+  access (which Airflow 3 task code forbids);
 - the age of the latest successful lifecycle and artifact-maintenance runs;
 - ClickHouse reachability and the age of its latest `READY` publication;
 - agreement between the latest local publication manifest and ClickHouse; and
