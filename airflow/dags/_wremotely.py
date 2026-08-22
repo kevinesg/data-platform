@@ -210,6 +210,21 @@ def refreshable_onprem_etl_command(step: str, *args: str) -> str:
     return f"{serialized[:-1]}{{% if {condition} %}}, \"--full-refresh\"{{% endif %}}]"
 
 
+def refreshable_onprem_crawl_command(
+    crawl_args: list[str],
+    pin_args: list[str],
+) -> str:
+    """Run a full crawl only when requested; otherwise pin the latest generation."""
+    condition = (
+        "'crawl' in "
+        "(ti.xcom_pull(task_ids='read_refresh_request') or {}).get('full_refresh_steps', [])"
+    )
+    return (
+        f"{{% if {condition} %}}{json.dumps([*crawl_args, '--full-refresh'])}"
+        f"{{% else %}}{json.dumps(pin_args)}{{% endif %}}"
+    )
+
+
 def _run_timestamp(logical_date: Any, run_after: Any) -> str:
     if logical_date is not None:
         return logical_date.strftime("%Y%m%dT%H%M%SZ")
