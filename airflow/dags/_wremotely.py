@@ -657,7 +657,6 @@ onprem_publication_signal_mounts = [
 ]
 
 onprem_publication_status_environment = {
-    **onprem_wremotely_private_environment,
     "GOOGLE_APPLICATION_CREDENTIALS": WREMOTELY_ETL_CREDENTIALS_CONTAINER_PATH,
     "WREMOTELY_CLICKHOUSE_URL": onprem_wremotely_environment["WREMOTELY_CLICKHOUSE_URL"],
     "WREMOTELY_CLICKHOUSE_DATABASE": onprem_wremotely_environment[
