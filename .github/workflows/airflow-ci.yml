@@ -68,6 +68,7 @@ jobs:
               -e ENVIRONMENT="$environment" \
               -e ETL__PERSONAL_FINANCE_SCHEDULE='0 20 * * *' \
               -e ETL__WREMOTELY_SCHEDULE='0 */12 * * *' \
+              -e WREMOTELY_CRAWL_SCHEDULE='0 */2 * * *' \
               -e WREMOTELY_LIFECYCLE_SCHEDULE='30 6,18 * * *' \
               -e WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE='0 3 * * *' \
               -e WREMOTELY_MONITORING_SCHEDULE='15 * * * *' \
