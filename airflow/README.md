@@ -291,12 +291,15 @@ retained target contains the native dbt retry manifest; invoke the ClickHouse
 image's `run_and_retain_results.py --retry-target-path` mode to retry only the
 failed nodes and publish a new successful result atomically.
 
-Airflow initialization creates one-slot `wremotely_network` and
-`wremotely_warehouse` pools. The first prevents separate DAG runs from scraping
-concurrently outside the private runtime's per-domain controls. The second
-prevents raw loads, dbt builds, and snapshot mutations from overlapping. The
-canonical ingestion DAG also has `max_active_runs=1`, which serializes complete
-ClickHouse publication runs.
+Airflow initialization creates a one-slot `wremotely_network` pool, a
+`wremotely_crawl` pool with one slot per configured detached crawl shard, and a
+one-slot `wremotely_warehouse` pool. The network pool prevents extraction and
+lifecycle recheck tasks from scraping concurrently across DAGs outside the
+private runtime's per-domain controls. The crawl pool lets the independent
+source shards run concurrently while the shard count remains an explicit
+capacity limit. The warehouse pool prevents raw loads, dbt builds, and snapshot
+mutations from overlapping. The canonical ingestion DAG also has
+`max_active_runs=1`, which serializes complete ClickHouse publication runs.
 The packaged `validate_dags.py` command is the reusable CI contract check for
 DAG imports, required task edges, pool assignments, scheduled and manual run
 identity rendering, and publication command rendering.

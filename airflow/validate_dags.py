@@ -124,7 +124,7 @@ def validate_wremotely_dags(modules: dict[str, ModuleType]) -> None:
     if crawl_generation.max_active_runs != 1:
         raise AssertionError("crawl generation DAG must serialize generations")
     for index in range(6):
-        assert_pool(crawl_generation, f"crawl_shard_{index}", "wremotely_network")
+        assert_pool(crawl_generation, f"crawl_shard_{index}", "wremotely_crawl")
     for task_id in ("merge_crawl_generation", "publish_crawl_generation"):
         assert_pool(crawl_generation, task_id, "wremotely_warehouse")
     if crawl_generation.get_task("merge_crawl_generation").upstream_task_ids != {

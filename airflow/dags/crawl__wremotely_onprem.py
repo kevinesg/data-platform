@@ -7,10 +7,10 @@ from airflow.sdk import DAG
 from _wremotely import (
     APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
     ENVIRONMENT,
+    WREMOTELY_CRAWL_POOL,
     WREMOTELY_DAG_RUN_TIMESTAMP,
     WREMOTELY_DOCKER_NETWORK_MODE,
     WREMOTELY_ETL_IMAGE,
-    WREMOTELY_NETWORK_POOL,
     WREMOTELY_OUTPUT_ROOT_CONTAINER_PATH,
     WREMOTELY_WAREHOUSE_POOL,
     dag_schedule,
@@ -69,6 +69,10 @@ with DAG(
                     "0",
                     "--source-crawl-max-job-urls",
                     "0",
+                    "--source-crawl-max-pages-per-source",
+                    "15",
+                    "--source-crawl-max-links-per-page",
+                    "1000",
                     "--source-crawl-shard-count",
                     SHARD_COUNT,
                     "--source-crawl-shard-index",
@@ -93,7 +97,7 @@ with DAG(
                 mounts=onprem_wremotely_mounts,
                 execution_timeout=CRAWL_TASK_EXECUTION_TIMEOUT,
                 network_mode=WREMOTELY_DOCKER_NETWORK_MODE,
-                pool=WREMOTELY_NETWORK_POOL,
+                pool=WREMOTELY_CRAWL_POOL,
             )
         )
 
