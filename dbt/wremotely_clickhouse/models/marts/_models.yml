@@ -6,6 +6,8 @@ models:
     columns:
       - name: job_id
         tests: [not_null, unique]
+      - name: public_id
+        tests: [not_null, unique]
       - name: canonical_url
         tests: [not_null]
       - name: source_url
