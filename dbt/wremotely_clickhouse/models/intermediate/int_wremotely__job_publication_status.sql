@@ -34,6 +34,24 @@ candidate_facts as (
             from {{ this }}
         )
     )
+    or (
+        lowerUTF8(ifNull(facts.latest_job_fact_source_platform_guess, '')) = 'ashby'
+        and (
+            empty(trim(replaceRegexpAll(
+                ifNull(facts.job_description, '')
+                , '<[^>]*>'
+                , ''
+            )))
+            or match(
+                trim(replaceRegexpAll(
+                    ifNull(facts.job_description, '')
+                    , '<[^>]*>'
+                    , ''
+                ))
+                , '^https?://[^[:space:]]+$'
+            )
+        )
+    )
     {% endif %}
 ),
 
