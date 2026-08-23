@@ -985,7 +985,8 @@ env_file = Path(os.environ["DATA_PLATFORM_ENV_FILE"])
 home = Path.home()
 
 fixed = {
-    "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "0 */2 * * *",
+    "ETL__PERSONAL_FINANCE_SCHEDULE": "" if environment == "qa" else "35 * * * *",
+    "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "50 */2 * * *",
     "WREMOTELY_LIFECYCLE_SCHEDULE": "" if environment == "qa" else "30 6,18 * * *",
     "WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE": "" if environment == "qa" else "0 3 * * *",
     "WREMOTELY_HANDOFF_DATASET": "handoff",
@@ -997,6 +998,8 @@ fixed = {
     "WREMOTELY_PUBLICATION_HOLD_POLICY": str(
         home / "secrets" / "wremotely-etl" / environment / "publication-hold-policy.md"
     ),
+    # Retained for explicit historical migration/recovery commands only; the
+    # scheduled Wremotely path uses the local filesystem and ClickHouse.
     "WREMOTELY_GCS_BUCKET": f"kevinesg-{environment}-wremotely-etl-landing-{environment}",
     "WREMOTELY_GCS_PREFIX": "wremotely",
     "WREMOTELY_BIGQUERY_LOCATION": "US",
@@ -1363,8 +1366,8 @@ PROJECT_ID=kevinesg-prod
 PERSONAL_FINANCE_GCS_BUCKET=kevinesg-prod-data-platform-landing
 SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/scripts-service-account.json
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/dbt-service-account.json
-ETL__PERSONAL_FINANCE_SCHEDULE=<prod cron or preset schedule>
-ETL__WREMOTELY_SCHEDULE='0 */2 * * *'
+ETL__PERSONAL_FINANCE_SCHEDULE='35 * * * *'
+ETL__WREMOTELY_SCHEDULE='50 */2 * * *'
 WREMOTELY_LIFECYCLE_SCHEDULE='30 6,18 * * *'
 WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE='0 3 * * *'
 DBT_TARGET=prod
@@ -1375,6 +1378,8 @@ WREMOTELY_PUBLICATION_TOPIC=wremotely-serving-publications
 WREMOTELY_ETL_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/wremotely-etl/prod/google-application-credentials.json
 WREMOTELY_ETL_ARTIFACTS_DIR=/home/<user>/prod/wremotely-etl-artifacts
 WREMOTELY_PUBLICATION_HOLD_POLICY=/home/<user>/secrets/wremotely-etl/prod/publication-hold-policy.md
+# Legacy Wremotely migration/recovery values; not read by the scheduled
+# filesystem/ClickHouse path.
 WREMOTELY_GCS_BUCKET=kevinesg-prod-wremotely-etl-landing-prod
 WREMOTELY_GCS_PREFIX=wremotely
 WREMOTELY_BIGQUERY_LOCATION=US
@@ -1389,9 +1394,9 @@ Also replace all generated Airflow/Postgres passwords and secrets. Keep
 `PERSONAL_FINANCE_GCS_PREFIX=personal_finance`. Before validating the runtime,
 create the wremotely service-account credential, publication-hold policy, and
 artifacts directory at the configured paths.
-Prod DAG import requires the personal-finance and ClickHouse Wremotely
-schedule values because prod is the scheduled environment. The legacy
-Wremotely GCP lifecycle and artifact-cleanup schedules must remain unset.
+Prod DAG import requires the personal-finance and ClickHouse Wremotely schedule
+values because prod is the scheduled environment. Filesystem artifact cleanup
+is active; only legacy GCP ingestion/lifecycle schedules should remain unset.
 
 Useful host values:
 

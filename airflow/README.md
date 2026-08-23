@@ -404,7 +404,7 @@ does not run through Airflow's DAG importer.
 
 ## Production Monitoring
 
-`monitor__wremotely` is the production-only hourly monitoring DAG. It is
+`monitor__wremotely` is the production-only daily monitoring DAG. It is
 manual in dev and QA. The Airflow UI run page is the operator-facing monitoring
 link; no public health endpoint is added.
 
@@ -430,7 +430,7 @@ Configure the production schedule and thresholds in the external environment
 file:
 
 ```dotenv
-WREMOTELY_MONITORING_SCHEDULE='15 * * * *'
+WREMOTELY_MONITORING_SCHEDULE='0 3 * * *'
 WREMOTELY_MONITOR_MAX_PUBLICATION_AGE_MINUTES=900
 WREMOTELY_MONITOR_MAX_ETL_SUCCESS_AGE_MINUTES=1500
 WREMOTELY_MONITOR_MAX_LIFECYCLE_SUCCESS_AGE_MINUTES=1500
