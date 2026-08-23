@@ -56,6 +56,16 @@ candidate_facts as (
                 ))
                 , '^https?://[^[:space:]]+$'
             )
+            or lowerUTF8(replaceAll(trim(replaceRegexpAll(
+                ifNull(facts.job_description, '')
+                , '<[^>]*>'
+                , ''
+            )), '&amp;', '&')) = lowerUTF8(trim(ifNull(facts.title, '')))
+            or lowerUTF8(trim(replaceRegexpAll(
+                ifNull(facts.job_description, '')
+                , '<[^>]*>'
+                , ''
+            ))) in ('test', 'test only', 'testing', 'tbd', 'coming soon')
         )
     )
     {% endif %}
@@ -108,6 +118,16 @@ evaluated as (
                     ))
                     , '^https?://[^[:space:]]+$'
                 )
+                or lowerUTF8(replaceAll(trim(replaceRegexpAll(
+                    ifNull(facts.job_description, '')
+                    , '<[^>]*>'
+                    , ''
+                )), '&amp;', '&')) = lowerUTF8(trim(ifNull(facts.title, '')))
+                or lowerUTF8(trim(replaceRegexpAll(
+                    ifNull(facts.job_description, '')
+                    , '<[^>]*>'
+                    , ''
+                ))) in ('test', 'test only', 'testing', 'tbd', 'coming soon')
             )
         ) as has_ashby_missing_description
         , (
