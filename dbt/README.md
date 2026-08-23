@@ -42,7 +42,7 @@ Follow this file in order for dbt component setup:
 
 ## Project Layout
 
-The component contains two domain-owned projects that run independently while
+The component contains domain-owned projects that run independently while
 sharing one locked Python runtime and one environment-driven profile template:
 
 ```text
@@ -52,15 +52,17 @@ dbt/
   profiles.yml.example
 ```
 
-Both projects currently target BigQuery. Personal finance remains on BigQuery;
-future wremotely warehouse work belongs inside `dbt/wremotely` and must not add
-a dependency on the personal-finance graph.
+`personal_finance` remains the active BigQuery project. Wremotely production
+uses the separate `wremotely_clickhouse` project, whose sources, models, tests,
+and publication relations target the on-prem ClickHouse warehouse. The legacy
+`wremotely` BigQuery project is retained only for controlled migration or
+historical recovery and is not part of normal Wremotely scheduling.
 
-The migration has a separate, pinned ClickHouse compatibility harness under
+The active Wremotely project is the separate, pinned ClickHouse project under
 [`wremotely_clickhouse/`](wremotely_clickhouse/). It does not share the Python
 runtime or profile with the BigQuery projects. Follow its
 [`README.md`](wremotely_clickhouse/README.md) for the local validation command;
-do not use it as an Airflow or production deployment path yet.
+Airflow invokes its immutable image in dev and production.
 
 ![dbt warehouse layer flow](../assets/diagrams/dbt-layer.svg)
 

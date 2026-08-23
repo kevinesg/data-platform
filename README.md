@@ -48,8 +48,10 @@ the core workflow moving and are documented as temporary.
 The platform is developed vertically so each boundary is validated before the
 next component depends on it:
 
-1. scripts source extraction and raw loading
-2. dbt transformations and tests
+1. scripts source extraction and raw loading (filesystem/ClickHouse for
+   Wremotely; GCS/BigQuery remains for personal_finance)
+2. dbt transformations and tests (ClickHouse Wremotely project or BigQuery
+   personal_finance project)
 3. scripts and dbt runtime images
 4. Airflow orchestration
 5. CI for implemented components

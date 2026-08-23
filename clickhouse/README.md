@@ -140,7 +140,8 @@ secret or rebuilding the image.
 This component does not grant public access or provision the private VPS
 publication-read route and reader grants. The scheduled `etl__wremotely` DAG
 owns the on-prem ETL and Pub/Sub publication signal; this service remains the
-local ClickHouse boundary it consumes. The legacy GCP wremotely DAG is kept
-only for controlled recovery and is not part of normal production operation.
-Production authority still requires reconciled data, backup/restore evidence,
-failure recovery, publication comparison, and a bounded rollback window.
+local ClickHouse boundary it consumes. The legacy GCP Wremotely DAG is retained
+only for controlled migration or historical recovery and is not part of normal
+production operation. ClickHouse is the current Wremotely warehouse and
+publication authority. A verified ClickHouse backup/restore procedure is later
+hardening, not a prerequisite for the active path.

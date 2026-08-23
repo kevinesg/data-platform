@@ -165,7 +165,7 @@ referenced by `control/source-crawl/latest.json`.
 
 ## Monitoring
 
-`monitor__wremotely` runs hourly in production and is manual in dev/QA. It
+`monitor__wremotely` runs once daily in production and is manual in dev/QA. It
 checks Airflow run freshness, ClickHouse reachability and latest READY
 publication freshness, local publication-manifest agreement, and warehouse or
 artifact filesystem headroom. Its final task consumes a dedicated Pub/Sub
