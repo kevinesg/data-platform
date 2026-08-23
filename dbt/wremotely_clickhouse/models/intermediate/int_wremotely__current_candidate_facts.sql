@@ -21,79 +21,124 @@
 {% set titles_incremental_ready = incremental_watermark_ready
     and relation_has_columns(ref('int_wremotely__candidate_job_titles'), ['source_updated_at']) %}
 
-with changed_candidates as (
-    select candidate_id
-    from {{ ref('int_wremotely__latest_selected_job_urls') }}
+with
+{% if incremental_watermark_ready %}
+processing_watermark as (
+    select coalesce(
+        maxIf(dbt_updated_at, dbt_updated_at <= now64(3))
+        , toDateTime64('1970-01-01 00:00:00', 3)
+    ) as dbt_updated_at
+    from {{ this }}
+),
+{% endif %}
+changed_candidates as (
+    select source.candidate_id
+    from {{ ref('int_wremotely__latest_selected_job_urls') }} as source
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__latest_job_facts') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__latest_job_facts') }} as source
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__latest_extraction_page_results') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__latest_extraction_page_results') }} as source
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__latest_classifications') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__latest_classifications') }} as source
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__latest_lifecycle_rechecks') }} as source
     {% if incremental_watermark_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__candidate_country_eligibility') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__candidate_country_eligibility') }} as source
     {% if country_incremental_ready %}
-    where dbt_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.dbt_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 
     union all
 
-    select candidate_id
-    from {{ ref('int_wremotely__candidate_job_titles') }}
+    select source.candidate_id
+    from {{ ref('int_wremotely__candidate_job_titles') }} as source
     {% if titles_incremental_ready %}
-    where source_updated_at > (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
-        from {{ this }}
+    cross join processing_watermark
+    where (
+        source.source_updated_at > processing_watermark.dbt_updated_at
+        or not exists (
+            select 1
+            from {{ this }} as current_candidate
+            where current_candidate.candidate_id = source.candidate_id
+        )
     )
     {% endif %}
 ),
