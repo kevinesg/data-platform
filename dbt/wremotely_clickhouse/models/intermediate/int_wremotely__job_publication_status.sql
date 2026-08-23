@@ -66,6 +66,10 @@ evaluated as (
         , greatest(
             candidate_facts.dbt_updated_at
             , ifNull(review.review_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
+            -- This model can re-evaluate a row because publication rules changed
+            -- even when the source fact did not. Advance the processing watermark
+            -- so downstream incremental tombstones and serving rows see that change.
+            , now64(3)
         ) as dbt_updated_at
         , facts.latest_job_fact_raw_valid_through_at is not null
             and facts.latest_job_fact_raw_valid_through_at <= now64(3)
