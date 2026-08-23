@@ -436,5 +436,9 @@ observed as (
 select
     observed.*
     , observed.latest_observed_at as source_updated_at
-    , observed.latest_observed_at as dbt_updated_at
+    -- dbt_updated_at is the warehouse processing watermark, not a business
+    -- timestamp. Posting/selection timestamps may be in the past or future;
+    -- using them here can prevent later upstream changes from entering an
+    -- incremental rebuild.
+    , now64(3) as dbt_updated_at
 from observed
