@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
-from airflow.sdk import DAG
+from airflow.sdk import DAG, Param
 
 from _wremotely import (
     APPROVED_SOURCE_REGISTRY_CONTAINER_PATH,
@@ -33,6 +34,13 @@ def shard_run_id(shard_index: int) -> str:
     return f"{GENERATION_RUN_ID}-shard{shard_index}"
 
 
+def refreshable_crawl_command(*args: str) -> str:
+    """Add the explicit full-refresh flag only when requested at trigger time."""
+
+    serialized = json.dumps(list(args))
+    return f'{serialized[:-1]}{{% if params.full_refresh %}}, "--full-refresh"{{% endif %}}]'
+
+
 with DAG(
     dag_id="crawl__wremotely_onprem",
     description=(
@@ -48,6 +56,17 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=DAG_RUN_TIMEOUT,
+    params={
+        "full_refresh": Param(
+            default=False,
+            type="boolean",
+            title="Full source crawl refresh",
+            description=(
+                "Disable the seven-day Workday/Workable hot pass and refetch the "
+                "approved registry. Use only for an intentional full crawl."
+            ),
+        )
+    },
     tags=["wremotely", "crawl", "on-prem", "clickhouse"],
 ) as dag:
     shards = []
@@ -56,7 +75,7 @@ with DAG(
             docker_task(
                 task_id=f"crawl_shard_{shard_index}",
                 image=WREMOTELY_ETL_IMAGE,
-                command=etl_command(
+                command=refreshable_crawl_command(
                     "--step",
                     "crawl",
                     "--run-id",
@@ -104,7 +123,7 @@ with DAG(
     merge = docker_task(
         task_id="merge_crawl_generation",
         image=WREMOTELY_ETL_IMAGE,
-        command=[
+        command=refreshable_crawl_command(
             "--step",
             "merge-crawl",
             "--run-id",
@@ -115,7 +134,7 @@ with DAG(
                 (["--source-crawl-shard-run-id", shard_run_id(index)] for index in range(int(SHARD_COUNT))),
                 [],
             ),
-        ],
+        ),
         environment=onprem_wremotely_environment,
         private_environment=onprem_wremotely_private_environment,
         mounts=onprem_wremotely_mounts,

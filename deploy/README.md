@@ -985,7 +985,7 @@ env_file = Path(os.environ["DATA_PLATFORM_ENV_FILE"])
 home = Path.home()
 
 fixed = {
-    "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "0 */12 * * *",
+    "ETL__WREMOTELY_SCHEDULE": "" if environment == "qa" else "0 */2 * * *",
     "WREMOTELY_LIFECYCLE_SCHEDULE": "" if environment == "qa" else "30 6,18 * * *",
     "WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE": "" if environment == "qa" else "0 3 * * *",
     "WREMOTELY_HANDOFF_DATASET": "handoff",
@@ -1364,7 +1364,7 @@ PERSONAL_FINANCE_GCS_BUCKET=kevinesg-prod-data-platform-landing
 SCRIPTS_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/scripts-service-account.json
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/home/<user>/secrets/data-platform/prod/dbt-service-account.json
 ETL__PERSONAL_FINANCE_SCHEDULE=<prod cron or preset schedule>
-ETL__WREMOTELY_SCHEDULE='0 */12 * * *'
+ETL__WREMOTELY_SCHEDULE='0 */2 * * *'
 WREMOTELY_LIFECYCLE_SCHEDULE='30 6,18 * * *'
 WREMOTELY_ARTIFACT_CLEANUP_SCHEDULE='0 3 * * *'
 DBT_TARGET=prod

@@ -56,6 +56,18 @@ artificial per-run URL cap), `--source-crawl-max-pages-per-source 15`, and
 reviewed limits for source families that do not need all 15 pages, while
 preserving explicit smaller smoke-test limits.
 
+Each crawl run covers the complete approved registry once: every source is
+assigned to exactly one of the six deterministic shards. The shards are not a
+six-run rotation. New sources from a later approved-registry/discovery update
+are assigned automatically by the same deterministic source/tenant hash on
+the next run, so they do not require manual bucket-directory maintenance.
+
+To intentionally refetch the complete registry, trigger
+`crawl__wremotely_onprem` with the boolean DAG parameter `full_refresh=true`.
+The parameter is false by default, disables the Workday/Workable seven-day hot
+pass for that run, and is carried consistently through every shard and the
+merge boundary. Normal scheduled runs leave it false.
+
 - `DATA_PLATFORM_WREMOTELY_CLICKHOUSE_DBT_IMAGE`
 - `DATA_PLATFORM_WREMOTELY_ETL_IMAGE`
 - `WREMOTELY_ETL_ARTIFACTS_DIR`
