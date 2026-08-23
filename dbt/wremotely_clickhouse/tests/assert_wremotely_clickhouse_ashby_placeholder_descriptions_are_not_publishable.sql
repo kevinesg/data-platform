@@ -20,5 +20,15 @@ where lowerUTF8(ifNull(latest_job_fact_source_platform_guess, '')) = 'ashby'
             ))
             , '^https?://[^[:space:]]+$'
         )
+        or lowerUTF8(replaceAll(trim(replaceRegexpAll(
+            ifNull(job_description, '')
+            , '<[^>]*>'
+            , ''
+        )), '&amp;', '&')) = lowerUTF8(trim(ifNull(title, '')))
+        or lowerUTF8(trim(replaceRegexpAll(
+            ifNull(job_description, '')
+            , '<[^>]*>'
+            , ''
+        ))) in ('test', 'test only', 'testing', 'tbd', 'coming soon')
     )
     and publication_status = 'PUBLISHABLE'
