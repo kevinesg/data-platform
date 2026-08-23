@@ -99,6 +99,11 @@ search facets, serving jobs, companies, the serving-country bridge, and a
 deterministic publication manifest. The model and seed tests run against real
 raw relations.
 
+The publication gate also applies source-specific data-quality rules. For
+Ashby, a missing description or a description containing only a URL is withheld
+from active serving with reason `ASHBY_MISSING_DESCRIPTION`; the raw evidence
+and source attribution remain available for audit and later re-extraction.
+
 The pre-publication `wremotely__serving_jobs` mart carries both `job_id` and a
 deterministic 32-character lowercase `public_id`. The public alias is derived
 from the internal job identity and is intended for shareable URLs; joins,

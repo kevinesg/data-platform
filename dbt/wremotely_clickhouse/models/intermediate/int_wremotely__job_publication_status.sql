@@ -68,6 +68,24 @@ evaluated as (
             )
         ) as meets_content_publication_requirements
         , (
+            lowerUTF8(ifNull(facts.latest_job_fact_source_platform_guess, '')) = 'ashby'
+            and (
+                empty(trim(replaceRegexpAll(
+                    ifNull(facts.job_description, '')
+                    , '<[^>]*>'
+                    , ''
+                )))
+                or match(
+                    trim(replaceRegexpAll(
+                        ifNull(facts.job_description, '')
+                        , '<[^>]*>'
+                        , ''
+                    ))
+                    , '^https?://[^[:space:]]+$'
+                )
+            )
+        ) as has_ashby_missing_description
+        , (
             facts.latest_lifecycle_status = 'CLOSED'
             or (
                 facts.latest_lifecycle_status = 'TERMINAL'
@@ -85,6 +103,7 @@ final as (
         , case
             when not meets_content_publication_requirements then 'NOT_PUBLISHABLE'
             when has_confirmed_lifecycle_closure then 'CLOSED'
+            when has_ashby_missing_description then 'NOT_PUBLISHABLE'
             when has_expired_valid_through then 'NOT_PUBLISHABLE'
             when publication_review_status in ('pending', 'held') then 'NOT_PUBLISHABLE'
             else 'PUBLISHABLE'
@@ -111,6 +130,8 @@ final as (
             when latest_lifecycle_status = 'TERMINAL'
                 and previous_lifecycle_status = 'TERMINAL'
                 then 'LIFECYCLE_TERMINAL_CONFIRMED'
+            when has_ashby_missing_description
+                then 'ASHBY_MISSING_DESCRIPTION'
             when has_expired_valid_through then 'EXPIRED_VALID_THROUGH'
             when publication_review_status in ('pending', 'held')
                 then 'PUBLICATION_REVIEW_HELD'

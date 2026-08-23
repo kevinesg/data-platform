@@ -364,6 +364,7 @@ models:
                   - COUNTRY_ELIGIBILITY_SCOPE
                   - COUNTRY_ELIGIBILITY_VALUES
                   - MISSING_TITLE
+                  - ASHBY_MISSING_DESCRIPTION
                   - UNSUPPORTED_LANGUAGE
                   - LIFECYCLE_CLOSED
                   - LIFECYCLE_TERMINAL_CONFIRMED
