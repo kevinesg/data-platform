@@ -118,6 +118,7 @@ select
     , raw_employment_type_values as latest_job_fact_raw_employment_type_values
     , raw_employment_type as latest_job_fact_raw_employment_type
     , raw_date_posted_values as latest_job_fact_raw_date_posted_values
+    , raw_date_posted_value as latest_job_fact_raw_date_posted_value
     , raw_date_posted_at as latest_job_fact_raw_date_posted_at
     , raw_valid_through_values as latest_job_fact_raw_valid_through_values
     , raw_valid_through_at as latest_job_fact_raw_valid_through_at
