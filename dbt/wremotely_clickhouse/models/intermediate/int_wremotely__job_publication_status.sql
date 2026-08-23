@@ -19,7 +19,10 @@ candidate_facts as (
     from {{ ref('int_wremotely__current_candidate_facts') }} as facts
     {% if incremental_watermark_ready %}
         where facts.dbt_updated_at >= (
-        select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+        select coalesce(
+            maxIf(dbt_updated_at, dbt_updated_at <= now64(3))
+            , toDateTime64('1970-01-01 00:00:00', 3)
+        )
         from {{ this }}
     )
     or (
@@ -30,7 +33,10 @@ candidate_facts as (
         select candidate_id
         from review_decisions
         where review_updated_at > (
-            select coalesce(max(dbt_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
+            select coalesce(
+                maxIf(dbt_updated_at, dbt_updated_at <= now64(3))
+                , toDateTime64('1970-01-01 00:00:00', 3)
+            )
             from {{ this }}
         )
     )
@@ -63,14 +69,11 @@ evaluated as (
         , review.review_reason_code as publication_review_reason_code
         , review.review_reason as publication_review_reason
         , review.review_updated_at as publication_review_updated_at
-        , greatest(
-            candidate_facts.dbt_updated_at
-            , ifNull(review.review_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
-            -- This model can re-evaluate a row because publication rules changed
-            -- even when the source fact did not. Advance the processing watermark
-            -- so downstream incremental tombstones and serving rows see that change.
-            , now64(3)
-        ) as dbt_updated_at
+        -- This model can re-evaluate a row because publication rules changed
+        -- even when the source fact did not. Use the current processing time
+        -- for the downstream watermark; source timestamps can be future-dated
+        -- and must never advance an incremental boundary past the current run.
+        , now64(3) as dbt_updated_at
         , facts.latest_job_fact_raw_valid_through_at is not null
             and facts.latest_job_fact_raw_valid_through_at <= now64(3)
             as has_expired_valid_through
