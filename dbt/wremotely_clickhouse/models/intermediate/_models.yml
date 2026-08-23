@@ -21,6 +21,8 @@ models:
                 values: [EXTRACTED, SKIPPED_EXTRACTION_FAILED]
       - name: latest_job_fact_extracted_at
         tests: [not_null]
+      - name: latest_job_fact_raw_date_posted_value
+        description: First raw datePosted value retained to distinguish date-only evidence.
       - name: latest_job_fact_stage_run_id
         tests: [not_null]
       - name: latest_job_facts_run_id
@@ -338,6 +340,8 @@ models:
         tests: [not_null, unique]
       - name: url
         tests: [not_null]
+      - name: publication_at
+        description: Effective publication timestamp; same-day date-only evidence uses extraction time.
       - name: source_updated_at
         tests: [not_null]
       - name: dbt_updated_at

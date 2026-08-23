@@ -81,6 +81,8 @@ select
     , nullIf(JSONExtractString(payload, 'raw_employment_type_values', 1, 'value'), '')
         as raw_employment_type
     , JSONExtractArrayRaw(payload, 'raw_date_posted_values') as raw_date_posted_values
+    , nullIf(JSONExtractString(payload, 'raw_date_posted_values', 1, 'value'), '')
+        as raw_date_posted_value
     , parseDateTimeBestEffortOrNull(
         JSONExtractString(payload, 'raw_date_posted_values', 1, 'value')
     ) as raw_date_posted_at

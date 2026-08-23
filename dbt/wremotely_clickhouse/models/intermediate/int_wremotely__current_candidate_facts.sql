@@ -221,7 +221,15 @@ joined as (
         , nullIf(trim(facts.latest_job_fact_raw_company_name), '') as company_name
         , nullIf(trim(facts.latest_job_fact_raw_job_location_text), '')
             as candidate_required_location
-        , facts.latest_job_fact_raw_date_posted_at as publication_at
+        , if(
+            match(ifNull(facts.latest_job_fact_raw_date_posted_value, ''), '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            and facts.latest_job_fact_raw_date_posted_at is not null
+            and facts.latest_job_fact_extracted_at is not null
+            and toDate(facts.latest_job_fact_raw_date_posted_at)
+                = toDate(facts.latest_job_fact_extracted_at)
+            , facts.latest_job_fact_extracted_at
+            , facts.latest_job_fact_raw_date_posted_at
+        ) as publication_at
         , selected.source_domain as attribution_name
         , selected.source_url as attribution_url
         , selected.source_link_text as snippet
@@ -296,6 +304,7 @@ joined as (
         , facts.latest_job_fact_raw_employment_type_values
         , facts.latest_job_fact_raw_employment_type
         , facts.latest_job_fact_raw_date_posted_values
+        , facts.latest_job_fact_raw_date_posted_value
         , facts.latest_job_fact_raw_date_posted_at
         , facts.latest_job_fact_raw_valid_through_values
         , facts.latest_job_fact_raw_valid_through_at
