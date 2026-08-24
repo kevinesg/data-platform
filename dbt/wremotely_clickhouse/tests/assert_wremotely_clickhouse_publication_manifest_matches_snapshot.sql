@@ -10,6 +10,13 @@ with job_snapshot as (
         , hex(SHA256(arrayStringConcat(arraySort(groupArray(company_row_sha256)), '')))
             as serving_company_snapshot_sha256
     from {{ ref('wremotely__companies') }}
+), active_company_source_snapshot as (
+    select
+        uniqExactIf(
+            lowerUTF8(trim(ifNull(source_attribution_url, '')))
+            , not is_deleted and notEmpty(ifNull(source_attribution_url, ''))
+        ) as serving_company_count
+    from {{ ref('wremotely__serving_jobs') }}
 ), country_snapshot as (
     select
         count() as job_country_eligibility_count
@@ -24,7 +31,7 @@ with job_snapshot as (
             , substring(hex(SHA256(concat(
                 toString(j.serving_job_count)
                 , '|', j.serving_job_snapshot_sha256
-                , '|', toString(c.serving_company_count)
+                , '|', toString(a.serving_company_count)
                 , '|', c.serving_company_snapshot_sha256
                 , '|', toString(k.job_country_eligibility_count)
                 , '|', k.job_country_eligibility_snapshot_sha256
@@ -32,7 +39,7 @@ with job_snapshot as (
         ) as publication_id
         , 'wremotely_serving_snapshot_v4' as serving_snapshot_contract
         , j.serving_job_count
-        , c.serving_company_count
+        , a.serving_company_count
         , k.job_country_eligibility_count
         , j.serving_job_snapshot_sha256
         , c.serving_company_snapshot_sha256
@@ -40,13 +47,14 @@ with job_snapshot as (
         , hex(SHA256(concat(
             toString(j.serving_job_count)
             , '|', j.serving_job_snapshot_sha256
-            , '|', toString(c.serving_company_count)
+            , '|', toString(a.serving_company_count)
             , '|', c.serving_company_snapshot_sha256
             , '|', toString(k.job_country_eligibility_count)
             , '|', k.job_country_eligibility_snapshot_sha256
         ))) as serving_snapshot_sha256
     from job_snapshot as j
     cross join company_snapshot as c
+    cross join active_company_source_snapshot as a
     cross join country_snapshot as k
 )
 select

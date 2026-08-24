@@ -104,6 +104,7 @@ models:
       - name: serving_job_count
         tests: [not_null]
       - name: serving_company_count
+        description: Number of distinct normalized source-attribution URLs on active serving jobs.
         tests: [not_null]
       - name: job_country_eligibility_count
         tests: [not_null]
