@@ -33,15 +33,6 @@ company_snapshot as (
     from companies
 ),
 
-active_company_source_snapshot as (
-    select
-        uniqExactIf(
-            lowerUTF8(trim(ifNull(source_attribution_url, '')))
-            , not is_deleted and notEmpty(ifNull(source_attribution_url, ''))
-        ) as active_company_source_count
-    from serving_jobs
-),
-
 job_country_snapshot as (
     select
         count() as job_country_eligibility_count
@@ -56,7 +47,7 @@ snapshot as (
         4 as publication_contract_version
         , 'wremotely_serving_snapshot_v4' as serving_snapshot_contract
         , jobs.serving_job_count
-        , active_companies.active_company_source_count as serving_company_count
+        , companies.serving_company_count
         , countries.job_country_eligibility_count
         , greatest(
             ifNull(jobs.job_publication_watermark_at, toDateTime64('1970-01-01 00:00:00', 3))
@@ -68,14 +59,13 @@ snapshot as (
         , hex(SHA256(concat(
             toString(jobs.serving_job_count)
             , '|', jobs.serving_job_snapshot_sha256
-            , '|', toString(active_companies.active_company_source_count)
+            , '|', toString(companies.serving_company_count)
             , '|', companies.serving_company_snapshot_sha256
             , '|', toString(countries.job_country_eligibility_count)
             , '|', countries.job_country_eligibility_snapshot_sha256
         ))) as serving_snapshot_sha256
     from job_snapshot as jobs
     cross join company_snapshot as companies
-    cross join active_company_source_snapshot as active_companies
     cross join job_country_snapshot as countries
 )
 
