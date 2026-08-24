@@ -15,7 +15,7 @@ with job_snapshot as (
         uniqExactIf(
             lowerUTF8(trim(ifNull(source_attribution_url, '')))
             , not is_deleted and notEmpty(ifNull(source_attribution_url, ''))
-        ) as serving_company_count
+        ) as active_company_source_count
     from {{ ref('wremotely__serving_jobs') }}
 ), country_snapshot as (
     select
@@ -31,7 +31,7 @@ with job_snapshot as (
             , substring(hex(SHA256(concat(
                 toString(j.serving_job_count)
                 , '|', j.serving_job_snapshot_sha256
-                , '|', toString(a.serving_company_count)
+                , '|', toString(a.active_company_source_count)
                 , '|', c.serving_company_snapshot_sha256
                 , '|', toString(k.job_country_eligibility_count)
                 , '|', k.job_country_eligibility_snapshot_sha256
@@ -39,7 +39,7 @@ with job_snapshot as (
         ) as publication_id
         , 'wremotely_serving_snapshot_v4' as serving_snapshot_contract
         , j.serving_job_count
-        , a.serving_company_count
+        , a.active_company_source_count as serving_company_count
         , k.job_country_eligibility_count
         , j.serving_job_snapshot_sha256
         , c.serving_company_snapshot_sha256
@@ -47,7 +47,7 @@ with job_snapshot as (
         , hex(SHA256(concat(
             toString(j.serving_job_count)
             , '|', j.serving_job_snapshot_sha256
-            , '|', toString(a.serving_company_count)
+            , '|', toString(a.active_company_source_count)
             , '|', c.serving_company_snapshot_sha256
             , '|', toString(k.job_country_eligibility_count)
             , '|', k.job_country_eligibility_snapshot_sha256
