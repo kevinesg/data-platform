@@ -495,10 +495,9 @@ joined as (
 observed as (
     select
         joined.*
-        -- publication_at is a source business date, not an observation
-        -- watermark; some sources publish future or date-only values.
         , nullIf(greatest(
-            ifNull(joined.latest_selected_at, toDateTime64('1970-01-01 00:00:00', 3))
+            ifNull(joined.publication_at, toDateTime64('1970-01-01 00:00:00', 3))
+            , ifNull(joined.latest_selected_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_job_fact_retrieved_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_job_fact_extracted_at, toDateTime64('1970-01-01 00:00:00', 3))
             , ifNull(joined.latest_job_fact_record_updated_at, toDateTime64('1970-01-01 00:00:00', 3))
