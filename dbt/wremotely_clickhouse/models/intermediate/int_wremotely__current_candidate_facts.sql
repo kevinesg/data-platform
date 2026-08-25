@@ -232,22 +232,15 @@ joined as (
         , nullIf(trim(facts.latest_job_fact_raw_job_location_text), '')
             as candidate_required_location
         , if(
-            match(ifNull(facts.latest_job_fact_raw_date_posted_value, ''), '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-            and facts.latest_job_fact_raw_date_posted_at is not null
+            facts.latest_job_fact_raw_date_posted_at is not null
             and facts.latest_job_fact_extracted_at is not null
             and (
-                toDate(facts.latest_job_fact_raw_date_posted_at)
-                    = toDate(facts.latest_job_fact_extracted_at)
-                -- Date-only ATS values have no timezone. A source-local
-                -- "today" can therefore parse as tomorrow in UTC when the
-                -- page is extracted late in the UTC day. Keep the observed
-                -- extraction instant only for that bounded future boundary;
-                -- never reinterpret an actually future posting as recent.
+                facts.latest_job_fact_raw_date_posted_at
+                    > facts.latest_job_fact_extracted_at
                 or (
-                    facts.latest_job_fact_raw_date_posted_at
-                        > facts.latest_job_fact_extracted_at
-                    and facts.latest_job_fact_raw_date_posted_at
-                        <= facts.latest_job_fact_extracted_at + interval 24 hour
+                    match(ifNull(facts.latest_job_fact_raw_date_posted_value, ''), '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+                    and toDate(facts.latest_job_fact_raw_date_posted_at)
+                        = toDate(facts.latest_job_fact_extracted_at)
                 )
             )
             , facts.latest_job_fact_extracted_at
