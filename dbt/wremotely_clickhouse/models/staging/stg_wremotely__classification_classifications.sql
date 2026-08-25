@@ -6,6 +6,8 @@
     order_by="(ifNull(candidate_id, ''), ingest_key)"
 ) }}
 
+{% set classification_url_expr = "nullIf(JSONExtractString(payload, 'url'), '')" %}
+
 select
     ingest_key
     , landing_run_id
@@ -18,8 +20,8 @@ select
     , source_artifact
     , source_artifact_sha256
     , source_record_index
-    , nullIf(JSONExtractString(payload, 'candidate_id'), '') as candidate_id
-    , nullIf(JSONExtractString(payload, 'url'), '') as url
+    , {{ wremotely_canonical_candidate_id("nullIf(JSONExtractString(payload, 'candidate_id'), '')", classification_url_expr) }} as candidate_id
+    , {{ wremotely_canonical_candidate_url(classification_url_expr) }} as url
     , parseDateTimeBestEffortOrNull(JSONExtractString(payload, 'classified_at')) as classified_at
     , nullIf(JSONExtractString(payload, 'classifier_version'), '') as classifier_version
     , nullIf(JSONExtractString(payload, 'model'), '') as model

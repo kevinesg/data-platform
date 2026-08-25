@@ -6,6 +6,8 @@
     order_by="(ifNull(candidate_id, ''), ingest_key)"
 ) }}
 
+{% set recheck_url_expr = "nullIf(JSONExtractString(payload, 'url'), '')" %}
+
 select
     ingest_key
     , landing_run_id
@@ -18,8 +20,8 @@ select
     , source_artifact
     , source_artifact_sha256
     , source_record_index
-    , nullIf(JSONExtractString(payload, 'candidate_id'), '') as candidate_id
-    , nullIf(JSONExtractString(payload, 'url'), '') as url
+    , {{ wremotely_canonical_candidate_id("nullIf(JSONExtractString(payload, 'candidate_id'), '')", recheck_url_expr) }} as candidate_id
+    , {{ wremotely_canonical_candidate_url(recheck_url_expr) }} as url
     , nullIf(JSONExtractString(payload, 'source_domain'), '') as source_domain
     , parseDateTimeBestEffortOrNull(JSONExtractString(payload, 'checked_at')) as checked_at
     , nullIf(JSONExtractString(payload, 'checker_version'), '') as checker_version
@@ -28,7 +30,7 @@ select
     , nullIf(upper(JSONExtractString(payload, 'lifecycle_signal')), '') as lifecycle_signal
     , if(JSONHas(payload, 'http_status'), JSONExtractInt(payload, 'http_status'), NULL)
         as http_status
-    , nullIf(JSONExtractString(payload, 'final_url'), '') as final_url
+    , {{ wremotely_canonical_candidate_url("nullIf(JSONExtractString(payload, 'final_url'), '')") }} as final_url
     , nullIf(JSONExtractRaw(payload, 'redirect_chain'), '') as redirect_chain_json
     , nullIf(JSONExtractString(payload, 'content_type'), '') as content_type
     , if(JSONHas(payload, 'attempt_count'), JSONExtractInt(payload, 'attempt_count'), NULL)

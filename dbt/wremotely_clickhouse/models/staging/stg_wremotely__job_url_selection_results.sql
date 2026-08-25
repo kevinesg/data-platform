@@ -6,6 +6,9 @@
     order_by="(ifNull(candidate_id, ''), ingest_key)"
 ) }}
 
+{% set selected_url_expr = "coalesce(nullIf(JSONExtractString(payload, 'normalized_url'), ''), nullIf(JSONExtractString(payload, 'url'), ''))" %}
+{% set selected_platform_expr = "nullIf(JSONExtractString(payload, 'source_platform_guess'), '')" %}
+
 select
     ingest_key
     , landing_run_id
@@ -19,10 +22,10 @@ select
     , source_artifact_sha256
     , source_record_index
     , nullIf(JSONExtractString(payload, 'job_url_id'), '') as job_url_id
-    , nullIf(JSONExtractString(payload, 'candidate_id'), '') as candidate_id
-    , nullIf(JSONExtractString(payload, 'url'), '') as url
+    , {{ wremotely_canonical_candidate_id("nullIf(JSONExtractString(payload, 'candidate_id'), '')", selected_url_expr, selected_platform_expr) }} as candidate_id
+    , {{ wremotely_canonical_candidate_url("nullIf(JSONExtractString(payload, 'url'), '')", selected_platform_expr) }} as url
     , nullIf(JSONExtractString(payload, 'raw_url'), '') as raw_url
-    , nullIf(JSONExtractString(payload, 'normalized_url'), '') as normalized_url
+    , {{ wremotely_canonical_candidate_url("nullIf(JSONExtractString(payload, 'normalized_url'), '')", selected_platform_expr) }} as normalized_url
     , nullIf(JSONExtractString(payload, 'source_candidate_id'), '') as source_candidate_id
     , nullIf(JSONExtractString(payload, 'source_url'), '') as source_url
     , nullIf(JSONExtractString(payload, 'source_domain'), '') as source_domain
