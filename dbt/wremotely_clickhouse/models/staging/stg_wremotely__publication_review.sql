@@ -7,8 +7,11 @@
 ) }}
 
 with source_rows as (
-    select *
-    from {{ source('wremotely', 'publication_review') }}
+    select
+        source.*
+        , {{ wremotely_canonical_candidate_id('source.candidate_id', 'source.canonical_url') }}
+            as canonical_candidate_id
+    from {{ source('wremotely', 'publication_review') }} as source
     {% if is_incremental() %}
     where review_updated_at > (
         select coalesce(max(review_updated_at), toDateTime64('1970-01-01 00:00:00', 3))
@@ -19,7 +22,7 @@ with source_rows as (
 
 latest as (
     select
-        candidate_id
+        canonical_candidate_id as candidate_id
         , argMax(source.contract_version, source.review_updated_at) as contract_version
         , argMax(source.review_status, source.review_updated_at) as review_status
         , argMax(source.review_reason_code, source.review_updated_at) as review_reason_code
@@ -36,7 +39,7 @@ latest as (
         , argMax(source.decision_sha256, source.review_updated_at) as decision_sha256
         , max(source.review_updated_at) as review_updated_at
     from source_rows as source
-    group by source.candidate_id
+    group by source.canonical_candidate_id
 )
 
 select *

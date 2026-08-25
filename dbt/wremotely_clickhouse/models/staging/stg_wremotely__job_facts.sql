@@ -6,6 +6,8 @@
     order_by="(ifNull(candidate_id, ''), ingest_key)"
 ) }}
 
+{% set job_fact_url_expr = "nullIf(JSONExtractString(payload, 'url'), '')" %}
+
 select
     ingest_key
     , landing_run_id
@@ -18,10 +20,10 @@ select
     , source_artifact
     , source_artifact_sha256
     , source_record_index
-    , nullIf(JSONExtractString(payload, 'candidate_id'), '') as candidate_id
-    , nullIf(JSONExtractString(payload, 'url'), '') as url
-    , nullIf(JSONExtractString(payload, 'final_url'), '') as final_url
-    , nullIf(JSONExtractString(payload, 'job_identity_url'), '') as job_identity_url
+    , {{ wremotely_canonical_candidate_id("nullIf(JSONExtractString(payload, 'candidate_id'), '')", job_fact_url_expr) }} as candidate_id
+    , {{ wremotely_canonical_candidate_url(job_fact_url_expr) }} as url
+    , {{ wremotely_canonical_candidate_url("nullIf(JSONExtractString(payload, 'final_url'), '')") }} as final_url
+    , {{ wremotely_canonical_candidate_url("nullIf(JSONExtractString(payload, 'job_identity_url'), '')") }} as job_identity_url
     , nullIf(upper(JSONExtractString(payload, 'final_url_identity_status')), '')
         as final_url_identity_status
     , nullIf(JSONExtractString(payload, 'source_domain'), '') as source_domain

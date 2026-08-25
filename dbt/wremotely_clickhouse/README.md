@@ -104,6 +104,13 @@ Ashby, a missing description or a description containing only a URL is withheld
 from active serving with reason `ASHBY_MISSING_DESCRIPTION`; the raw evidence
 and source attribution remain available for audit and later re-extraction.
 
+Ashby candidate identities are canonicalized from the normalized job URL at
+the staging boundary. Case variants of the same Ashby tenant path therefore
+share one candidate identity across selection, extraction, classification,
+country evidence, lifecycle, review, and serving models; raw source payloads
+remain unchanged. The identity migration requires a full refresh of the
+affected staging and downstream graph before production publication.
+
 The pre-publication `wremotely__serving_jobs` mart carries both `job_id` and a
 deterministic 32-character lowercase `public_id`. The public alias is derived
 from the internal job identity and is intended for shareable URLs; joins,
