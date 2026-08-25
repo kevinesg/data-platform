@@ -490,6 +490,10 @@ joined as (
         on keys.candidate_id = country_eligibility.candidate_id
     any left join candidate_titles as titles
         on keys.candidate_id = titles.candidate_id
+    -- Selection/extraction history can retain an orphan identity after a
+    -- failed or superseded URL write. It cannot become a serving candidate
+    -- without a URL, so exclude it before materializing current state.
+    where coalesce(facts.url, selected.url) is not null
 ),
 
 observed as (
