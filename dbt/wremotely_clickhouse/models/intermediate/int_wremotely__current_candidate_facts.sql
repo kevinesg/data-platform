@@ -20,6 +20,10 @@
     and relation_has_columns(ref('int_wremotely__candidate_country_eligibility'), ['source_landing_run_id']) %}
 {% set titles_incremental_ready = incremental_watermark_ready
     and relation_has_columns(ref('int_wremotely__candidate_job_titles'), ['source_updated_at']) %}
+{% set candidate_platform_filter = var('candidate_platform_filter', '') | string | lower | trim %}
+{% if candidate_platform_filter and not candidate_platform_filter.replace('_', '').isalnum() %}
+    {{ exceptions.raise_compiler_error('candidate_platform_filter must contain only letters, numbers, and underscores') }}
+{% endif %}
 
 with
 {% if incremental_watermark_ready %}
@@ -144,8 +148,14 @@ changed_candidates as (
 ),
 
 candidate_keys as (
-    select distinct candidate_id
-    from changed_candidates
+    select distinct changed.candidate_id
+    from changed_candidates as changed
+    {% if candidate_platform_filter %}
+    inner join {{ ref('int_wremotely__latest_selected_job_urls') }} as platform_source
+        on changed.candidate_id = platform_source.candidate_id
+    where lowerUTF8(ifNull(platform_source.source_platform_guess, ''))
+        = '{{ candidate_platform_filter }}'
+    {% endif %}
 ),
 
 selected_job_urls as (
