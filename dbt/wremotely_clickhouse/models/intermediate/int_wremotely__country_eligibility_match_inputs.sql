@@ -16,6 +16,8 @@ select
     evidence_id
     , source_landing_run_id
     , candidate_id
+    , country_field_role
+    , json_path
     , evidence_direction
     , country_match_mode
     , normalized_raw_value

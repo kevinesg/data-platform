@@ -33,6 +33,11 @@ US,Washington,jobvite
 US,"Baltimore, Maryland",
 US,"Boulder, Colorado",
 US,Sunnyvale,ashby
+US,Mountain View,ashby
+US,"Mountain View, CA",ashby
+US,"USA - Mountain View, CA",ashby
+US,"Aurora, IL",ashby
+US,"Pilot Mountain",ashby
 US,Texas,
 US,US - Remote,
 US,"Austin, TX",
@@ -70,6 +75,8 @@ SS,Juba,bamboohr
 AE,Dubai - Main Office,ashby
 IE,Dublin - Main Office,ashby
 GB,Newcastle,ashby
+PH,"Quezon City",ashby
+PH,"Davao City",ashby
 US,"Weave - Headquarters (Lehi, UT)",ashby
 GH,"Berekuso, Eastern Region",bamboohr
 US,"Jacksonville, Florida",bamboohr

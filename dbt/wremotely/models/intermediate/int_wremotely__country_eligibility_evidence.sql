@@ -709,6 +709,16 @@ subdivision_text_match_candidates AS (
         )
     WHERE p.evidence_direction IN ('INCLUDED', 'EXCLUDED')
         AND p.country_match_mode = 'TEXT'
+        -- Ashby work_locations are free-form labels, not subdivision codes.
+        -- Its JSON-LD region is structured enough for subdivision matching;
+        -- locality and platform labels require country text or reviewed aliases.
+        AND (
+            LOWER(COALESCE(p.source_platform_guess, '')) != 'ashby'
+            OR (
+                p.country_field_role = 'JOB_LOCATION'
+                AND ENDS_WITH(LOWER(COALESCE(p.json_path, '')), '.addressregion')
+            )
+        )
 ),
 
 subdivision_country_context AS (

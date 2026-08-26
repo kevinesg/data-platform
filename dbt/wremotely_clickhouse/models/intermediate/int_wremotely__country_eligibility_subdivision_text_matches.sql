@@ -23,6 +23,16 @@ with match_inputs as (
     from {{ ref('int_wremotely__country_eligibility_match_inputs') }}
     where country_match_mode = 'TEXT'
         and is_restricting_location_evidence
+        -- Ashby work_locations are free-form labels, not subdivision codes.
+        -- Its JSON-LD region is structured enough for subdivision matching;
+        -- locality and platform labels require country text or reviewed aliases.
+        and (
+            lowerUTF8(ifNull(source_platform_guess, '')) != 'ashby'
+            or (
+                country_field_role = 'JOB_LOCATION'
+                and endsWith(lowerUTF8(ifNull(json_path, '')), '.addressregion')
+            )
+        )
     {% if incremental_watermark_ready %}
     and source_landing_run_id > (
         select coalesce(max(source_landing_run_id), '')
